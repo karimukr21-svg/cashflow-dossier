@@ -149,14 +149,35 @@ body, html, #root {
   border: 1px solid var(--border);
   border-radius: 4px;
   cursor: pointer;
-  background: var(--surface);
   color: var(--charcoal);
   user-select: none;
 }
-.month-cell:hover { background: var(--surface-alt); }
+.month-cell.actual-bg { background: #e6f4ec; border-color: #c8e6d2; }
+.month-cell.forecast-bg { background: var(--surface); }
+.month-cell:hover { filter: brightness(0.96); }
 .month-cell.in-range { background: #ffeef0; color: var(--crimson); border-color: #fcc; }
 .month-cell.endpoint { background: var(--crimson); color: white; font-weight: 500; border-color: var(--crimson); }
 .month-cell.disabled { opacity: 0.3; cursor: not-allowed; }
+
+.pop-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--mute);
+  margin-bottom: 12px;
+}
+.legend-swatch {
+  display: inline-block;
+  width: 14px; height: 12px;
+  border-radius: 3px;
+  margin-right: 4px;
+  border: 1px solid var(--border);
+  vertical-align: middle;
+}
+.legend-swatch.actual { background: #e6f4ec; border-color: #c8e6d2; }
+.legend-swatch.forecast { background: var(--surface); }
+.legend-swatch.endpoint { background: var(--crimson); border-color: var(--crimson); }
 .popover-actions {
   display: flex;
   justify-content: space-between;

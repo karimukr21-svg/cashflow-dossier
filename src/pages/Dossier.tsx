@@ -284,6 +284,7 @@ export default function Dossier() {
         <CustomPeriodPopover
           fromYM={fromYM}
           toYM={toYM}
+          latestActualYM={latestActualYM}
           onClose={() => setShowCustom(false)}
           onApply={(f, t) => {
             setUrl({ p: 'custom', from: f, to: t })
