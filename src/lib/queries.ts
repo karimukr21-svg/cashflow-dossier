@@ -137,16 +137,18 @@ export async function fetchCanonicalAreas(): Promise<CanonicalArea[]> {
 
   const out: CanonicalArea[] = []
   for (const a of areasRes.data || []) {
-    const cfSet = cfAreasByAreaId.get(a.area_id)
-    if (!cfSet || cfSet.size === 0) continue   // skip canonical rows with no cf mapping
-    const ctSet = cfCountriesByAreaId.get(a.area_id) || new Set<string>()
+    // 2026-06-05 re-ingest: cf_actuals.area + cf_forecasts.area now hold
+    // country-grain values (Palestine, Algeria, …). Bridge canonical area_id
+    // to the cf_country set instead of cf_area.
+    const ctSet = cfCountriesByAreaId.get(a.area_id)
+    if (!ctSet || ctSet.size === 0) continue   // skip canonical rows with no cf mapping
     out.push({
       area_id: a.area_id,
       area_name: a.area_name,
       display_name: a.display_name || a.area_name,
       group_name: a.group_name as AreaGroup,
       sort_order: a.sort_order ?? 99,
-      cf_areas: [...cfSet],
+      cf_areas: [...ctSet].sort(),
       cf_countries: [...ctSet].sort(),
     })
   }
