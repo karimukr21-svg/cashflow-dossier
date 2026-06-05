@@ -213,27 +213,17 @@ export default function Dossier() {
   return (
     <div className="shell">
       <div className="topbar">
-        {/* Main row — everything inline */}
         <div className="topbar-row">
+          {/* Left cluster — status pills (variable width is fine; only the spacer between flexes) */}
           <div className="brand">Cash Flow Dossier</div>
           <div className="asof-pill">Actuals · {asOfLabel}</div>
           <div className="period-pill">Period · {periodLabel}</div>
 
-          <div className="ctrl" style={{ marginLeft: 12 }}><label>Period</label></div>
-          <div className="pill-row">
-            {periodPills.map(p => (
-              <button key={p.key}
-                onClick={() => {
-                  if (p.key === 'custom') { setShowCustom(true) }
-                  else { setUrl({ p: p.key, from: null, to: null }) }
-                }}
-                className={`pill-btn ${preset === p.key ? 'active' : ''}`}>
-                {p.label}
-              </button>
-            ))}
-          </div>
+          {/* Spacer absorbs any width change in the period pill so the right cluster stays put */}
+          <div style={{ flex: 1 }} />
 
-          <div className="ctrl" style={{ marginLeft: 8 }}><label>Version</label></div>
+          {/* Right cluster — toggles. Order: Version · Compare · Period · Grain */}
+          <div className="ctrl"><label>Version</label></div>
           <div className="pill-row">
             {versions.map(v => (
               <button key={v.version_code}
@@ -259,9 +249,23 @@ export default function Dossier() {
               className={`pill-btn ${compareVersion === 'Actual' ? 'active' : ''}`}>Actual</button>
           </div>
 
+          <div className="ctrl" style={{ marginLeft: 8 }}><label>Period</label></div>
+          <div className="pill-row">
+            {periodPills.map(p => (
+              <button key={p.key}
+                onClick={() => {
+                  if (p.key === 'custom') { setShowCustom(true) }
+                  else { setUrl({ p: p.key, from: null, to: null }) }
+                }}
+                className={`pill-btn ${preset === p.key ? 'active' : ''}`}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+
           {showGrain && (
             <>
-              <div className="ctrl" style={{ marginLeft: 'auto' }}><label>Grain</label></div>
+              <div className="ctrl" style={{ marginLeft: 8 }}><label>Grain</label></div>
               <div className="pill-row">
                 {grainPills.map(p => (
                   <button key={p.key}
