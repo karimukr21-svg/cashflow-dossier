@@ -40,6 +40,7 @@ export default function AllAreas({ scope }: { scope: Scope }) {
         lines={scope.lines}
         grain={scope.grain}
         scope={scope}
+        groupBy={scope.groupBy}
       />
     </div>
   )

@@ -383,6 +383,49 @@ body, html, #root {
 .cat-group-header.nature-receipts { border-left: 3px solid var(--good); }
 .cat-group-header.nature-payments { border-left: 3px solid var(--bad); }
 .cat-group-header.nature-balance  { border-left: 3px solid var(--mute); }
+.cat-group-header.nature-mixed    { border-left: 3px solid var(--charcoal); }
+
+/* Subgroup labels within a Flow card (Receipts / Payments bands) */
+.cf-table tr.subgroup-header td {
+  text-align: left;
+  background: var(--surface-alt);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--mute);
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.cf-table tr.subgroup-header.subgroup-receipts td { color: var(--good); }
+.cf-table tr.subgroup-header.subgroup-payments td { color: var(--bad); }
+
+/* Category divider rows inside Nature-mode subgroups */
+.cf-table tr.category-divider td {
+  text-align: left;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--mute);
+  padding: 4px 12px 2px;
+  border-bottom: none;
+}
+
+/* Subtotal row inside a subgroup */
+.cf-table tr.subtotal-row td {
+  background: rgba(0, 0, 0, 0.02);
+  font-weight: 500;
+  border-top: 1px solid var(--border);
+}
+.cf-table tr.subtotal-row td.label { text-align: left; }
+
+/* Net row at the bottom of a Flow card */
+.cf-table tr.net-row td {
+  background: var(--surface-alt);
+  font-weight: 600;
+  border-top: 2px solid var(--charcoal);
+}
+.cf-table tr.net-row td.label { text-align: left; text-transform: uppercase; letter-spacing: 0.04em; font-size: 12px; }
 .cat-group-header .cat-totals {
   margin-left: auto;
   font-size: 11px;

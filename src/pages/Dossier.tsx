@@ -15,6 +15,7 @@ import AllAreas from './AllAreas'
 import CustomPeriodPopover from '@/components/CustomPeriodPopover'
 
 export type Grain = 'monthly' | 'quarterly' | 'yearly'
+export type GroupBy = 'category' | 'nature'
 
 type View =
   | { kind: 'summary'; lens: 'overall' | 'treasury' | 'loans' | 'operations' | 'allareas' }
@@ -37,6 +38,12 @@ const USES_GRAIN: Record<string, boolean> = {
   area: true,
   allareas: true,
   timeseries: true,
+}
+
+/* Pages that use the section-grouping toggle (Category vs Nature) */
+const USES_GROUPBY: Record<string, boolean> = {
+  area: true,
+  allareas: true,
 }
 
 function ymToInt(year: number, month: number) { return year * 100 + month }
@@ -104,6 +111,7 @@ export default function Dossier() {
   const compareVersion = sp.get('c') || ''
   const preset = (sp.get('p') || 'ytd') as PresetKey
   const grain = (sp.get('g') || 'monthly') as Grain
+  const groupBy = (sp.get('gb') === 'nature' ? 'nature' : 'category') as GroupBy
 
   const { from: presetFrom, to: presetTo } =
     resolvePreset(preset === 'custom' ? 'custom' : preset, latestActualYM, new Date())
@@ -167,6 +175,7 @@ export default function Dossier() {
     return 'audit'
   })()
   const showGrain = !!USES_GRAIN[grainKey]
+  const showGroupBy = !!USES_GROUPBY[grainKey]
 
   const renderContent = () => {
     if (loadingCatalog) return <div className="placeholder-box">Loading…</div>
@@ -175,7 +184,7 @@ export default function Dossier() {
     const scope = {
       primaryVersion, compareVersion,
       fromYear: fy, fromMonth: fm, toYear: ty, toMonth: tm,
-      areas, lines, latestActualYM, grain,
+      areas, lines, latestActualYM, grain, groupBy,
     }
 
     if (view.kind === 'summary') {
@@ -205,6 +214,11 @@ export default function Dossier() {
     { key: 'monthly', label: 'Monthly' },
     { key: 'quarterly', label: 'Quarterly' },
     { key: 'yearly', label: 'Yearly' },
+  ]
+
+  const groupByPills: { key: GroupBy; label: string }[] = [
+    { key: 'category', label: 'By Category' },
+    { key: 'nature', label: 'By Nature' },
   ]
 
   return (
@@ -275,6 +289,21 @@ export default function Dossier() {
             ))}
           </div>
 
+          {showGroupBy && (
+            <>
+              <div className="ctrl" style={{ marginLeft: 8 }}><label>Sections</label></div>
+              <div className="pill-row">
+                {groupByPills.map(p => (
+                  <button key={p.key}
+                    onClick={() => setUrl({ gb: p.key === 'category' ? null : p.key })}
+                    className={`pill-btn ${groupBy === p.key ? 'active' : ''}`}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
         </div>
       </div>
 
@@ -325,4 +354,5 @@ export type Scope = {
   lines: CfLine[];
   latestActualYM: number;
   grain: Grain;
+  groupBy: GroupBy;
 }
