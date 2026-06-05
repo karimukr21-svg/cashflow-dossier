@@ -87,6 +87,12 @@ export type CanonicalArea = {
   /** Tony's cf labels that map to this canonical area. cf_actuals.area
    *  values match one of these strings. */
   cf_areas: string[]
+  /** cf_country values from cashflow_sheets that fold into this canonical
+   *  area. Use this to caption "Includes …" on rollup areas (OTH bundles
+   *  Palestine + Morganti + Others; ACR bundles Algeria + Botswana + …).
+   *  cf_actuals doesn't carry country grain — this is metadata, not a
+   *  re-aggregation key. */
+  cf_countries: string[]
 }
 
 /** Canonical areas that have at least one cashflow_sheets mapping.
@@ -108,24 +114,32 @@ export async function fetchCanonicalAreas(): Promise<CanonicalArea[]> {
       .eq('is_active', true)
       .eq('is_virtual', false),
     supabase.from('cashflow_sheets')
-      .select('cf_area, area_id')
+      .select('cf_area, cf_country, area_id')
       .not('area_id', 'is', null),
   ])
   if (areasRes.error) throw areasRes.error
   if (sheetsRes.error) throw sheetsRes.error
 
-  // cf_area → area_id (sheets may carry the same cf_area many times; collapse)
+  // cf_area + cf_country → area_id (sheets may repeat; collapse to sets)
   const cfAreasByAreaId = new Map<string, Set<string>>()
+  const cfCountriesByAreaId = new Map<string, Set<string>>()
   for (const row of sheetsRes.data || []) {
-    if (!row.area_id || !row.cf_area) continue
-    if (!cfAreasByAreaId.has(row.area_id)) cfAreasByAreaId.set(row.area_id, new Set())
-    cfAreasByAreaId.get(row.area_id)!.add(row.cf_area)
+    if (!row.area_id) continue
+    if (row.cf_area) {
+      if (!cfAreasByAreaId.has(row.area_id)) cfAreasByAreaId.set(row.area_id, new Set())
+      cfAreasByAreaId.get(row.area_id)!.add(row.cf_area)
+    }
+    if (row.cf_country) {
+      if (!cfCountriesByAreaId.has(row.area_id)) cfCountriesByAreaId.set(row.area_id, new Set())
+      cfCountriesByAreaId.get(row.area_id)!.add(row.cf_country)
+    }
   }
 
   const out: CanonicalArea[] = []
   for (const a of areasRes.data || []) {
     const cfSet = cfAreasByAreaId.get(a.area_id)
     if (!cfSet || cfSet.size === 0) continue   // skip canonical rows with no cf mapping
+    const ctSet = cfCountriesByAreaId.get(a.area_id) || new Set<string>()
     out.push({
       area_id: a.area_id,
       area_name: a.area_name,
@@ -133,6 +147,7 @@ export async function fetchCanonicalAreas(): Promise<CanonicalArea[]> {
       group_name: a.group_name as AreaGroup,
       sort_order: a.sort_order ?? 99,
       cf_areas: [...cfSet],
+      cf_countries: [...ctSet].sort(),
     })
   }
   out.sort((x, y) =>

@@ -40,9 +40,15 @@ export default function AreaDrill({ area, scope }: { area: string; scope: Scope 
   return (
     <div>
       <h1>{titleLabel}</h1>
-      {cfAreas.length > 1 && (
-        <div style={{ marginTop: 4, color: 'var(--mute)', fontSize: 13 }}>
-          Folding {cfAreas.length} source rows: {cfAreas.join(' · ')}.
+      {canonical && canonical.cf_countries.length > 1 && (
+        <div className="area-includes">
+          <span className="area-includes-label">Includes</span>
+          {canonical.cf_countries.map(c => (
+            <span key={c} className="area-includes-chip">{c}</span>
+          ))}
+          <span className="area-includes-note">
+            Source data folds at Tony's WriteUp level; country detail is not separately broken out below.
+          </span>
         </div>
       )}
       <div style={{ height: 16 }} />

@@ -261,6 +261,42 @@ body, html, #root {
   flex: 1;
 }
 
+/* "Includes Palestine · Morganti · …" chip strip on bundled-area drills.
+ * cf_actuals doesn't carry country grain — these chips are metadata
+ * sourced from public.cashflow_sheets.cf_country, surfaced so the reader
+ * knows what's inside the rollup. */
+.area-includes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+.area-includes-label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--mute);
+  font-weight: 600;
+  margin-right: 4px;
+}
+.area-includes-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--surface-alt);
+  color: var(--charcoal);
+  font-size: 11.5px;
+  border: 1px solid var(--border);
+}
+.area-includes-note {
+  flex-basis: 100%;
+  font-size: 11px;
+  color: var(--mute);
+  margin-top: 2px;
+}
+
 /* Custom period popover (month grid) */
 .popover-backdrop {
   position: fixed; inset: 0;
