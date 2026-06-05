@@ -43,8 +43,12 @@ export default function AreaDrill({ area, scope }: { area: string; scope: Scope 
   )
 }
 
-/* Renders the cash-structure category cards for one area's data.
- * Reused on the All Areas page (one block per area). */
+/* Column-alignment constants (apply to every category card on the page so
+ * columns line up vertically across sections). */
+const LABEL_COL_PX = 220
+const PERIOD_COL_PX = 80
+const TOTAL_COL_PX = 100
+
 export function AreaCategoryCards({
   actuals, forecasts, lines, grain, scope,
 }: {
@@ -54,7 +58,6 @@ export function AreaCategoryCards({
   grain: Grain;
   scope: Pick<Scope, 'fromYear' | 'fromMonth' | 'toYear' | 'toMonth' | 'latestActualYM'>;
 }) {
-  // Group active lines by (nature, category)
   const groups = useMemo(() => {
     const g = new Map<string, { nature: string; category: string; lines: CfLine[] }>()
     lines.filter(l => l.is_active)
@@ -67,8 +70,8 @@ export function AreaCategoryCards({
     return [...g.values()]
   }, [lines])
 
-  // Period columns based on grain
-  const columns = useMemo(() => buildColumns(grain, scope, scope.latestActualYM), [grain, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth, scope.latestActualYM])
+  const columns = useMemo(() => buildColumns(grain, scope, scope.latestActualYM),
+    [grain, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth, scope.latestActualYM])
 
   const colSum = (line_code: string, matches: (y: number, m: number) => boolean) => {
     let sum: number | null = null
@@ -94,26 +97,35 @@ export function AreaCategoryCards({
     return touched ? t : null
   }
 
+  // Wrap everything in a horizontally-scrollable container so all tables
+  // scroll together and columns stay aligned visually.
+  const tableMinWidth = LABEL_COL_PX + (columns.length * PERIOD_COL_PX) + TOTAL_COL_PX
+
   return (
-    <div>
-      {groups.map(grp => {
-        const natureClass = `nature-${grp.nature.toLowerCase()}`
-        const periodTotal = catTotal(grp.lines.map(l => l.line_code), () => true) || 0
-        return (
-          <div key={`${grp.nature}|${grp.category}`} className="cat-group">
-            <div className={`cat-group-header ${natureClass}`}>
-              <span>{grp.nature} · {grp.category}</span>
-              <span className="cat-totals">Period total: {fmt(periodTotal)}</span>
-            </div>
-            <div style={{ overflowX: 'auto' }}>
-              <table className="cf-table">
+    <div style={{ overflowX: 'auto' }}>
+      <div style={{ minWidth: tableMinWidth }}>
+        {groups.map(grp => {
+          const natureClass = `nature-${grp.nature.toLowerCase()}`
+          const periodTotal = catTotal(grp.lines.map(l => l.line_code), () => true) || 0
+          return (
+            <div key={`${grp.nature}|${grp.category}`} className="cat-group">
+              <div className={`cat-group-header ${natureClass}`}>
+                <span>{grp.nature} · {grp.category}</span>
+                <span className="cat-totals">Period total: {fmt(periodTotal)}</span>
+              </div>
+              <table className="cf-table" style={{ tableLayout: 'fixed', width: tableMinWidth }}>
+                <colgroup>
+                  <col style={{ width: LABEL_COL_PX }} />
+                  {columns.map(c => <col key={c.key} style={{ width: PERIOD_COL_PX }} />)}
+                  <col style={{ width: TOTAL_COL_PX }} />
+                </colgroup>
                 <thead>
                   <tr>
-                    <th className="label" style={{ minWidth: 220, position: 'sticky', left: 0, background: 'var(--surface)' }}>Line</th>
+                    <th className="label" style={{ position: 'sticky', left: 0, background: 'var(--surface)' }}>Line</th>
                     {columns.map(c => (
                       <th key={c.key} className={c.isActual ? 'cell actual' : 'cell forecast'}>{c.label}</th>
                     ))}
-                    <th className={c2(grp.nature)}>Total</th>
+                    <th>Total</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -130,7 +142,7 @@ export function AreaCategoryCards({
                             </td>
                           )
                         })}
-                        <td className={`${classNum(rowTotal)} total`} style={{ fontWeight: 500 }}>
+                        <td className={`${classNum(rowTotal)}`} style={{ fontWeight: 500 }}>
                           {rowTotal == null ? '' : fmt(rowTotal)}
                         </td>
                       </tr>
@@ -151,14 +163,12 @@ export function AreaCategoryCards({
                 </tbody>
               </table>
             </div>
-          </div>
-        )
-      })}
+          )
+        })}
+      </div>
     </div>
   )
 }
-
-function c2(_nature: string) { return '' }
 
 export function buildColumns(grain: Grain, scope: Pick<Scope, 'fromYear' | 'fromMonth' | 'toYear' | 'toMonth'>, asOfYM: number) {
   const cols: { key: string; label: string; matches: (y: number, m: number) => boolean; isActual: boolean }[] = []

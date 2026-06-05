@@ -12,6 +12,7 @@ import LoansOverdrafts from './LoansOverdrafts'
 import Operations from './Operations'
 import Overall from './Overall'
 import AllAreas from './AllAreas'
+import CustomPeriodPopover from '@/components/CustomPeriodPopover'
 
 export type Grain = 'monthly' | 'quarterly' | 'yearly'
 
@@ -127,6 +128,17 @@ export default function Dossier() {
     return `${monthName} ${y}`
   }, [latestActualYM])
 
+  const monthName = (m: number) => ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1] || ''
+  const periodLabel = useMemo(() => {
+    if (fy === ty) {
+      if (fm === 1 && tm === 12) return `Full ${fy}`
+      return `${monthName(fm)} – ${monthName(tm)} ${fy}`
+    }
+    return `${monthName(fm)} ${fy} – ${monthName(tm)} ${ty}`
+  }, [fy, fm, ty, tm])
+
+  const [showCustom, setShowCustom] = useState(false)
+
   const navItems: { label: string; group: string; view: View; placeholder?: boolean }[] = [
     { group: 'SUMMARY', label: 'Overall',            view: { kind: 'summary', lens: 'overall' } },
     { group: 'SUMMARY', label: 'Treasury Movements', view: { kind: 'summary', lens: 'treasury' } },
@@ -201,32 +213,52 @@ export default function Dossier() {
   return (
     <div className="shell">
       <div className="topbar">
-        {/* Row 1 — brand + as-of + period + grain (conditional) */}
+        {/* Main row — everything inline */}
         <div className="topbar-row">
           <div className="brand">Cash Flow Dossier</div>
           <div className="asof-pill">Actuals · {asOfLabel}</div>
-          <div className="spacer" style={{ width: 12 }} />
-          <div className="ctrl"><label>Period</label></div>
+          <div className="period-pill">Period · {periodLabel}</div>
+
+          <div className="ctrl" style={{ marginLeft: 12 }}><label>Period</label></div>
           <div className="pill-row">
             {periodPills.map(p => (
               <button key={p.key}
-                onClick={() => setUrl({ p: p.key, from: null, to: null })}
+                onClick={() => {
+                  if (p.key === 'custom') { setShowCustom(true) }
+                  else { setUrl({ p: p.key, from: null, to: null }) }
+                }}
                 className={`pill-btn ${preset === p.key ? 'active' : ''}`}>
                 {p.label}
               </button>
             ))}
           </div>
-          {preset === 'custom' && (
-            <>
-              <select value={fromYM} onChange={e => setUrl({ from: e.target.value })}>
-                {ALL_MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
-              <span style={{ color: 'var(--mute)' }}>→</span>
-              <select value={toYM} onChange={e => setUrl({ to: e.target.value })}>
-                {ALL_MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
-            </>
-          )}
+
+          <div className="ctrl" style={{ marginLeft: 8 }}><label>Version</label></div>
+          <div className="pill-row">
+            {versions.map(v => (
+              <button key={v.version_code}
+                onClick={() => setUrl({ v: v.version_code })}
+                className={`pill-btn ${primaryVersion === v.version_code ? 'active' : ''}`}>
+                {v.version_code}
+              </button>
+            ))}
+          </div>
+
+          <div className="ctrl" style={{ marginLeft: 8 }}><label>Compare</label></div>
+          <div className="pill-row">
+            <button onClick={() => setUrl({ c: null })}
+              className={`pill-btn ${compareVersion === '' ? 'active' : ''}`}>None</button>
+            {versions.filter(v => v.version_code !== primaryVersion).map(v => (
+              <button key={v.version_code}
+                onClick={() => setUrl({ c: v.version_code })}
+                className={`pill-btn ${compareVersion === v.version_code ? 'active' : ''}`}>
+                {v.version_code}
+              </button>
+            ))}
+            <button onClick={() => setUrl({ c: 'Actual' })}
+              className={`pill-btn ${compareVersion === 'Actual' ? 'active' : ''}`}>Actual</button>
+          </div>
+
           {showGrain && (
             <>
               <div className="ctrl" style={{ marginLeft: 'auto' }}><label>Grain</label></div>
@@ -242,35 +274,19 @@ export default function Dossier() {
             </>
           )}
         </div>
-
-        {/* Row 2 — version + compare */}
-        <div className="topbar-row">
-          <div className="ctrl"><label>Version</label></div>
-          <div className="pill-row">
-            {versions.map(v => (
-              <button key={v.version_code}
-                onClick={() => setUrl({ v: v.version_code })}
-                className={`pill-btn ${primaryVersion === v.version_code ? 'active' : ''}`}>
-                {v.version_code}
-              </button>
-            ))}
-          </div>
-          <div className="ctrl" style={{ marginLeft: 16 }}><label>Compare</label></div>
-          <div className="pill-row">
-            <button onClick={() => setUrl({ c: null })}
-              className={`pill-btn ${compareVersion === '' ? 'active' : ''}`}>None</button>
-            {versions.filter(v => v.version_code !== primaryVersion).map(v => (
-              <button key={v.version_code}
-                onClick={() => setUrl({ c: v.version_code })}
-                className={`pill-btn ${compareVersion === v.version_code ? 'active' : ''}`}>
-                {v.version_code}
-              </button>
-            ))}
-            <button onClick={() => setUrl({ c: 'Actual' })}
-              className={`pill-btn ${compareVersion === 'Actual' ? 'active' : ''}`}>Actual</button>
-          </div>
-        </div>
       </div>
+
+      {showCustom && (
+        <CustomPeriodPopover
+          fromYM={fromYM}
+          toYM={toYM}
+          onClose={() => setShowCustom(false)}
+          onApply={(f, t) => {
+            setUrl({ p: 'custom', from: f, to: t })
+            setShowCustom(false)
+          }}
+        />
+      )}
 
       <div className="leftnav">
         <div className="leftnav-scroll">

@@ -68,25 +68,113 @@ body, html, #root {
   letter-spacing: 0.06em;
   font-weight: 500;
 }
-.asof-pill {
+.asof-pill, .period-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  border: 1px solid var(--charcoal);
   border-radius: 12px;
-  background: var(--charcoal);
-  color: white;
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   font-weight: 500;
+}
+.asof-pill {
+  border: 1px solid var(--charcoal);
+  background: var(--charcoal);
+  color: white;
 }
 .asof-pill::before {
   content: '';
   width: 6px; height: 6px;
   border-radius: 50%;
   background: #4ade80;
+}
+.period-pill {
+  border: 1px solid var(--crimson);
+  background: #fff;
+  color: var(--crimson);
+}
+.period-pill::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--crimson);
+}
+
+/* Custom period popover (month grid) */
+.popover-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.2);
+  z-index: 100;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 100px;
+}
+.popover {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px 24px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+  min-width: 520px;
+}
+.popover h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.popover .pop-sub {
+  font-size: 12px;
+  color: var(--mute);
+  margin-bottom: 16px;
+}
+.year-grid-row {
+  display: grid;
+  grid-template-columns: 60px repeat(12, 1fr);
+  gap: 4px;
+  margin-bottom: 4px;
+  align-items: center;
+}
+.year-grid-row .yr {
+  font-size: 12px;
+  color: var(--mute);
+  font-weight: 500;
+}
+.month-cell {
+  padding: 5px 0;
+  text-align: center;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  background: var(--surface);
+  color: var(--charcoal);
+  user-select: none;
+}
+.month-cell:hover { background: var(--surface-alt); }
+.month-cell.in-range { background: #ffeef0; color: var(--crimson); border-color: #fcc; }
+.month-cell.endpoint { background: var(--crimson); color: white; font-weight: 500; border-color: var(--crimson); }
+.month-cell.disabled { opacity: 0.3; cursor: not-allowed; }
+.popover-actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 16px;
+}
+.popover-actions button {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.popover-actions button.primary {
+  background: var(--crimson);
+  color: white;
+  border-color: var(--crimson);
 }
 
 /* Pill bars */
