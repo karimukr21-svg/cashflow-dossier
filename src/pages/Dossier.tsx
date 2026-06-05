@@ -166,14 +166,12 @@ export default function Dossier() {
   }
   const selectedAreas = areas.filter(a => !excludedAreas.has(a.area_id))
 
-  /* The area nav groups by canonical group_name so Operations,
-   * Subsidiaries, and Corporate (the "area items" — MOA / EPSO / Cyprus /
-   * Others) read distinctly. The dossier-level fallback group label is
-   * uppercased for visual parity with SUMMARY / BANK POSITION. */
+  /* 2026-06-05: dossier flattened to country grain. Three buckets are
+   * Tony's canonical groupings — Operations / Subsidiaries / Corporate. */
   const AREA_GROUP_LABEL: Record<AreaGroup, string> = {
     Operations: 'OPERATIONS',
     Subsidiaries: 'SUBSIDIARIES',
-    Corporate: 'AREA ITEMS',     // Karim's read: Corporate rows are non-territorial line holders
+    Corporate: 'CORPORATE',
     Contingency: 'CONTINGENCY',
   }
   const areaNavGroups: { label: string; group: AreaGroup }[] = []

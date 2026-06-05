@@ -123,36 +123,33 @@ export async function fetchCanonicalAreas(): Promise<CanonicalArea[]> {
   if (areasRes.error) throw areasRes.error
   if (sheetsRes.error) throw sheetsRes.error
 
-  // cf_area + cf_country → area_id (sheets may repeat; collapse to sets)
-  const cfAreasByAreaId = new Map<string, Set<string>>()
-  const cfCountriesByAreaId = new Map<string, Set<string>>()
-  for (const row of sheetsRes.data || []) {
-    if (!row.area_id) continue
-    if (row.cf_area) {
-      if (!cfAreasByAreaId.has(row.area_id)) cfAreasByAreaId.set(row.area_id, new Set())
-      cfAreasByAreaId.get(row.area_id)!.add(row.cf_area)
-    }
-    if (row.cf_country) {
-      if (!cfCountriesByAreaId.has(row.area_id)) cfCountriesByAreaId.set(row.area_id, new Set())
-      cfCountriesByAreaId.get(row.area_id)!.add(row.cf_country)
-    }
-  }
+  // 2026-06-05: dossier flattened to country grain. Each cf_country becomes
+  // its own row, inheriting group_name + sort_order from its parent canonical
+  // area in public.areas. The 3-bucket grouping (Operations / Subsidiaries /
+  // Corporate) is preserved; intermediate canonical-area headers (KSA / ACR /
+  // OTH / …) are gone. Mirrors how Treasury presents in Tony's workbook.
+  const parentById = new Map<string, typeof areasRes.data extends (infer R)[] | null ? R : never>()
+  for (const a of (areasRes.data || [])) parentById.set(a.area_id, a)
 
+  // De-dupe (area_id, cf_country) — cashflow_sheets may have many sheet rows
+  // per country across periods. We want one row per country in the nav.
+  const seen = new Set<string>()
   const out: CanonicalArea[] = []
-  for (const a of areasRes.data || []) {
-    // 2026-06-05 re-ingest: cf_actuals.area + cf_forecasts.area now hold
-    // country-grain values (Palestine, Algeria, …). Bridge canonical area_id
-    // to the cf_country set instead of cf_area.
-    const ctSet = cfCountriesByAreaId.get(a.area_id)
-    if (!ctSet || ctSet.size === 0) continue   // skip canonical rows with no cf mapping
+  for (const row of sheetsRes.data || []) {
+    if (!row.area_id || !row.cf_country) continue
+    const key = `${row.area_id}::${row.cf_country}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    const parent = parentById.get(row.area_id)
+    if (!parent) continue   // unmapped — skip
     out.push({
-      area_id: a.area_id,
-      area_name: a.area_name,
-      display_name: a.display_name || a.area_name,
-      group_name: a.group_name as AreaGroup,
-      sort_order: a.sort_order ?? 99,
-      cf_areas: [...ctSet].sort(),
-      cf_countries: [...ctSet].sort(),
+      area_id: row.cf_country,                         // country IS the id
+      area_name: row.cf_country,
+      display_name: row.cf_country,
+      group_name: parent.group_name as AreaGroup,
+      sort_order: (parent.sort_order ?? 99) * 100,     // inherit canonical order at top, alpha within
+      cf_areas: [row.cf_country],                      // single-country filter against cf_actuals.area
+      cf_countries: [row.cf_country],
     })
   }
   out.sort((x, y) =>
