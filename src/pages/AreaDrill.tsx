@@ -50,29 +50,31 @@ const LABEL_COL_PX = 240
 const PERIOD_COL_PX = 80
 const TOTAL_COL_PX = 100
 
-/* Persisted collapse state for the area-page section/category rows.
- * Keyed by `${groupBy}|${blockKey}|sub:Receipts` or `…|cat:Operation` etc.
- * Shared across area drill + all-areas + every area switch on purpose:
- * if Karim collapses Operations Payments, that survives navigation. */
-const COLLAPSED_STORAGE_KEY = 'dossier-area-collapsed-v1'
+/* Persisted expand state for the area-page section/category rows.
+ * Default = everything collapsed; the set holds only the keys Karim has
+ * clicked open. Keyed by `${groupBy}|${blockKey}|sub:Receipts` or
+ * `…|cat:Operation`. Shared across area drill + all-areas + every area
+ * switch on purpose: if Karim expands Operations Payments somewhere,
+ * it stays expanded when he navigates. */
+const EXPANDED_STORAGE_KEY = 'dossier-area-expanded-v1'
 
-function useCollapsedSections() {
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+function useExpandedSections() {
+  const [expanded, setExpanded] = useState<Set<string>>(() => {
     try {
-      const raw = localStorage.getItem(COLLAPSED_STORAGE_KEY)
+      const raw = localStorage.getItem(EXPANDED_STORAGE_KEY)
       return new Set(raw ? JSON.parse(raw) : [])
     } catch { return new Set() }
   })
   const toggle = (key: string) => {
-    setCollapsed(prev => {
+    setExpanded(prev => {
       const next = new Set(prev)
       if (next.has(key)) next.delete(key)
       else next.add(key)
-      try { localStorage.setItem(COLLAPSED_STORAGE_KEY, JSON.stringify([...next])) } catch {}
+      try { localStorage.setItem(EXPANDED_STORAGE_KEY, JSON.stringify([...next])) } catch {}
       return next
     })
   }
-  return { collapsed, toggle }
+  return { expanded, toggle }
 }
 
 function Chevron({ open }: { open: boolean }) {
@@ -124,7 +126,7 @@ export function AreaCategoryCards({
   scope: Pick<Scope, 'fromYear' | 'fromMonth' | 'toYear' | 'toMonth' | 'latestActualYM'>;
   groupBy: GroupBy;
 }) {
-  const { collapsed, toggle } = useCollapsedSections()
+  const { expanded, toggle } = useExpandedSections()
 
   const activeLines = useMemo(() =>
     lines.filter(l => l.is_active).sort((a, b) => a.sort_order - b.sort_order),
@@ -211,7 +213,7 @@ export function AreaCategoryCards({
               columns={columns} tableMinWidth={tableMinWidth}
               sumLineCol={sumLineCol} sumLinesCol={sumLinesCol}
               groupBy={groupBy}
-              collapsed={collapsed} toggle={toggle} />
+              expanded={expanded} toggle={toggle} />
           )
         })}
       </div>
@@ -282,7 +284,7 @@ function BalanceCard({
  * (receipts card has no payments and vice versa); the Net row is suppressed
  * since "Net Receipts" alone is not meaningful. */
 function FlowCard({
-  block, columns, tableMinWidth, sumLineCol, sumLinesCol, groupBy, collapsed, toggle,
+  block, columns, tableMinWidth, sumLineCol, sumLinesCol, groupBy, expanded, toggle,
 }: {
   block: { key: string; label: string; receipts: CfLine[]; payments: CfLine[]; natureClass: string };
   columns: Column[];
@@ -290,7 +292,7 @@ function FlowCard({
   sumLineCol: (lineCode: string, matches: (y: number, m: number) => boolean) => number | null;
   sumLinesCol: (lineCodes: string[], matches: (y: number, m: number) => boolean) => number | null;
   groupBy: GroupBy;
-  collapsed: Set<string>;
+  expanded: Set<string>;
   toggle: (key: string) => void;
 }) {
   const hasReceipts = block.receipts.length > 0
@@ -351,7 +353,7 @@ function FlowCard({
               sumLinesCol={sumLinesCol}
               subgroupClass="subgroup-receipts"
               blockKey={block.key} groupBy={groupBy}
-              collapsed={collapsed} toggle={toggle}
+              expanded={expanded} toggle={toggle}
               showSubgroupHeader={groupBy === 'category'} />
           )}
           {hasPayments && (
@@ -362,7 +364,7 @@ function FlowCard({
               sumLinesCol={sumLinesCol}
               subgroupClass="subgroup-payments"
               blockKey={block.key} groupBy={groupBy}
-              collapsed={collapsed} toggle={toggle}
+              expanded={expanded} toggle={toggle}
               showSubgroupHeader={groupBy === 'category'} />
           )}
           {showNet && (
@@ -389,7 +391,7 @@ function FlowCard({
 
 function FlowSubgroup({
   label, groups, columns, sumLineCol, sumLinesCol, subgroupClass,
-  blockKey, groupBy, collapsed, toggle, showSubgroupHeader,
+  blockKey, groupBy, expanded, toggle, showSubgroupHeader,
 }: {
   label: 'Receipts' | 'Payments';
   groups: { category: string; lines: CfLine[] }[];
@@ -399,7 +401,7 @@ function FlowSubgroup({
   subgroupClass: string;
   blockKey: string;
   groupBy: GroupBy;
-  collapsed: Set<string>;
+  expanded: Set<string>;
   toggle: (key: string) => void;
   showSubgroupHeader: boolean;
 }) {
@@ -407,10 +409,11 @@ function FlowSubgroup({
   const subtotal = sumLinesCol(allLineCodes, () => true)
   const colSpan = columns.length + 2
 
-  /* Collapse keys are scoped by groupBy so flipping the toggle doesn't
-   * carry stale collapses across modes (the structures don't line up). */
+  /* Default: everything collapsed. The `expanded` set holds only the keys
+   * Karim has clicked open. Keys are scoped by groupBy so flipping the
+   * mode toggle doesn't carry stale state (the structures don't line up). */
   const subgroupKey = `${groupBy}|${blockKey}|sub:${label}`
-  const subgroupCollapsed = showSubgroupHeader && collapsed.has(subgroupKey)
+  const subgroupCollapsed = showSubgroupHeader && !expanded.has(subgroupKey)
 
   return (
     <>
@@ -426,7 +429,7 @@ function FlowSubgroup({
         const catKey = grp.category
           ? `${groupBy}|${blockKey}|cat:${grp.category}`
           : null
-        const catCollapsed = !!catKey && collapsed.has(catKey)
+        const catCollapsed = !!catKey && !expanded.has(catKey)
         const catLineCodes = grp.lines.map(l => l.line_code)
         const catSubtotal = sumLinesCol(catLineCodes, () => true)
 
