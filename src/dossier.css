@@ -1,0 +1,220 @@
+/* CCC tokens */
+:root {
+  --crimson: #E10020;
+  --charcoal: #141414;
+  --ink: #1a1a2e;
+  --mute: #6b7280;
+  --border: #e5e7eb;
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --surface-alt: #f5f5f5;
+  --accent-light: #fff3e0;
+  --good: #057a55;
+  --bad: #c81e1e;
+  --actual-tint: #f7faff;
+  --forecast-tint: #ffffff;
+}
+
+* { box-sizing: border-box; }
+body, html, #root {
+  margin: 0; padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--charcoal);
+  font-family: 'Rubik', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+}
+
+/* App shell */
+.shell {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  grid-template-rows: 56px 1fr;
+  height: 100vh;
+  grid-template-areas:
+    "topbar topbar"
+    "leftnav content";
+}
+
+.topbar {
+  grid-area: topbar;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 16px;
+}
+.topbar .brand {
+  font-weight: 500;
+  color: var(--crimson);
+  letter-spacing: 0.02em;
+  margin-right: 12px;
+}
+.topbar .ctrl {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px;
+}
+.topbar .ctrl label { color: var(--mute); }
+.topbar select, .topbar input[type=range] {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+.topbar .spacer { flex: 1; }
+.topbar .user {
+  font-size: 13px;
+  color: var(--mute);
+}
+.topbar .signout {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.leftnav {
+  grid-area: leftnav;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 12px 0;
+}
+.leftnav .group {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--mute);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 12px 16px 6px;
+}
+.leftnav .item {
+  display: block;
+  padding: 6px 16px;
+  font-size: 13.5px;
+  color: var(--charcoal);
+  text-decoration: none;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+}
+.leftnav .item:hover { background: var(--surface-alt); }
+.leftnav .item.active {
+  background: var(--accent-light);
+  border-left-color: var(--crimson);
+  color: var(--crimson);
+  font-weight: 500;
+}
+.leftnav .item.placeholder { color: var(--mute); cursor: default; }
+
+.content {
+  grid-area: content;
+  overflow-y: auto;
+  padding: 24px 32px;
+}
+.content h1 {
+  font-size: 20px;
+  font-weight: 500;
+  margin: 0 0 4px;
+}
+.content .sub {
+  color: var(--mute);
+  font-size: 13px;
+  margin-bottom: 20px;
+}
+
+/* Tables */
+.cf-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.cf-table th, .cf-table td {
+  padding: 8px 12px;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+}
+.cf-table th {
+  background: var(--surface-alt);
+  font-weight: 500;
+  color: var(--charcoal);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.cf-table td.label, .cf-table th.label { text-align: left; }
+.cf-table tr.total { background: var(--surface-alt); font-weight: 500; }
+.cf-table tr.total td { border-top: 2px solid var(--charcoal); }
+.cf-table td.num.neg { color: var(--bad); }
+.cf-table td.num.pos { color: var(--good); }
+.cf-table tr.clickable { cursor: pointer; }
+.cf-table tr.clickable:hover td { background: var(--surface-alt); }
+
+.cell.actual { background: var(--actual-tint); }
+.cell.forecast { background: var(--forecast-tint); }
+
+/* Recon pills */
+.pill {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.pill.ok { background: #e8f5e9; color: var(--good); }
+.pill.bad { background: #ffebee; color: var(--bad); }
+.pill.neutral { background: var(--surface-alt); color: var(--mute); }
+
+/* Bank position grid */
+.bp-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+.bp-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+}
+
+.placeholder-box {
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  padding: 32px;
+  text-align: center;
+  color: var(--mute);
+  font-size: 13px;
+}
+
+/* Two-column for treasury movements */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.kpi-strip {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.kpi {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 16px;
+  min-width: 140px;
+}
+.kpi .l { font-size: 11px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.04em; }
+.kpi .v { font-size: 20px; font-weight: 500; margin-top: 4px; }
+.kpi .v.neg { color: var(--bad); }
+.kpi .v.pos { color: var(--good); }
+.kpi .d { font-size: 11px; color: var(--mute); margin-top: 2px; }
