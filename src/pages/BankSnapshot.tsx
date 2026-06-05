@@ -58,10 +58,10 @@ export default function BankSnapshot() {
       </div>
 
       <div className="kpi-strip">
-        <div className="kpi"><div className="l">Cash</div><div className={`v ${classNum(t.cash).split(' ')[1] || ''}`}>{fmt(t.cash, { decimals: 1 })}</div></div>
-        <div className="kpi"><div className="l">Loans</div><div className={`v ${classNum(t.loans).split(' ')[1] || ''}`}>{fmt(t.loans, { decimals: 1 })}</div></div>
-        <div className="kpi"><div className="l">Overdrafts</div><div className={`v ${classNum(t.od).split(' ')[1] || ''}`}>{fmt(t.od, { decimals: 1 })}</div></div>
-        <div className="kpi"><div className="l">Net Funds</div><div className={`v ${classNum(t.net).split(' ')[1] || ''}`}>{fmt(t.net, { decimals: 1 })}</div></div>
+        <div className="kpi"><div className="l">Cash</div><div className={`v ${classNum(t.cash).split(' ')[1] || ''}`}>{fmt(t.cash)}</div></div>
+        <div className="kpi"><div className="l">Loans</div><div className={`v ${classNum(t.loans).split(' ')[1] || ''}`}>{fmt(t.loans)}</div></div>
+        <div className="kpi"><div className="l">Overdrafts</div><div className={`v ${classNum(t.od).split(' ')[1] || ''}`}>{fmt(t.od)}</div></div>
+        <div className="kpi"><div className="l">Net Funds</div><div className={`v ${classNum(t.net).split(' ')[1] || ''}`}>{fmt(t.net)}</div></div>
       </div>
 
       <table className="cf-table">
