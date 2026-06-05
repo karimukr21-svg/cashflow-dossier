@@ -2,16 +2,21 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/lib/auth'
 import {
-  fetchAreas, fetchVersions, fetchLines, type CfVersion, type CfLine,
+  fetchAreas, fetchVersions, fetchLines, fetchActuals,
+  type CfVersion, type CfLine,
 } from '@/lib/queries'
 import TreasuryMovements from './TreasuryMovements'
 import AreaDrill from './AreaDrill'
 import BankSnapshot from './BankSnapshot'
 import LoansOverdrafts from './LoansOverdrafts'
 import Operations from './Operations'
+import Overall from './Overall'
+import AllAreas from './AllAreas'
+
+export type Grain = 'monthly' | 'quarterly' | 'yearly'
 
 type View =
-  | { kind: 'summary'; lens: 'treasury' | 'loans' | 'operations' }
+  | { kind: 'summary'; lens: 'overall' | 'treasury' | 'loans' | 'operations' | 'allareas' }
   | { kind: 'bank'; sub: 'snapshot' | 'timeseries' }
   | { kind: 'area'; area: string }
   | { kind: 'audit' }
@@ -22,16 +27,46 @@ function parseView(sp: URLSearchParams): View {
   if (view === 'bank') return { kind: 'bank', sub: (sub === 'timeseries' ? 'timeseries' : 'snapshot') }
   if (view === 'area' && sp.get('area')) return { kind: 'area', area: sp.get('area')! }
   if (view === 'audit') return { kind: 'audit' }
-  return { kind: 'summary', lens: (sub === 'loans' || sub === 'operations' ? sub : 'treasury') as any }
+  const lens = (['overall', 'treasury', 'loans', 'operations', 'allareas'].includes(sub) ? sub : 'overall') as any
+  return { kind: 'summary', lens }
 }
 
-const ALL_MONTHS_2025_TO_2028 = (() => {
-  const arr: { year: number; month: number; label: string }[] = []
-  for (let y = 2024; y <= 2028; y++) {
-    for (let m = 1; m <= 12; m++) {
-      arr.push({ year: y, month: m, label: `${y}-${String(m).padStart(2,'0')}` })
-    }
+/* Pages that use a column-grain control */
+const USES_GRAIN: Record<string, boolean> = {
+  area: true,
+  allareas: true,
+  timeseries: true,
+}
+
+function ymToInt(year: number, month: number) { return year * 100 + month }
+
+/* Period presets — resolved against (today, latestActualYM) */
+type PresetKey = 'ytd' | 'last12' | 'q1-26' | 'q2-26' | 'full-26' | 'plan' | 'custom'
+
+function resolvePreset(key: PresetKey, latestActualYM: number, today: Date): { from: string; to: string } {
+  const t = today
+  const yr = t.getFullYear()
+  const mo = t.getMonth() + 1
+  if (key === 'ytd') {
+    const ay = Math.floor(latestActualYM / 100); const am = latestActualYM % 100
+    return { from: `${ay}-01`, to: `${ay}-${String(am).padStart(2, '0')}` }
   }
+  if (key === 'last12') {
+    const startY = mo <= 12 ? yr - 1 : yr
+    return { from: `${startY}-${String(mo).padStart(2, '0')}`, to: `${yr}-${String(mo).padStart(2, '0')}` }
+  }
+  if (key === 'q1-26') return { from: '2026-01', to: '2026-03' }
+  if (key === 'q2-26') return { from: '2026-04', to: '2026-06' }
+  if (key === 'full-26') return { from: '2026-01', to: '2026-12' }
+  if (key === 'plan') return { from: '2026-01', to: '2028-12' }
+  return { from: '2026-01', to: '2026-04' } // custom default
+}
+
+const ALL_MONTHS = (() => {
+  const arr: string[] = []
+  for (let y = 2020; y <= 2028; y++)
+    for (let m = 1; m <= 12; m++)
+      arr.push(`${y}-${String(m).padStart(2, '0')}`)
   return arr
 })()
 
@@ -43,6 +78,7 @@ export default function Dossier() {
   const [versions, setVersions] = useState<CfVersion[]>([])
   const [areas, setAreas] = useState<string[]>([])
   const [lines, setLines] = useState<CfLine[]>([])
+  const [latestActualYM, setLatestActualYM] = useState<number>(202604) // fallback
   const [loadingCatalog, setLoadingCatalog] = useState(true)
 
   useEffect(() => {
@@ -52,17 +88,26 @@ export default function Dossier() {
         setVersions(v)
         setAreas(a)
         setLines(l)
+        // Find latest actual month from a cheap query
+        const sample = await fetchActuals({ fromYear: 2024, fromMonth: 1, toYear: 2030, toMonth: 12 })
+        const max = sample.reduce((m, c) => Math.max(m, ymToInt(c.year, c.month)), 0)
+        if (max) setLatestActualYM(max)
       } finally {
         setLoadingCatalog(false)
       }
     })()
   }, [])
 
-  // Resolve control state from URL with sensible defaults
+  // Resolve state from URL
   const primaryVersion = sp.get('v') || versions[0]?.version_code || ''
-  const compareVersion = sp.get('c') || ''  // empty = no compare
-  const fromYM = sp.get('from') || '2026-01'
-  const toYM = sp.get('to') || '2026-04'
+  const compareVersion = sp.get('c') || ''
+  const preset = (sp.get('p') || 'ytd') as PresetKey
+  const grain = (sp.get('g') || 'monthly') as Grain
+
+  const { from: presetFrom, to: presetTo } =
+    resolvePreset(preset === 'custom' ? 'custom' : preset, latestActualYM, new Date())
+  const fromYM = preset === 'custom' ? (sp.get('from') || presetFrom) : presetFrom
+  const toYM = preset === 'custom' ? (sp.get('to') || presetTo) : presetTo
   const [fy, fm] = fromYM.split('-').map(Number)
   const [ty, tm] = toYM.split('-').map(Number)
 
@@ -75,12 +120,21 @@ export default function Dossier() {
     setSp(next, { replace: true })
   }
 
+  const asOfLabel = useMemo(() => {
+    const y = Math.floor(latestActualYM / 100)
+    const m = latestActualYM % 100
+    const monthName = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1] || ''
+    return `${monthName} ${y}`
+  }, [latestActualYM])
+
   const navItems: { label: string; group: string; view: View; placeholder?: boolean }[] = [
+    { group: 'SUMMARY', label: 'Overall',            view: { kind: 'summary', lens: 'overall' } },
     { group: 'SUMMARY', label: 'Treasury Movements', view: { kind: 'summary', lens: 'treasury' } },
     { group: 'SUMMARY', label: 'Loans & Overdrafts', view: { kind: 'summary', lens: 'loans' } },
-    { group: 'SUMMARY', label: 'Operations', view: { kind: 'summary', lens: 'operations' } },
-    { group: 'BANK POSITION', label: 'Snapshot', view: { kind: 'bank', sub: 'snapshot' } },
-    { group: 'BANK POSITION', label: 'Time Series', view: { kind: 'bank', sub: 'timeseries' }, placeholder: true },
+    { group: 'SUMMARY', label: 'Operations',         view: { kind: 'summary', lens: 'operations' } },
+    { group: 'SUMMARY', label: 'All Areas',          view: { kind: 'summary', lens: 'allareas' } },
+    { group: 'BANK POSITION', label: 'Snapshot',     view: { kind: 'bank', sub: 'snapshot' } },
+    { group: 'BANK POSITION', label: 'Time Series',  view: { kind: 'bank', sub: 'timeseries' }, placeholder: true },
     ...areas.map(a => ({ group: 'AREAS', label: a, view: { kind: 'area' as const, area: a } })),
     { group: 'AUDIT', label: 'Audit Trail', view: { kind: 'audit' }, placeholder: true },
   ]
@@ -92,8 +146,15 @@ export default function Dossier() {
     else setUrl({ view: 'audit', sub: null, area: null })
   }
 
-  const isActive = (item: View) =>
-    JSON.stringify(item) === JSON.stringify(view)
+  const isActive = (item: View) => JSON.stringify(item) === JSON.stringify(view)
+
+  const grainKey = (() => {
+    if (view.kind === 'summary') return view.lens
+    if (view.kind === 'bank') return view.sub
+    if (view.kind === 'area') return 'area'
+    return 'audit'
+  })()
+  const showGrain = !!USES_GRAIN[grainKey]
 
   const renderContent = () => {
     if (loadingCatalog) return <div className="placeholder-box">Loading…</div>
@@ -102,74 +163,134 @@ export default function Dossier() {
     const scope = {
       primaryVersion, compareVersion,
       fromYear: fy, fromMonth: fm, toYear: ty, toMonth: tm,
-      areas, lines,
+      areas, lines, latestActualYM, grain,
     }
 
-    if (view.kind === 'summary' && view.lens === 'treasury')
-      return <TreasuryMovements scope={scope} />
-    if (view.kind === 'summary' && view.lens === 'loans')
-      return <LoansOverdrafts scope={scope} />
-    if (view.kind === 'summary' && view.lens === 'operations')
-      return <Operations scope={scope} />
-    if (view.kind === 'bank' && view.sub === 'snapshot')
-      return <BankSnapshot />
+    if (view.kind === 'summary') {
+      if (view.lens === 'overall')    return <Overall scope={scope} />
+      if (view.lens === 'treasury')   return <TreasuryMovements scope={scope} />
+      if (view.lens === 'loans')      return <LoansOverdrafts scope={scope} />
+      if (view.lens === 'operations') return <Operations scope={scope} />
+      if (view.lens === 'allareas')   return <AllAreas scope={scope} />
+    }
+    if (view.kind === 'bank' && view.sub === 'snapshot') return <BankSnapshot />
     if (view.kind === 'bank' && view.sub === 'timeseries')
       return <div className="placeholder-box">Time series coming next session.</div>
-    if (view.kind === 'area')
-      return <AreaDrill area={view.area} scope={scope} />
-    if (view.kind === 'audit')
-      return <div className="placeholder-box">Audit trail coming next session.</div>
+    if (view.kind === 'area') return <AreaDrill area={view.area} scope={scope} />
+    if (view.kind === 'audit') return <div className="placeholder-box">Audit trail coming next session.</div>
     return null
   }
+
+  /* Period preset pills */
+  const periodPills: { key: PresetKey; label: string }[] = [
+    { key: 'ytd', label: 'YTD' },
+    { key: 'last12', label: 'Last 12 mo' },
+    { key: 'q1-26', label: 'Q1 ’26' },
+    { key: 'q2-26', label: 'Q2 ’26' },
+    { key: 'full-26', label: 'Full 2026' },
+    { key: 'plan', label: 'Plan horizon' },
+    { key: 'custom', label: 'Custom' },
+  ]
+
+  const grainPills: { key: Grain; label: string }[] = [
+    { key: 'monthly', label: 'Monthly' },
+    { key: 'quarterly', label: 'Quarterly' },
+    { key: 'yearly', label: 'Yearly' },
+  ]
 
   return (
     <div className="shell">
       <div className="topbar">
-        <div className="brand">Cash Flow Dossier</div>
-        <div className="ctrl">
-          <label>Version</label>
-          <select value={primaryVersion} onChange={e => setUrl({ v: e.target.value })}>
-            {versions.map(v => <option key={v.version_code} value={v.version_code}>{v.version_code}</option>)}
-          </select>
+        {/* Row 1 — brand + as-of + period + grain (conditional) */}
+        <div className="topbar-row">
+          <div className="brand">Cash Flow Dossier</div>
+          <div className="asof-pill">Actuals · {asOfLabel}</div>
+          <div className="spacer" style={{ width: 12 }} />
+          <div className="ctrl"><label>Period</label></div>
+          <div className="pill-row">
+            {periodPills.map(p => (
+              <button key={p.key}
+                onClick={() => setUrl({ p: p.key, from: null, to: null })}
+                className={`pill-btn ${preset === p.key ? 'active' : ''}`}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {preset === 'custom' && (
+            <>
+              <select value={fromYM} onChange={e => setUrl({ from: e.target.value })}>
+                {ALL_MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <span style={{ color: 'var(--mute)' }}>→</span>
+              <select value={toYM} onChange={e => setUrl({ to: e.target.value })}>
+                {ALL_MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </>
+          )}
+          {showGrain && (
+            <>
+              <div className="ctrl" style={{ marginLeft: 'auto' }}><label>Grain</label></div>
+              <div className="pill-row">
+                {grainPills.map(p => (
+                  <button key={p.key}
+                    onClick={() => setUrl({ g: p.key })}
+                    className={`pill-btn ${grain === p.key ? 'active' : ''}`}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
-        <div className="ctrl">
-          <label>Compare</label>
-          <select value={compareVersion} onChange={e => setUrl({ c: e.target.value || null })}>
-            <option value="">None</option>
-            {versions.filter(v => v.version_code !== primaryVersion)
-              .map(v => <option key={v.version_code} value={v.version_code}>{v.version_code}</option>)}
-          </select>
+
+        {/* Row 2 — version + compare */}
+        <div className="topbar-row">
+          <div className="ctrl"><label>Version</label></div>
+          <div className="pill-row">
+            {versions.map(v => (
+              <button key={v.version_code}
+                onClick={() => setUrl({ v: v.version_code })}
+                className={`pill-btn ${primaryVersion === v.version_code ? 'active' : ''}`}>
+                {v.version_code}
+              </button>
+            ))}
+          </div>
+          <div className="ctrl" style={{ marginLeft: 16 }}><label>Compare</label></div>
+          <div className="pill-row">
+            <button onClick={() => setUrl({ c: null })}
+              className={`pill-btn ${compareVersion === '' ? 'active' : ''}`}>None</button>
+            {versions.filter(v => v.version_code !== primaryVersion).map(v => (
+              <button key={v.version_code}
+                onClick={() => setUrl({ c: v.version_code })}
+                className={`pill-btn ${compareVersion === v.version_code ? 'active' : ''}`}>
+                {v.version_code}
+              </button>
+            ))}
+            <button onClick={() => setUrl({ c: 'Actual' })}
+              className={`pill-btn ${compareVersion === 'Actual' ? 'active' : ''}`}>Actual</button>
+          </div>
         </div>
-        <div className="ctrl">
-          <label>From</label>
-          <select value={fromYM} onChange={e => setUrl({ from: e.target.value })}>
-            {ALL_MONTHS_2025_TO_2028.map(m => <option key={m.label} value={m.label}>{m.label}</option>)}
-          </select>
-        </div>
-        <div className="ctrl">
-          <label>To</label>
-          <select value={toYM} onChange={e => setUrl({ to: e.target.value })}>
-            {ALL_MONTHS_2025_TO_2028.map(m => <option key={m.label} value={m.label}>{m.label}</option>)}
-          </select>
-        </div>
-        <div className="spacer" />
-        <div className="user">{user?.email}</div>
-        <button className="signout" onClick={signOut}>Sign out</button>
       </div>
 
       <div className="leftnav">
-        {(['SUMMARY', 'BANK POSITION', 'AREAS', 'AUDIT'] as const).map(group => (
-          <div key={group}>
-            <div className="group">{group}</div>
-            {navItems.filter(n => n.group === group).map(n => (
-              <a key={`${group}-${n.label}`}
-                 className={`item ${isActive(n.view) ? 'active' : ''} ${n.placeholder ? 'placeholder' : ''}`}
-                 onClick={() => !n.placeholder && goto(n.view)}>
-                {n.label}{n.placeholder ? ' (soon)' : ''}
-              </a>
-            ))}
-          </div>
-        ))}
+        <div className="leftnav-scroll">
+          {(['SUMMARY', 'BANK POSITION', 'AREAS', 'AUDIT'] as const).map(group => (
+            <div key={group}>
+              <div className="group">{group}</div>
+              {navItems.filter(n => n.group === group).map(n => (
+                <a key={`${group}-${n.label}`}
+                   className={`item ${isActive(n.view) ? 'active' : ''} ${n.placeholder ? 'placeholder' : ''}`}
+                   onClick={() => !n.placeholder && goto(n.view)}>
+                  {n.label}{n.placeholder ? ' (soon)' : ''}
+                </a>
+              ))}
+            </div>
+          ))}
+        </div>
+        <div className="leftnav-footer">
+          <div className="user-email">{user?.email}</div>
+          <button className="signout" onClick={signOut}>Sign out</button>
+        </div>
       </div>
 
       <div className="content">{renderContent()}</div>
@@ -183,4 +304,6 @@ export type Scope = {
   fromYear: number; fromMonth: number; toYear: number; toMonth: number;
   areas: string[];
   lines: CfLine[];
+  latestActualYM: number;
+  grain: Grain;
 }

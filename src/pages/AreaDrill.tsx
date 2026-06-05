@@ -1,21 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { fetchActuals, fetchForecasts, type CfCell } from '@/lib/queries'
+import { fetchActuals, fetchForecasts, type CfCell, type CfLine } from '@/lib/queries'
 import { fmt, classNum } from '@/lib/format'
-import type { Scope } from './Dossier'
-
-type Grain = 'monthly' | 'quarterly' | 'yearly'
+import type { Scope, Grain } from './Dossier'
 
 export default function AreaDrill({ area, scope }: { area: string; scope: Scope }) {
   const [actuals, setActuals] = useState<(CfCell & { source_version: string })[]>([])
   const [forecasts, setForecasts] = useState<(CfCell & { version: string })[]>([])
   const [loading, setLoading] = useState(true)
-
-  // Smart default grain based on period span
-  const monthSpan = (scope.toYear * 12 + scope.toMonth) - (scope.fromYear * 12 + scope.fromMonth) + 1
-  const defaultGrain: Grain = monthSpan <= 18 ? 'monthly' : monthSpan <= 36 ? 'quarterly' : 'yearly'
-  const [grain, setGrain] = useState<Grain>(defaultGrain)
-
-  useEffect(() => { setGrain(defaultGrain) }, [scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth])
 
   useEffect(() => {
     let cancel = false
@@ -35,157 +26,183 @@ export default function AreaDrill({ area, scope }: { area: string; scope: Scope 
     return () => { cancel = true }
   }, [area, scope.primaryVersion, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth])
 
-  // Column buckets based on grain
-  const columns = useMemo(() => {
-    const cols: { key: string; label: string; matches: (y: number, m: number) => boolean; isActual: (y: number, m: number) => boolean }[] = []
-    // Build a list of (year, month) months in scope
-    const months: { y: number; m: number }[] = []
-    for (let y = scope.fromYear; y <= scope.toYear; y++) {
-      const startM = y === scope.fromYear ? scope.fromMonth : 1
-      const endM = y === scope.toYear ? scope.toMonth : 12
-      for (let m = startM; m <= endM; m++) months.push({ y, m })
-    }
-
-    // Determine as_of cutover from actuals data: max year-month present in actuals
-    const asOfYM = actuals.reduce((mx, c) => Math.max(mx, c.year * 100 + c.month), 0)
-
-    if (grain === 'monthly') {
-      months.forEach(({ y, m }) => {
-        const ym = y * 100 + m
-        cols.push({
-          key: `${y}-${m}`,
-          label: `${String(y).slice(2)} ${String(m).padStart(2, '0')}`,
-          matches: (yy, mm) => yy === y && mm === m,
-          isActual: () => ym <= asOfYM,
-        })
-      })
-    } else if (grain === 'quarterly') {
-      const quarters = new Map<string, { y: number; q: number }>()
-      months.forEach(({ y, m }) => {
-        const q = Math.ceil(m / 3)
-        quarters.set(`${y}-Q${q}`, { y, q })
-      })
-      ;[...quarters.entries()].forEach(([key, { y, q }]) => {
-        cols.push({
-          key,
-          label: `${String(y).slice(2)} Q${q}`,
-          matches: (yy, mm) => yy === y && Math.ceil(mm / 3) === q,
-          isActual: () => (y * 100 + q * 3) <= asOfYM,
-        })
-      })
-    } else {
-      // yearly
-      const years = new Set(months.map(x => x.y))
-      ;[...years].sort().forEach(y => {
-        cols.push({
-          key: `${y}`,
-          label: `${y}`,
-          matches: (yy, _mm) => yy === y,
-          isActual: () => (y * 100 + 12) <= asOfYM,
-        })
-      })
-    }
-
-    return cols
-  }, [grain, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth, actuals])
-
   if (loading) return <div className="placeholder-box">Loading {area}…</div>
-
-  // Group lines by category, then list
-  const linesByCategory = new Map<string, typeof scope.lines>()
-  scope.lines.filter(l => l.is_active).sort((a, b) => a.sort_order - b.sort_order).forEach(l => {
-    const key = `${l.nature} · ${l.category}`
-    if (!linesByCategory.has(key)) linesByCategory.set(key, [])
-    linesByCategory.get(key)!.push(l)
-  })
-
-  // Build cell value lookup
-  const valueOf = (line_code: string, year: number, month: number) => {
-    // Actual takes precedence over forecast for the same cell
-    const a = actuals.find(c => c.line_code === line_code && c.year === year && c.month === month)
-    if (a) return { v: a.value, isActual: true }
-    const f = forecasts.find(c => c.line_code === line_code && c.year === year && c.month === month)
-    if (f) return { v: f.value, isActual: false }
-    return { v: null as number | null, isActual: false }
-  }
-
-  const colSum = (line_code: string, col: typeof columns[0]) => {
-    let sum: number | null = null
-    let touched = false
-    actuals.concat(forecasts as any).forEach((c: any) => {
-      if (c.line_code !== line_code) return
-      if (!col.matches(c.year, c.month)) return
-      sum = (sum ?? 0) + c.value
-      touched = true
-    })
-    return touched ? sum : null
-  }
 
   return (
     <div>
       <h1>{area}</h1>
-      <div className="sub">
-        Full cash structure. Tinted cells = Actual; white cells = Forecast.
-        {' · '}Period {scope.fromYear}-{String(scope.fromMonth).padStart(2, '0')} → {scope.toYear}-{String(scope.toMonth).padStart(2, '0')}
-        {' · '}Forecast version <b>{scope.primaryVersion}</b>{' · USD K'}
-        <span style={{ marginLeft: 16 }}>
-          Grain:{' '}
-          {(['monthly', 'quarterly', 'yearly'] as Grain[]).map(g => (
-            <button key={g}
-              onClick={() => setGrain(g)}
-              style={{
-                border: 'none', background: grain === g ? 'var(--crimson)' : 'transparent',
-                color: grain === g ? 'white' : 'var(--mute)',
-                padding: '2px 8px', borderRadius: 3, cursor: 'pointer', marginRight: 4, fontSize: 12,
-              }}>
-              {g}
-            </button>
-          ))}
-        </span>
-      </div>
-
-      <div style={{ overflowX: 'auto' }}>
-        <table className="cf-table" style={{ minWidth: 800 }}>
-          <thead>
-            <tr>
-              <th className="label" style={{ minWidth: 240, position: 'sticky', left: 0, background: 'var(--surface-alt)' }}>Line</th>
-              {columns.map(c => (
-                <th key={c.key} className={c.isActual(0, 0) ? 'cell actual' : 'cell forecast'}>{c.label}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {[...linesByCategory.entries()].map(([cat, lines]) => (
-              <CategoryRows key={cat} cat={cat} lines={lines} columns={columns} colSum={colSum} />
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <div style={{ height: 16 }} />
+      <AreaCategoryCards
+        actuals={actuals}
+        forecasts={forecasts}
+        lines={scope.lines}
+        grain={scope.grain}
+        scope={scope}
+      />
     </div>
   )
 }
 
-function CategoryRows({ cat, lines, columns, colSum }: any) {
+/* Renders the cash-structure category cards for one area's data.
+ * Reused on the All Areas page (one block per area). */
+export function AreaCategoryCards({
+  actuals, forecasts, lines, grain, scope,
+}: {
+  actuals: CfCell[];
+  forecasts: CfCell[];
+  lines: CfLine[];
+  grain: Grain;
+  scope: Pick<Scope, 'fromYear' | 'fromMonth' | 'toYear' | 'toMonth' | 'latestActualYM'>;
+}) {
+  // Group active lines by (nature, category)
+  const groups = useMemo(() => {
+    const g = new Map<string, { nature: string; category: string; lines: CfLine[] }>()
+    lines.filter(l => l.is_active)
+         .sort((a, b) => a.sort_order - b.sort_order)
+         .forEach(l => {
+           const key = `${l.nature}|${l.category}`
+           if (!g.has(key)) g.set(key, { nature: l.nature, category: l.category, lines: [] })
+           g.get(key)!.lines.push(l)
+         })
+    return [...g.values()]
+  }, [lines])
+
+  // Period columns based on grain
+  const columns = useMemo(() => buildColumns(grain, scope, scope.latestActualYM), [grain, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth, scope.latestActualYM])
+
+  const colSum = (line_code: string, matches: (y: number, m: number) => boolean) => {
+    let sum: number | null = null
+    actuals.forEach(c => {
+      if (c.line_code !== line_code) return
+      if (!matches(c.year, c.month)) return
+      sum = (sum ?? 0) + c.value
+    })
+    forecasts.forEach(c => {
+      if (c.line_code !== line_code) return
+      if (!matches(c.year, c.month)) return
+      sum = (sum ?? 0) + c.value
+    })
+    return sum
+  }
+
+  const catTotal = (lineCodes: string[], matches: (y: number, m: number) => boolean) => {
+    let t = 0; let touched = false
+    lineCodes.forEach(lc => {
+      const s = colSum(lc, matches)
+      if (s != null) { t += s; touched = true }
+    })
+    return touched ? t : null
+  }
+
   return (
-    <>
-      <tr style={{ background: 'var(--surface-alt)' }}>
-        <td className="label" colSpan={columns.length + 1} style={{ fontWeight: 500, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--mute)' }}>
-          {cat}
-        </td>
-      </tr>
-      {lines.map((l: any) => (
-        <tr key={l.line_code}>
-          <td className="label">{l.description}</td>
-          {columns.map((col: any) => {
-            const v = colSum(l.line_code, col)
-            return (
-              <td key={col.key} className={`${classNum(v)} ${col.isActual(0,0) ? 'cell actual' : 'cell forecast'}`}>
-                {v == null ? '' : fmt(v)}
-              </td>
-            )
-          })}
-        </tr>
-      ))}
-    </>
+    <div>
+      {groups.map(grp => {
+        const natureClass = `nature-${grp.nature.toLowerCase()}`
+        const periodTotal = catTotal(grp.lines.map(l => l.line_code), () => true) || 0
+        return (
+          <div key={`${grp.nature}|${grp.category}`} className="cat-group">
+            <div className={`cat-group-header ${natureClass}`}>
+              <span>{grp.nature} · {grp.category}</span>
+              <span className="cat-totals">Period total: {fmt(periodTotal)}</span>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="cf-table">
+                <thead>
+                  <tr>
+                    <th className="label" style={{ minWidth: 220, position: 'sticky', left: 0, background: 'var(--surface)' }}>Line</th>
+                    {columns.map(c => (
+                      <th key={c.key} className={c.isActual ? 'cell actual' : 'cell forecast'}>{c.label}</th>
+                    ))}
+                    <th className={c2(grp.nature)}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {grp.lines.map(l => {
+                    const rowTotal = colSum(l.line_code, () => true)
+                    return (
+                      <tr key={l.line_code}>
+                        <td className="label">{l.description}</td>
+                        {columns.map(col => {
+                          const v = colSum(l.line_code, col.matches)
+                          return (
+                            <td key={col.key} className={`${classNum(v)} ${col.isActual ? 'cell actual' : 'cell forecast'}`}>
+                              {v == null ? '' : fmt(v)}
+                            </td>
+                          )
+                        })}
+                        <td className={`${classNum(rowTotal)} total`} style={{ fontWeight: 500 }}>
+                          {rowTotal == null ? '' : fmt(rowTotal)}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                  <tr className="total">
+                    <td className="label">Subtotal</td>
+                    {columns.map(col => {
+                      const v = catTotal(grp.lines.map(l => l.line_code), col.matches)
+                      return (
+                        <td key={col.key} className={`${classNum(v)}`}>
+                          {v == null ? '' : fmt(v)}
+                        </td>
+                      )
+                    })}
+                    <td className={classNum(periodTotal)}>{fmt(periodTotal)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )
+      })}
+    </div>
   )
+}
+
+function c2(_nature: string) { return '' }
+
+export function buildColumns(grain: Grain, scope: Pick<Scope, 'fromYear' | 'fromMonth' | 'toYear' | 'toMonth'>, asOfYM: number) {
+  const cols: { key: string; label: string; matches: (y: number, m: number) => boolean; isActual: boolean }[] = []
+  const months: { y: number; m: number }[] = []
+  for (let y = scope.fromYear; y <= scope.toYear; y++) {
+    const startM = y === scope.fromYear ? scope.fromMonth : 1
+    const endM = y === scope.toYear ? scope.toMonth : 12
+    for (let m = startM; m <= endM; m++) months.push({ y, m })
+  }
+
+  if (grain === 'monthly') {
+    months.forEach(({ y, m }) => {
+      const ym = y * 100 + m
+      cols.push({
+        key: `${y}-${m}`,
+        label: `${String(y).slice(2)}-${String(m).padStart(2, '0')}`,
+        matches: (yy, mm) => yy === y && mm === m,
+        isActual: ym <= asOfYM,
+      })
+    })
+  } else if (grain === 'quarterly') {
+    const seen = new Set<string>()
+    months.forEach(({ y, m }) => {
+      const q = Math.ceil(m / 3)
+      const key = `${y}-Q${q}`
+      if (seen.has(key)) return
+      seen.add(key)
+      cols.push({
+        key,
+        label: `${String(y).slice(2)} Q${q}`,
+        matches: (yy, mm) => yy === y && Math.ceil(mm / 3) === q,
+        isActual: (y * 100 + q * 3) <= asOfYM,
+      })
+    })
+  } else {
+    const years = new Set(months.map(x => x.y))
+    ;[...years].sort().forEach(y => {
+      cols.push({
+        key: `${y}`,
+        label: `${y}`,
+        matches: yy => yy === y,
+        isActual: (y * 100 + 12) <= asOfYM,
+      })
+    })
+  }
+  return cols
 }

@@ -29,7 +29,7 @@ body, html, #root {
 .shell {
   display: grid;
   grid-template-columns: 220px 1fr;
-  grid-template-rows: 56px 1fr;
+  grid-template-rows: auto 1fr;
   height: 100vh;
   grid-template-areas:
     "topbar topbar"
@@ -41,21 +41,83 @@ body, html, #root {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   display: flex;
+  flex-direction: column;
+  padding: 10px 18px 12px;
+  gap: 10px;
+}
+.topbar-row {
+  display: flex;
   align-items: center;
-  padding: 0 16px;
-  gap: 16px;
+  gap: 14px;
+  flex-wrap: wrap;
 }
 .topbar .brand {
   font-weight: 500;
   color: var(--crimson);
   letter-spacing: 0.02em;
-  margin-right: 12px;
+  font-size: 15px;
 }
 .topbar .ctrl {
   display: flex; align-items: center; gap: 6px;
-  font-size: 13px;
+  font-size: 12px;
 }
-.topbar .ctrl label { color: var(--mute); }
+.topbar .ctrl label {
+  color: var(--mute);
+  text-transform: uppercase;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  font-weight: 500;
+}
+.asof-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--charcoal);
+  border-radius: 12px;
+  background: var(--charcoal);
+  color: white;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+.asof-pill::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #4ade80;
+}
+
+/* Pill bars */
+.pill-row {
+  display: inline-flex;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px;
+  gap: 0;
+}
+.pill-btn {
+  background: transparent;
+  border: none;
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  color: var(--charcoal);
+  font-family: inherit;
+  white-space: nowrap;
+}
+.pill-btn:hover { background: rgba(0,0,0,0.04); }
+.pill-btn.active {
+  background: var(--crimson);
+  color: white;
+  font-weight: 500;
+}
+.pill-btn.active:hover { background: #b80020; }
+.pill-btn.placeholder { color: var(--mute); cursor: default; }
+
 .topbar select, .topbar input[type=range] {
   background: var(--surface-alt);
   border: 1px solid var(--border);
@@ -81,9 +143,36 @@ body, html, #root {
   grid-area: leftnav;
   background: var(--surface);
   border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.leftnav-scroll {
+  flex: 1;
   overflow-y: auto;
   padding: 12px 0;
 }
+.leftnav-footer {
+  border-top: 1px solid var(--border);
+  padding: 10px 16px;
+  font-size: 12px;
+}
+.leftnav-footer .user-email {
+  color: var(--mute);
+  margin-bottom: 8px;
+  word-break: break-all;
+  font-size: 11.5px;
+}
+.leftnav-footer .signout {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  width: 100%;
+}
+.leftnav-footer .signout:hover { background: var(--surface-alt); }
 .leftnav .group {
   font-size: 11px;
   font-weight: 500;
@@ -159,6 +248,80 @@ body, html, #root {
 
 .cell.actual { background: var(--actual-tint); }
 .cell.forecast { background: var(--forecast-tint); }
+
+/* Category-grouped sections for Area drill + All Areas */
+.cat-group {
+  margin-top: 20px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.cat-group:first-of-type { margin-top: 0; }
+.cat-group-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--charcoal);
+}
+.cat-group-header.nature-receipts { border-left: 3px solid var(--good); }
+.cat-group-header.nature-payments { border-left: 3px solid var(--bad); }
+.cat-group-header.nature-balance  { border-left: 3px solid var(--mute); }
+.cat-group-header .cat-totals {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--mute);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.cat-group .cf-table {
+  border: none;
+  border-radius: 0;
+}
+.cat-group .cf-table th { background: var(--surface); }
+
+/* Area card on All Areas page */
+.area-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+.area-card-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-alt);
+  cursor: pointer;
+}
+.area-card-header:hover { background: #ececec; }
+.area-card-header .area-name {
+  font-weight: 500;
+  font-size: 14px;
+  flex: 1;
+}
+.area-card-header .area-mini {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+}
+.area-card-header .area-mini .mini-item {
+  display: flex; flex-direction: column;
+}
+.area-card-header .area-mini .mini-item .ml { font-size: 10px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.04em; }
+.area-card-header .chevron { color: var(--mute); transition: transform 0.15s; }
+.area-card-header.expanded .chevron { transform: rotate(90deg); }
+.area-card-body { padding: 14px 16px 18px; }
 
 /* Recon pills */
 .pill {
