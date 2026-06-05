@@ -30,9 +30,15 @@ export default function AllAreas({ scope }: { scope: Scope }) {
     return () => { cancel = true }
   }, [scope.primaryVersion, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth])
 
-  const selectedSet = useMemo(() => new Set(scope.selectedAreas), [scope.selectedAreas])
-  const filteredActuals = useMemo(() => actuals.filter(r => selectedSet.has(r.area)), [actuals, selectedSet])
-  const filteredForecasts = useMemo(() => forecasts.filter(r => selectedSet.has(r.area)), [forecasts, selectedSet])
+  /* Each canonical area carries the cf_areas it folds; union them into one
+   * lookup set so cf_actuals rows resolve to "selected or not" in one pass. */
+  const cfAreaAllowed = useMemo(() => {
+    const set = new Set<string>()
+    for (const a of scope.selectedAreas) for (const cf of a.cf_areas) set.add(cf)
+    return set
+  }, [scope.selectedAreas])
+  const filteredActuals = useMemo(() => actuals.filter(r => cfAreaAllowed.has(r.area)), [actuals, cfAreaAllowed])
+  const filteredForecasts = useMemo(() => forecasts.filter(r => cfAreaAllowed.has(r.area)), [forecasts, cfAreaAllowed])
 
   if (loading) return <div className="placeholder-box">Loading…</div>
 

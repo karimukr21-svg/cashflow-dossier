@@ -38,20 +38,22 @@ export default function Overall({ scope }: { scope: Scope }) {
         const lineKind = new Map(scope.lines.map(l => [l.line_code, l.nature]))
         let t: Totals = { receiptsAct: 0, receiptsFct: 0, paymentsAct: 0, paymentsFct: 0, netAct: 0, netFct: 0 }
         const perArea = new Map<string, AreaRow>()
-        const getArea = (a: string) => {
-          if (!perArea.has(a)) perArea.set(a, { area: a, receiptsTotal: 0, paymentsTotal: 0, net: 0 })
-          return perArea.get(a)!
+        const getArea = (areaId: string, label: string) => {
+          if (!perArea.has(areaId)) perArea.set(areaId, { area: label, receiptsTotal: 0, paymentsTotal: 0, net: 0 })
+          return perArea.get(areaId)!
         }
 
         actuals.forEach(c => {
           const k = lineKind.get(c.line_code)
-          const r = getArea(c.area)
+          const ca = scope.cfToCanonical.get(c.area); if (!ca) return
+          const r = getArea(ca.area_id, ca.display_name)
           if (k === 'Receipts') { t.receiptsAct += c.value; r.receiptsTotal += c.value }
           else if (k === 'Payments') { t.paymentsAct += c.value; r.paymentsTotal += c.value }
         })
         forecasts.forEach(c => {
           const k = lineKind.get(c.line_code)
-          const r = getArea(c.area)
+          const ca = scope.cfToCanonical.get(c.area); if (!ca) return
+          const r = getArea(ca.area_id, ca.display_name)
           if (k === 'Receipts') { t.receiptsFct += c.value; r.receiptsTotal += c.value }
           else if (k === 'Payments') { t.paymentsFct += c.value; r.paymentsTotal += c.value }
         })
@@ -69,7 +71,9 @@ export default function Overall({ scope }: { scope: Scope }) {
         const od = bp.rows.filter(r => r.account.toLowerCase() === 'overdrafts').reduce((s, r) => s + r.balance, 0)
         setBank({ period: bp.period, cash, loans, od, net: cash + loans + od })
 
-        // Reconciliation pass — per area-year in the actual period
+        /* Reconciliation pass — per (cf_area, year). Done at the cf-area
+         * grain because that's where the opening/ending balance integrity
+         * applies, then display labels resolve through cfToCanonical. */
         const openingByAreaYear = new Map<string, number>()
         const closingByAreaYear = new Map<string, { val: number; ym: number }>()
         const flowsByAreaYear = new Map<string, number>()
@@ -94,7 +98,12 @@ export default function Overall({ scope }: { scope: Scope }) {
           if (closing == null) return
           const delta = (opening + flow) - closing.val
           if (Math.abs(delta) <= 1) ok += 1
-          else { bad += 1; const [a, y] = k.split('|'); badRows.push({ area: a, year: +y, delta }) }
+          else {
+            bad += 1
+            const [cfArea, y] = k.split('|')
+            const ca = scope.cfToCanonical.get(cfArea)
+            if (ca) badRows.push({ area: ca.display_name, year: +y, delta })
+          }
         })
         setReconStatus({ ok, bad, rows: badRows.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 5) })
       } finally {

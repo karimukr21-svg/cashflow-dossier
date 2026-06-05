@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/lib/auth'
 import {
-  fetchAreas, fetchVersions, fetchLines, fetchActuals,
-  type CfVersion, type CfLine,
+  fetchCanonicalAreas, fetchVersions, fetchLines, fetchActuals,
+  type CfVersion, type CfLine, type CanonicalArea, type AreaGroup,
 } from '@/lib/queries'
 import TreasuryMovements from './TreasuryMovements'
 import AreaDrill from './AreaDrill'
@@ -85,7 +85,7 @@ export default function Dossier() {
   const view = parseView(sp)
 
   const [versions, setVersions] = useState<CfVersion[]>([])
-  const [areas, setAreas] = useState<string[]>([])
+  const [areas, setAreas] = useState<CanonicalArea[]>([])
   const [lines, setLines] = useState<CfLine[]>([])
   const [latestActualYM, setLatestActualYM] = useState<number>(202604) // fallback
   const [loadingCatalog, setLoadingCatalog] = useState(true)
@@ -93,11 +93,11 @@ export default function Dossier() {
   useEffect(() => {
     (async () => {
       try {
-        const [v, a, l] = await Promise.all([fetchVersions(), fetchAreas(), fetchLines()])
+        const [v, a, l] = await Promise.all([fetchVersions(), fetchCanonicalAreas(), fetchLines()])
         setVersions(v)
         setAreas(a)
         setLines(l)
-        // Find latest actual month from a cheap query
+        // Find latest actual month from a cheap query (whole-period, no cf filter)
         const sample = await fetchActuals({ fromYear: 2024, fromMonth: 1, toYear: 2030, toMonth: 12 })
         const max = sample.reduce((m, c) => Math.max(m, ymToInt(c.year, c.month)), 0)
         if (max) setLatestActualYM(max)
@@ -149,9 +149,11 @@ export default function Dossier() {
   const [showCustom, setShowCustom] = useState(false)
   const [showAreaFilter, setShowAreaFilter] = useState(false)
 
-  /* All Areas page filter — stores EXCLUDED area names so newly-added
-   * areas default in without Karim having to re-tick them. */
-  const ALLAREAS_EXCLUDED_KEY = 'dossier-allareas-excluded-v1'
+  /* All Areas page filter — stores EXCLUDED canonical area_ids so newly-added
+   * areas default in without Karim having to re-tick them. Bumped to v2
+   * because semantics changed from cf strings to canonical area_ids when the
+   * dossier flipped to public.areas as source of truth (2026-06-05). */
+  const ALLAREAS_EXCLUDED_KEY = 'dossier-allareas-excluded-v2'
   const [excludedAreas, setExcludedAreas] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem(ALLAREAS_EXCLUDED_KEY)
@@ -162,9 +164,27 @@ export default function Dossier() {
     setExcludedAreas(next)
     try { localStorage.setItem(ALLAREAS_EXCLUDED_KEY, JSON.stringify([...next])) } catch {}
   }
-  const selectedAreas = areas.filter(a => !excludedAreas.has(a))
+  const selectedAreas = areas.filter(a => !excludedAreas.has(a.area_id))
 
-  const navItems: { label: string; group: string; view: View; placeholder?: boolean }[] = [
+  /* The area nav groups by canonical group_name so Operations,
+   * Subsidiaries, and Corporate (the "area items" — MOA / EPSO / Cyprus /
+   * Others) read distinctly. The dossier-level fallback group label is
+   * uppercased for visual parity with SUMMARY / BANK POSITION. */
+  const AREA_GROUP_LABEL: Record<AreaGroup, string> = {
+    Operations: 'OPERATIONS',
+    Subsidiaries: 'SUBSIDIARIES',
+    Corporate: 'AREA ITEMS',     // Karim's read: Corporate rows are non-territorial line holders
+    Contingency: 'CONTINGENCY',
+  }
+  const areaNavGroups: { label: string; group: AreaGroup }[] = []
+  for (const g of ['Operations', 'Subsidiaries', 'Corporate', 'Contingency'] as AreaGroup[]) {
+    if (areas.some(a => a.group_name === g)) {
+      areaNavGroups.push({ label: AREA_GROUP_LABEL[g], group: g })
+    }
+  }
+
+  type NavItem = { label: string; group: string; view: View; placeholder?: boolean; area?: CanonicalArea }
+  const navItems: NavItem[] = [
     { group: 'SUMMARY', label: 'Overall',            view: { kind: 'summary', lens: 'overall' } },
     { group: 'SUMMARY', label: 'Treasury Movements', view: { kind: 'summary', lens: 'treasury' } },
     { group: 'SUMMARY', label: 'Loans & Overdrafts', view: { kind: 'summary', lens: 'loans' } },
@@ -172,8 +192,18 @@ export default function Dossier() {
     { group: 'SUMMARY', label: 'All Areas',          view: { kind: 'summary', lens: 'allareas' } },
     { group: 'BANK POSITION', label: 'Snapshot',     view: { kind: 'bank', sub: 'snapshot' } },
     { group: 'BANK POSITION', label: 'Time Series',  view: { kind: 'bank', sub: 'timeseries' }, placeholder: true },
-    ...areas.map(a => ({ group: 'AREAS', label: a, view: { kind: 'area' as const, area: a } })),
+    ...areas.map(a => ({
+      group: AREA_GROUP_LABEL[a.group_name],
+      label: a.display_name,
+      view: { kind: 'area' as const, area: a.area_id },
+      area: a,
+    })),
     { group: 'AUDIT', label: 'Audit Trail', view: { kind: 'audit' }, placeholder: true },
+  ]
+  const navGroupOrder: string[] = [
+    'SUMMARY', 'BANK POSITION',
+    ...areaNavGroups.map(g => g.label),
+    'AUDIT',
   ]
 
   const goto = (v: View) => {
@@ -199,11 +229,16 @@ export default function Dossier() {
     if (loadingCatalog) return <div className="placeholder-box">Loading…</div>
     if (!primaryVersion) return <div className="placeholder-box">No version available.</div>
 
+    /* cfToCanonical lets every page resolve a Tony cf-area string to its
+     * canonical area in O(1). Built once per render from scope.areas. */
+    const cfToCanonical = new Map<string, CanonicalArea>()
+    for (const a of areas) for (const cf of a.cf_areas) cfToCanonical.set(cf, a)
+
     const scope = {
       primaryVersion, compareVersion,
       fromYear: fy, fromMonth: fm, toYear: ty, toMonth: tm,
       areas, lines, latestActualYM, grain, groupBy,
-      selectedAreas,
+      selectedAreas, cfToCanonical,
     }
 
     if (view.kind === 'summary') {
@@ -340,12 +375,13 @@ export default function Dossier() {
           excluded={excludedAreas}
           onChange={updateExcluded}
           onClose={() => setShowAreaFilter(false)}
+          groupLabels={AREA_GROUP_LABEL}
         />
       )}
 
       <div className="leftnav">
         <div className="leftnav-scroll">
-          {(['SUMMARY', 'BANK POSITION', 'AREAS', 'AUDIT'] as const).map(group => (
+          {navGroupOrder.map(group => (
             <div key={group}>
               <div className="group">{group}</div>
               {navItems.filter(n => n.group === group).map(n => (
@@ -373,12 +409,19 @@ export type Scope = {
   primaryVersion: string;
   compareVersion: string;
   fromYear: number; fromMonth: number; toYear: number; toMonth: number;
-  areas: string[];
+  /* Canonical areas (public.areas joined with public.cashflow_sheets).
+   * Each row carries the cf_areas list — Tony's labels in cf_actuals.area
+   * that fold into this canonical area. */
+  areas: CanonicalArea[];
   lines: CfLine[];
   latestActualYM: number;
   grain: Grain;
   groupBy: GroupBy;
   /* Areas selected for aggregation on the All Areas view. Other views
    * read `areas` directly and ignore this. */
-  selectedAreas: string[];
+  selectedAreas: CanonicalArea[];
+  /* Tony cf-area string → canonical area (every cf row in cf_actuals /
+   * cf_forecasts can be resolved through this in O(1)). cf strings not
+   * in the bridge (orphans) return undefined and should be skipped. */
+  cfToCanonical: Map<string, CanonicalArea>;
 }

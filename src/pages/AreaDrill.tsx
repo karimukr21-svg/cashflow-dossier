@@ -3,19 +3,27 @@ import { fetchActuals, fetchForecasts, type CfCell, type CfLine } from '@/lib/qu
 import { fmt, classNum } from '@/lib/format'
 import type { Scope, Grain, GroupBy } from './Dossier'
 
+/* `area` is now the canonical area_id (e.g. 'KSA', 'ACR', 'CYP'). The
+ * cf_areas list — Tony's labels in cf_actuals.area that fold into this
+ * canonical area — comes from scope.areas[area_id]. */
 export default function AreaDrill({ area, scope }: { area: string; scope: Scope }) {
   const [actuals, setActuals] = useState<(CfCell & { source_version: string })[]>([])
   const [forecasts, setForecasts] = useState<(CfCell & { version: string })[]>([])
   const [loading, setLoading] = useState(true)
 
+  const canonical = scope.areas.find(a => a.area_id === area)
+  const cfAreas = canonical?.cf_areas || []
+  const titleLabel = canonical?.display_name || area
+
   useEffect(() => {
+    if (cfAreas.length === 0) { setActuals([]); setForecasts([]); setLoading(false); return }
     let cancel = false
     setLoading(true)
     ;(async () => {
       try {
         const [a, f] = await Promise.all([
-          fetchActuals({ fromYear: scope.fromYear, fromMonth: scope.fromMonth, toYear: scope.toYear, toMonth: scope.toMonth, area }),
-          fetchForecasts({ version: scope.primaryVersion, fromYear: scope.fromYear, fromMonth: scope.fromMonth, toYear: scope.toYear, toMonth: scope.toMonth, area }),
+          fetchActuals({ fromYear: scope.fromYear, fromMonth: scope.fromMonth, toYear: scope.toYear, toMonth: scope.toMonth, cfAreas }),
+          fetchForecasts({ version: scope.primaryVersion, fromYear: scope.fromYear, fromMonth: scope.fromMonth, toYear: scope.toYear, toMonth: scope.toMonth, cfAreas }),
         ])
         if (cancel) return
         setActuals(a); setForecasts(f)
@@ -24,13 +32,19 @@ export default function AreaDrill({ area, scope }: { area: string; scope: Scope 
       }
     })()
     return () => { cancel = true }
-  }, [area, scope.primaryVersion, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth])
+  }, [area, scope.primaryVersion, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth, cfAreas.join('|')])
 
-  if (loading) return <div className="placeholder-box">Loading {area}…</div>
+  if (loading) return <div className="placeholder-box">Loading {titleLabel}…</div>
+  if (!canonical) return <div className="placeholder-box">Unknown area: {area}</div>
 
   return (
     <div>
-      <h1>{area}</h1>
+      <h1>{titleLabel}</h1>
+      {cfAreas.length > 1 && (
+        <div style={{ marginTop: 4, color: 'var(--mute)', fontSize: 13 }}>
+          Folding {cfAreas.length} source rows: {cfAreas.join(' · ')}.
+        </div>
+      )}
       <div style={{ height: 16 }} />
       <AreaCategoryCards
         actuals={actuals}

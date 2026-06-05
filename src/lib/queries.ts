@@ -1,11 +1,15 @@
 import { supabase } from './supabase'
 
-/* Areas that exist in cf_actuals / cf_forecasts but are not part of the
- * dossier's active scope (historical or out-of-scope per Karim 2026-06-05).
- * Filtered at the source so they never reach the nav, summaries, or
- * area-level aggregates. */
-const DROPPED_AREAS = new Set<string>(['CCEL', 'Sicon'])
-export const isActiveArea = (a: string) => !DROPPED_AREAS.has(a)
+/* The dossier's source of truth for area structure is now public.areas +
+ * public.cashflow_sheets (canonical work-dashboard tables). cf_actuals.area
+ * values are Tony's labels and only enter the dossier through that bridge.
+ *
+ * - public.areas — canonical area_id + display_name + group_name + sort_order
+ * - public.cashflow_sheets — per-sheet rows carrying cf_area + area_id FK;
+ *   we collapse to (cf_area → area_id) for the dossier's purposes
+ *
+ * Areas with no row in cashflow_sheets are excluded automatically (this
+ * subsumes the old DROPPED_AREAS list: CCEL/Sicon were never mapped). */
 
 export type CfLine = {
   line_code: string
@@ -70,55 +74,110 @@ export async function fetchVersions(): Promise<CfVersion[]> {
   return data as CfVersion[]
 }
 
-/** Distinct areas across actuals + forecasts (alphabetical, drops historical) */
-export async function fetchAreas(): Promise<string[]> {
-  const [actRes, fcRes] = await Promise.all([
-    supabase.from('cf_actuals').select('area'),
-    supabase.from('cf_forecasts').select('area'),
-  ])
-  if (actRes.error) throw actRes.error
-  if (fcRes.error) throw fcRes.error
-  const set = new Set<string>()
-  ;(actRes.data || []).forEach(r => { if (isActiveArea(r.area)) set.add(r.area) })
-  ;(fcRes.data || []).forEach(r => { if (isActiveArea(r.area)) set.add(r.area) })
-  return [...set].sort()
+/* ── Canonical area structure ─────────────────────────────────────────── */
+
+export type AreaGroup = 'Operations' | 'Subsidiaries' | 'Corporate' | 'Contingency'
+
+export type CanonicalArea = {
+  area_id: string         // 'KSA' | 'ACR' | 'CYP' | …
+  area_name: string       // 'SAUDI ARABIA' | 'A&C' | 'CYPRUS' | …
+  display_name: string    // public.areas.display_name || area_name
+  group_name: AreaGroup
+  sort_order: number
+  /** Tony's cf labels that map to this canonical area. cf_actuals.area
+   *  values match one of these strings. */
+  cf_areas: string[]
 }
 
-/** All actuals in the period scope (filters month client-side). */
+/** Canonical areas that have at least one cashflow_sheets mapping.
+ *  Result is sorted by (group_name → sort_order → area_name) and ready
+ *  to drive the nav, the All-Areas filter popover, and aggregation keys.
+ *
+ *  group_name order is fixed to OPERATIONS → SUBSIDIARIES → CORPORATE →
+ *  CONTINGENCY (Karim's preferred read), independent of alphabetic order. */
+const GROUP_ORDER: AreaGroup[] = ['Operations', 'Subsidiaries', 'Corporate', 'Contingency']
+const groupRank = (g: string) => {
+  const i = GROUP_ORDER.indexOf(g as AreaGroup)
+  return i < 0 ? 99 : i
+}
+
+export async function fetchCanonicalAreas(): Promise<CanonicalArea[]> {
+  const [areasRes, sheetsRes] = await Promise.all([
+    supabase.from('areas')
+      .select('area_id, area_name, display_name, group_name, sort_order, is_active, is_virtual')
+      .eq('is_active', true)
+      .eq('is_virtual', false),
+    supabase.from('cashflow_sheets')
+      .select('cf_area, area_id')
+      .not('area_id', 'is', null),
+  ])
+  if (areasRes.error) throw areasRes.error
+  if (sheetsRes.error) throw sheetsRes.error
+
+  // cf_area → area_id (sheets may carry the same cf_area many times; collapse)
+  const cfAreasByAreaId = new Map<string, Set<string>>()
+  for (const row of sheetsRes.data || []) {
+    if (!row.area_id || !row.cf_area) continue
+    if (!cfAreasByAreaId.has(row.area_id)) cfAreasByAreaId.set(row.area_id, new Set())
+    cfAreasByAreaId.get(row.area_id)!.add(row.cf_area)
+  }
+
+  const out: CanonicalArea[] = []
+  for (const a of areasRes.data || []) {
+    const cfSet = cfAreasByAreaId.get(a.area_id)
+    if (!cfSet || cfSet.size === 0) continue   // skip canonical rows with no cf mapping
+    out.push({
+      area_id: a.area_id,
+      area_name: a.area_name,
+      display_name: a.display_name || a.area_name,
+      group_name: a.group_name as AreaGroup,
+      sort_order: a.sort_order ?? 99,
+      cf_areas: [...cfSet],
+    })
+  }
+  out.sort((x, y) =>
+    groupRank(x.group_name) - groupRank(y.group_name)
+    || x.sort_order - y.sort_order
+    || x.area_name.localeCompare(y.area_name))
+  return out
+}
+
+/** All actuals in the period scope. `cfAreas` filters by Tony's cf labels
+ *  (the canonical-area drill resolves area_id → cf_areas and passes those).
+ *  Pass undefined to fetch every cf_area. Month range trimmed client-side. */
 export async function fetchActuals(opts: {
   fromYear: number; fromMonth: number; toYear: number; toMonth: number;
-  area?: string;
+  cfAreas?: string[];
 }): Promise<(CfCell & { source_version: string })[]> {
   let q = supabase
     .from('cf_actuals')
     .select('area, line_code, year, month, value, source_version')
     .gte('year', opts.fromYear).lte('year', opts.toYear)
-  if (opts.area) q = q.eq('area', opts.area)
+  if (opts.cfAreas && opts.cfAreas.length > 0) q = q.in('area', opts.cfAreas)
   const { data, error } = await q
   if (error) throw error
   return (data || [])
     .filter(r => inRange(r, opts.fromYear, opts.fromMonth, opts.toYear, opts.toMonth))
-    .filter(r => opts.area ? true : isActiveArea(r.area))
     .map(r => ({ ...r, value: Number(r.value) }))
 }
 
-/** Forecast cells in the period scope for a given version */
+/** Forecast cells in the period scope for a given version. Same cfAreas
+ *  contract as fetchActuals. */
 export async function fetchForecasts(opts: {
   version: string;
   fromYear: number; fromMonth: number; toYear: number; toMonth: number;
-  area?: string;
+  cfAreas?: string[];
 }): Promise<(CfCell & { version: string })[]> {
   let q = supabase
     .from('cf_forecasts')
     .select('area, line_code, year, month, value, version')
     .eq('version', opts.version)
     .gte('year', opts.fromYear).lte('year', opts.toYear)
-  if (opts.area) q = q.eq('area', opts.area)
+  if (opts.cfAreas && opts.cfAreas.length > 0) q = q.in('area', opts.cfAreas)
   const { data, error } = await q
   if (error) throw error
   return (data || [])
     .filter(r => inRange(r, opts.fromYear, opts.fromMonth, opts.toYear, opts.toMonth))
-    .filter(r => opts.area ? true : isActiveArea(r.area))
     .map(r => ({ ...r, value: Number(r.value) }))
 }
 

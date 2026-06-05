@@ -37,51 +37,66 @@ export default function LoansOverdrafts({ scope }: { scope: Scope }) {
         if (cancel) return
 
         const map = new Map<string, Row>()
-        const get = (a: string) => {
-          if (!map.has(a)) map.set(a, {
-            area: a, loansNewActual: 0, loansNewForecast: 0,
+        const get = (areaId: string, label: string) => {
+          if (!map.has(areaId)) map.set(areaId, {
+            area: label, loansNewActual: 0, loansNewForecast: 0,
             loansRepaidActual: 0, loansRepaidForecast: 0, netMovement: 0,
             closingLoans: 0, closingOd: 0, closingTotalDebt: 0,
           })
-          return map.get(a)!
+          return map.get(areaId)!
         }
 
         // Loans drawn = Receipts; Loans repaid = -Payments (Payments are negative)
         actuals.forEach(c => {
-          const r = get(c.area)
+          const ca = scope.cfToCanonical.get(c.area); if (!ca) return
+          const r = get(ca.area_id, ca.display_name)
           if (c.line_code === recpLoans) r.loansNewActual += c.value
           if (c.line_code === payLoans) r.loansRepaidActual += -c.value
         })
         forecasts.forEach(c => {
-          const r = get(c.area)
+          const ca = scope.cfToCanonical.get(c.area); if (!ca) return
+          const r = get(ca.area_id, ca.display_name)
           if (c.line_code === recpLoans) r.loansNewForecast += c.value
           if (c.line_code === payLoans) r.loansRepaidForecast += -c.value
         })
 
-        // Closing balances: take the last cell in scope (highest year-month) per area per balance line.
-        const lastFor = (cells: any[], area: string, line: string) => {
-          let best: any = null
-          cells.forEach(c => {
-            if (c.area !== area || c.line_code !== line) return
-            if (!best || (c.year * 100 + c.month) > (best.year * 100 + best.month)) best = c
-          })
-          return best ? best.value : 0
-        }
+        /* Closing balances: take the last cell in scope per CANONICAL area
+         * (sum across cf_areas of that canonical) per balance line. */
         const allCells = [...actuals, ...forecasts]
-        ;[...new Set(allCells.map(c => c.area))].forEach(a => {
-          const r = get(a)
-          r.closingLoans = accumLoans ? lastFor(allCells, a, accumLoans) : 0
-          r.closingOd = accumOd ? lastFor(allCells, a, accumOd) : 0
+        const lastByAreaIdAndLine = (cells: any[], areaId: string, line: string) => {
+          // last month present at all → sum across cf_areas at that month
+          const targetCfAreas = scope.areas.find(a => a.area_id === areaId)?.cf_areas || []
+          if (targetCfAreas.length === 0) return 0
+          let bestYm = 0
+          for (const c of cells) {
+            if (!targetCfAreas.includes(c.area) || c.line_code !== line) continue
+            const ym = c.year * 100 + c.month
+            if (ym > bestYm) bestYm = ym
+          }
+          if (!bestYm) return 0
+          let sum = 0
+          for (const c of cells) {
+            if (!targetCfAreas.includes(c.area) || c.line_code !== line) continue
+            if (c.year * 100 + c.month !== bestYm) continue
+            sum += c.value
+          }
+          return sum
+        }
+        for (const areaId of map.keys()) {
+          const r = map.get(areaId)!
+          r.closingLoans = accumLoans ? lastByAreaIdAndLine(allCells, areaId, accumLoans) : 0
+          r.closingOd = accumOd ? lastByAreaIdAndLine(allCells, areaId, accumOd) : 0
           r.closingTotalDebt = r.closingLoans + r.closingOd
-        })
+        }
 
         map.forEach(r => { r.netMovement = (r.loansNewActual + r.loansNewForecast) - (r.loansRepaidActual + r.loansRepaidForecast) })
 
+        const areaOrder = new Map(scope.areas.map((a, i) => [a.display_name, i]))
         const arr = [...map.values()]
           .filter(r => Math.abs(r.loansNewActual) + Math.abs(r.loansNewForecast) +
                        Math.abs(r.loansRepaidActual) + Math.abs(r.loansRepaidForecast) +
                        Math.abs(r.closingTotalDebt) > 0.5)
-          .sort((a, b) => a.area.localeCompare(b.area))
+          .sort((a, b) => (areaOrder.get(a.area) ?? 99) - (areaOrder.get(b.area) ?? 99))
         setRows(arr)
       } finally {
         if (!cancel) setLoading(false)

@@ -44,21 +44,23 @@ export default function TreasuryMovements({ scope }: { scope: Scope }) {
         if (cancel) return
 
         const map = new Map<string, Row>()
-        const get = (area: string) => {
-          if (!map.has(area)) map.set(area, {
-            area, receivedActual: 0, receivedForecast: 0, receivedTotal: 0,
+        const get = (areaId: string, label: string) => {
+          if (!map.has(areaId)) map.set(areaId, {
+            area: label, receivedActual: 0, receivedForecast: 0, receivedTotal: 0,
             sentActual: 0, sentForecast: 0, sentTotal: 0, net: 0,
           })
-          return map.get(area)!
+          return map.get(areaId)!
         }
 
         actuals.forEach(c => {
-          const r = get(c.area)
+          const ca = scope.cfToCanonical.get(c.area); if (!ca) return
+          const r = get(ca.area_id, ca.display_name)
           if (c.line_code === receiveLine) r.receivedActual += c.value
           if (c.line_code === sendLine) r.sentActual += c.value
         })
         forecasts.forEach(c => {
-          const r = get(c.area)
+          const ca = scope.cfToCanonical.get(c.area); if (!ca) return
+          const r = get(ca.area_id, ca.display_name)
           if (c.line_code === receiveLine) r.receivedForecast += c.value
           if (c.line_code === sendLine) r.sentForecast += c.value
         })
@@ -71,10 +73,11 @@ export default function TreasuryMovements({ scope }: { scope: Scope }) {
           r.net = r.receivedTotal - r.sentTotal
         })
 
-        // Sort alphabetically; filter out rows where everything is zero
+        // Sort by canonical order so Operations → Subsidiaries → Area Items
+        const areaOrder = new Map(scope.areas.map((a, i) => [a.display_name, i]))
         const arr = [...map.values()]
           .filter(r => Math.abs(r.receivedTotal) + Math.abs(r.sentTotal) > 0.5)
-          .sort((a, b) => a.area.localeCompare(b.area))
+          .sort((a, b) => (areaOrder.get(a.area) ?? 99) - (areaOrder.get(b.area) ?? 99))
         setRows(arr)
 
         // As-of for caption

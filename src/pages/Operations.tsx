@@ -29,25 +29,27 @@ export default function Operations({ scope }: { scope: Scope }) {
 
         const lineKindMap = new Map(scope.lines.map(l => [l.line_code, l.nature]))
         const map = new Map<string, Row>()
-        const get = (a: string) => {
-          if (!map.has(a)) map.set(a, {
-            area: a, receiptsActual: 0, receiptsForecast: 0,
+        const get = (areaId: string, label: string) => {
+          if (!map.has(areaId)) map.set(areaId, {
+            area: label, receiptsActual: 0, receiptsForecast: 0,
             paymentsActual: 0, paymentsForecast: 0,
             netActual: 0, netForecast: 0, netTotal: 0,
           })
-          return map.get(a)!
+          return map.get(areaId)!
         }
 
         actuals.forEach(c => {
           if (!operLines.has(c.line_code)) return
-          const r = get(c.area)
+          const ca = scope.cfToCanonical.get(c.area); if (!ca) return
+          const r = get(ca.area_id, ca.display_name)
           const kind = lineKindMap.get(c.line_code)
           if (kind === 'Receipts') r.receiptsActual += c.value
           else if (kind === 'Payments') r.paymentsActual += c.value
         })
         forecasts.forEach(c => {
           if (!operLines.has(c.line_code)) return
-          const r = get(c.area)
+          const ca = scope.cfToCanonical.get(c.area); if (!ca) return
+          const r = get(ca.area_id, ca.display_name)
           const kind = lineKindMap.get(c.line_code)
           if (kind === 'Receipts') r.receiptsForecast += c.value
           else if (kind === 'Payments') r.paymentsForecast += c.value
@@ -58,9 +60,12 @@ export default function Operations({ scope }: { scope: Scope }) {
           r.netTotal = r.netActual + r.netForecast
         })
 
+        /* Sort by canonical group_name then sort_order so the table reads
+         * Operations → Subsidiaries → Area Items (Corporate) → Contingency. */
+        const areaOrder = new Map(scope.areas.map((a, i) => [a.display_name, i]))
         const arr = [...map.values()]
           .filter(r => Math.abs(r.receiptsActual + r.receiptsForecast + r.paymentsActual + r.paymentsForecast) > 0.5)
-          .sort((a, b) => a.area.localeCompare(b.area))
+          .sort((a, b) => (areaOrder.get(a.area) ?? 99) - (areaOrder.get(b.area) ?? 99))
         setRows(arr)
       } finally {
         if (!cancel) setLoading(false)
