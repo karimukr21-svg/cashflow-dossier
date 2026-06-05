@@ -74,7 +74,6 @@ export default function AreaFilterPopover({
               return (
                 <label key={a.area_id} className={`afp-row ${checked ? '' : 'unchecked'}`}>
                   <input type="checkbox" checked={checked} onChange={() => toggle(a.area_id)} />
-                  <span className="afp-row-id">{a.area_id}</span>
                   <span className="afp-row-name">{a.display_name}</span>
                 </label>
               )

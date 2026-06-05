@@ -620,9 +620,11 @@ body, html, #root {
 .cat-group-header.nature-balance  { border-left: 3px solid var(--mute); }
 .cat-group-header.nature-mixed    { border-left: 3px solid var(--charcoal); }
 
-/* Subgroup labels within a Flow card (Receipts / Payments bands) */
+/* Subgroup labels within a Flow card (Receipts / Payments bands).
+ * 2026-06-05: subgroup-header rows now carry inline subtotal numbers
+ * (the standalone subtotal row at the bottom is gone). Style the label
+ * cell distinctly; let .subtotal-row provide the row background. */
 .cf-table tr.subgroup-header td {
-  text-align: left;
   background: var(--surface-alt);
   font-size: 11px;
   font-weight: 600;
@@ -632,13 +634,14 @@ body, html, #root {
   padding: 6px 12px;
   border-bottom: 1px solid var(--border);
 }
+.cf-table tr.subgroup-header td.label { text-align: left; }
 .cf-table tr.subgroup-header.subgroup-receipts td { color: var(--good); }
 .cf-table tr.subgroup-header.subgroup-payments td { color: var(--bad); }
 .cf-table tr.subgroup-header.clickable:hover td { background: rgba(0, 0, 0, 0.04); }
 
-/* Category divider rows inside Nature-mode subgroups */
+/* Category divider rows inside Nature-mode subgroups.
+ * 2026-06-05: now also carry inline category subtotal numbers. */
 .cf-table tr.category-divider td {
-  text-align: left;
   background: transparent;
   font-size: 12px;
   font-weight: 500;
@@ -646,6 +649,7 @@ body, html, #root {
   padding: 6px 12px 4px;
   border-bottom: none;
 }
+.cf-table tr.category-divider td.label { text-align: left; }
 .cf-table tr.category-divider.clickable:hover td { background: rgba(0, 0, 0, 0.03); }
 
 /* Category subtotal row (rendered in place of lines when a category is collapsed) */

@@ -427,22 +427,33 @@ function FlowSubgroup({
 }) {
   const allLineCodes = groups.flatMap(g => g.lines.map(l => l.line_code))
   const subtotal = sumLinesCol(allLineCodes, () => true)
-  const colSpan = columns.length + 2
 
   /* Default: everything collapsed. The `expanded` set holds only the keys
    * Karim has clicked open. Keys are scoped by groupBy so flipping the
-   * mode toggle doesn't carry stale state (the structures don't line up). */
+   * mode toggle doesn't carry stale state (the structures don't line up).
+   *
+   * 2026-06-05: subgroup + category header rows carry their own subtotal
+   * numbers inline (no separate "X subtotal" row at the bottom). Cuts the
+   * row count roughly in half on collapsed sections and removes the
+   * label-repeat / number-repeat noise on expanded ones. */
   const subgroupKey = `${groupBy}|${blockKey}|sub:${label}`
   const subgroupCollapsed = showSubgroupHeader && !expanded.has(subgroupKey)
 
   return (
     <>
       {showSubgroupHeader && (
-        <tr className={`subgroup-header ${subgroupClass} clickable`}
+        <tr className={`subgroup-header subtotal-row ${subgroupClass} clickable`}
             onClick={() => toggle(subgroupKey)}>
-          <td colSpan={colSpan}>
-            <Chevron open={!subgroupCollapsed} />{label}
-          </td>
+          <td className="label"><Chevron open={!subgroupCollapsed} />{label}</td>
+          {columns.map(col => {
+            const v = sumLinesCol(allLineCodes, col.matches)
+            return (
+              <td key={col.key} className={classNum(v)}>
+                {v == null ? '' : fmt(v)}
+              </td>
+            )
+          })}
+          <td className={classNum(subtotal)}>{subtotal == null ? '' : fmt(subtotal)}</td>
         </tr>
       )}
       {!subgroupCollapsed && groups.map(grp => {
@@ -456,11 +467,18 @@ function FlowSubgroup({
         return (
           <Fragment key={`${label}-grp-${grp.category || 'all'}`}>
             {grp.category && (
-              <tr className="category-divider clickable"
+              <tr className="category-divider subtotal-row category-subtotal clickable"
                   onClick={() => catKey && toggle(catKey)}>
-                <td colSpan={colSpan}>
-                  <Chevron open={!catCollapsed} />{grp.category}
-                </td>
+                <td className="label"><Chevron open={!catCollapsed} />{grp.category}</td>
+                {columns.map(col => {
+                  const v = sumLinesCol(catLineCodes, col.matches)
+                  return (
+                    <td key={col.key} className={classNum(v)}>
+                      {v == null ? '' : fmt(v)}
+                    </td>
+                  )
+                })}
+                <td className={classNum(catSubtotal)}>{catSubtotal == null ? '' : fmt(catSubtotal)}</td>
               </tr>
             )}
             {!catCollapsed && grp.lines.map(l => {
@@ -482,35 +500,9 @@ function FlowSubgroup({
                 </tr>
               )
             })}
-            {catCollapsed && grp.category && (
-              <tr className="subtotal-row category-subtotal">
-                <td className="label">{grp.category} subtotal</td>
-                {columns.map(col => {
-                  const v = sumLinesCol(catLineCodes, col.matches)
-                  return (
-                    <td key={col.key} className={classNum(v)}>
-                      {v == null ? '' : fmt(v)}
-                    </td>
-                  )
-                })}
-                <td className={classNum(catSubtotal)}>{catSubtotal == null ? '' : fmt(catSubtotal)}</td>
-              </tr>
-            )}
           </Fragment>
         )
       })}
-      <tr className="subtotal-row">
-        <td className="label">{label} subtotal</td>
-        {columns.map(col => {
-          const v = sumLinesCol(allLineCodes, col.matches)
-          return (
-            <td key={col.key} className={classNum(v)}>
-              {v == null ? '' : fmt(v)}
-            </td>
-          )
-        })}
-        <td className={classNum(subtotal)}>{subtotal == null ? '' : fmt(subtotal)}</td>
-      </tr>
     </>
   )
 }
