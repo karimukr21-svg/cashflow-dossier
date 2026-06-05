@@ -20,16 +20,14 @@ export type GroupBy = 'category' | 'nature'
 
 type View =
   | { kind: 'summary'; lens: 'overall' | 'treasury' | 'loans' | 'operations' | 'allareas' }
-  | { kind: 'bank'; sub: 'snapshot' | 'timeseries' }
+  | { kind: 'bank'; sub: 'snapshot' }
   | { kind: 'area'; area: string }
-  | { kind: 'audit' }
 
 function parseView(sp: URLSearchParams): View {
   const view = sp.get('view') || 'summary'
   const sub = sp.get('sub') || ''
-  if (view === 'bank') return { kind: 'bank', sub: (sub === 'timeseries' ? 'timeseries' : 'snapshot') }
+  if (view === 'bank') return { kind: 'bank', sub: 'snapshot' }
   if (view === 'area' && sp.get('area')) return { kind: 'area', area: sp.get('area')! }
-  if (view === 'audit') return { kind: 'audit' }
   const lens = (['overall', 'treasury', 'loans', 'operations', 'allareas'].includes(sub) ? sub : 'overall') as any
   return { kind: 'summary', lens }
 }
@@ -38,7 +36,6 @@ function parseView(sp: URLSearchParams): View {
 const USES_GRAIN: Record<string, boolean> = {
   area: true,
   allareas: true,
-  timeseries: true,
 }
 
 /* Pages that use the section-grouping toggle (Category vs Nature) */
@@ -181,7 +178,7 @@ export default function Dossier() {
     }
   }
 
-  type NavItem = { label: string; group: string; view: View; placeholder?: boolean; area?: CanonicalArea }
+  type NavItem = { label: string; group: string; view: View; area?: CanonicalArea }
   const navItems: NavItem[] = [
     { group: 'SUMMARY', label: 'Overall',            view: { kind: 'summary', lens: 'overall' } },
     { group: 'SUMMARY', label: 'Treasury Movements', view: { kind: 'summary', lens: 'treasury' } },
@@ -189,19 +186,16 @@ export default function Dossier() {
     { group: 'SUMMARY', label: 'Operations',         view: { kind: 'summary', lens: 'operations' } },
     { group: 'SUMMARY', label: 'All Areas',          view: { kind: 'summary', lens: 'allareas' } },
     { group: 'BANK POSITION', label: 'Snapshot',     view: { kind: 'bank', sub: 'snapshot' } },
-    { group: 'BANK POSITION', label: 'Time Series',  view: { kind: 'bank', sub: 'timeseries' }, placeholder: true },
     ...areas.map(a => ({
       group: AREA_GROUP_LABEL[a.group_name],
       label: a.display_name,
       view: { kind: 'area' as const, area: a.area_id },
       area: a,
     })),
-    { group: 'AUDIT', label: 'Audit Trail', view: { kind: 'audit' }, placeholder: true },
   ]
   const navGroupOrder: string[] = [
     'SUMMARY', 'BANK POSITION',
     ...areaNavGroups.map(g => g.label),
-    'AUDIT',
   ]
 
   const goto = (v: View) => {
@@ -247,10 +241,7 @@ export default function Dossier() {
       if (view.lens === 'allareas')   return <AllAreas scope={scope} />
     }
     if (view.kind === 'bank' && view.sub === 'snapshot') return <BankSnapshot />
-    if (view.kind === 'bank' && view.sub === 'timeseries')
-      return <div className="placeholder-box">Time series coming next session.</div>
     if (view.kind === 'area') return <AreaDrill area={view.area} scope={scope} />
-    if (view.kind === 'audit') return <div className="placeholder-box">Audit trail coming next session.</div>
     return null
   }
 
@@ -384,9 +375,9 @@ export default function Dossier() {
               <div className="group">{group}</div>
               {navItems.filter(n => n.group === group).map(n => (
                 <a key={`${group}-${n.label}`}
-                   className={`item ${isActive(n.view) ? 'active' : ''} ${n.placeholder ? 'placeholder' : ''}`}
-                   onClick={() => !n.placeholder && goto(n.view)}>
-                  {n.label}{n.placeholder ? ' (soon)' : ''}
+                   className={`item ${isActive(n.view) ? 'active' : ''}`}
+                   onClick={() => goto(n.view)}>
+                  {n.label}
                 </a>
               ))}
             </div>

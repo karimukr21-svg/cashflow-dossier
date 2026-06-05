@@ -242,7 +242,10 @@ export function AreaCategoryCards({
 }
 
 /* ───── Balance card (Opening / Closing Position) ─────
- * Flat list of balance lines, no subtotal, no Net row. */
+ * Flat list of balance lines, no subtotal, no Net row.
+ * Balance rows (Opening / Ending / Loans / Overdrafts) are point-in-time
+ * positions, so the row-total column is dropped — summing balances across
+ * months doesn't carry meaning. */
 function BalanceCard({
   block, columns, tableMinWidth, sumLineCol,
 }: {
@@ -256,11 +259,10 @@ function BalanceCard({
       <div className={`cat-group-header ${block.natureClass}`}>
         <span>{block.label}</span>
       </div>
-      <table className="cf-table" style={{ tableLayout: 'fixed', width: tableMinWidth }}>
+      <table className="cf-table" style={{ tableLayout: 'fixed', width: tableMinWidth - TOTAL_COL_PX }}>
         <colgroup>
           <col style={{ width: LABEL_COL_PX }} />
           {columns.map(c => <col key={c.key} style={{ width: PERIOD_COL_PX }} />)}
-          <col style={{ width: TOTAL_COL_PX }} />
         </colgroup>
         <thead>
           <tr>
@@ -268,29 +270,22 @@ function BalanceCard({
             {columns.map(c => (
               <th key={c.key} className={c.isActual ? 'cell actual' : 'cell forecast'}>{c.label}</th>
             ))}
-            <th>Total</th>
           </tr>
         </thead>
         <tbody>
-          {block.lines.map(l => {
-            const rowTotal = sumLineCol(l.line_code, () => true)
-            return (
-              <tr key={l.line_code}>
-                <td className="label">{l.description}</td>
-                {columns.map(col => {
-                  const v = sumLineCol(l.line_code, col.matches)
-                  return (
-                    <td key={col.key} className={`${classNum(v)} ${col.isActual ? 'cell actual' : 'cell forecast'}`}>
-                      {v == null ? '' : fmt(v)}
-                    </td>
-                  )
-                })}
-                <td className={classNum(rowTotal)} style={{ fontWeight: 500 }}>
-                  {rowTotal == null ? '' : fmt(rowTotal)}
-                </td>
-              </tr>
-            )
-          })}
+          {block.lines.map(l => (
+            <tr key={l.line_code}>
+              <td className="label">{l.description}</td>
+              {columns.map(col => {
+                const v = sumLineCol(l.line_code, col.matches)
+                return (
+                  <td key={col.key} className={`${classNum(v)} ${col.isActual ? 'cell actual' : 'cell forecast'}`}>
+                    {v == null ? '' : fmt(v)}
+                  </td>
+                )
+              })}
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
