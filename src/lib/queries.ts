@@ -1,5 +1,12 @@
 import { supabase } from './supabase'
 
+/* Areas that exist in cf_actuals / cf_forecasts but are not part of the
+ * dossier's active scope (historical or out-of-scope per Karim 2026-06-05).
+ * Filtered at the source so they never reach the nav, summaries, or
+ * area-level aggregates. */
+const DROPPED_AREAS = new Set<string>(['CCEL', 'Sicon'])
+export const isActiveArea = (a: string) => !DROPPED_AREAS.has(a)
+
 export type CfLine = {
   line_code: string
   nature: 'Receipts' | 'Payments' | 'Balance'
@@ -63,7 +70,7 @@ export async function fetchVersions(): Promise<CfVersion[]> {
   return data as CfVersion[]
 }
 
-/** Distinct areas across actuals + forecasts (alphabetical) */
+/** Distinct areas across actuals + forecasts (alphabetical, drops historical) */
 export async function fetchAreas(): Promise<string[]> {
   const [actRes, fcRes] = await Promise.all([
     supabase.from('cf_actuals').select('area'),
@@ -72,8 +79,8 @@ export async function fetchAreas(): Promise<string[]> {
   if (actRes.error) throw actRes.error
   if (fcRes.error) throw fcRes.error
   const set = new Set<string>()
-  ;(actRes.data || []).forEach(r => set.add(r.area))
-  ;(fcRes.data || []).forEach(r => set.add(r.area))
+  ;(actRes.data || []).forEach(r => { if (isActiveArea(r.area)) set.add(r.area) })
+  ;(fcRes.data || []).forEach(r => { if (isActiveArea(r.area)) set.add(r.area) })
   return [...set].sort()
 }
 
@@ -91,6 +98,7 @@ export async function fetchActuals(opts: {
   if (error) throw error
   return (data || [])
     .filter(r => inRange(r, opts.fromYear, opts.fromMonth, opts.toYear, opts.toMonth))
+    .filter(r => opts.area ? true : isActiveArea(r.area))
     .map(r => ({ ...r, value: Number(r.value) }))
 }
 
@@ -110,6 +118,7 @@ export async function fetchForecasts(opts: {
   if (error) throw error
   return (data || [])
     .filter(r => inRange(r, opts.fromYear, opts.fromMonth, opts.toYear, opts.toMonth))
+    .filter(r => opts.area ? true : isActiveArea(r.area))
     .map(r => ({ ...r, value: Number(r.value) }))
 }
 

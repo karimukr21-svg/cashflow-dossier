@@ -102,6 +102,120 @@ body, html, #root {
   background: var(--crimson);
 }
 
+/* Areas pill — click target that opens the AreaFilterPopover.
+ * Same shape as period-pill, charcoal accent. Adds a subtle "filtered" tint
+ * when not every area is selected so the eye can tell at a glance. */
+.areas-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 500;
+  border: 1px solid var(--charcoal);
+  background: #fff;
+  color: var(--charcoal);
+  cursor: pointer;
+  font-family: inherit;
+}
+.areas-pill:hover { background: var(--surface-alt); }
+.areas-pill::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--charcoal);
+}
+.areas-pill.filtered {
+  background: #fff7e6;
+  border-color: #b8731a;
+  color: #6e4612;
+}
+.areas-pill.filtered::before { background: #b8731a; }
+
+/* AreaFilterPopover */
+.area-filter-popover {
+  position: fixed;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 360px;
+  max-height: 70vh;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.area-filter-popover .afp-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 12px 14px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.area-filter-popover .afp-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--charcoal);
+}
+.area-filter-popover .afp-count {
+  font-size: 11px;
+  color: var(--mute);
+  letter-spacing: 0.04em;
+}
+.area-filter-popover .afp-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-alt);
+}
+.area-filter-popover .afp-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--crimson);
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.area-filter-popover .afp-link:hover { text-decoration: underline; }
+.area-filter-popover .afp-link:disabled {
+  color: var(--mute);
+  cursor: default;
+  text-decoration: none;
+}
+.area-filter-popover .afp-sep {
+  color: var(--mute);
+  font-size: 11px;
+}
+.area-filter-popover .afp-list {
+  overflow-y: auto;
+  padding: 6px 0;
+}
+.area-filter-popover .afp-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--charcoal);
+}
+.area-filter-popover .afp-row:hover { background: var(--surface-alt); }
+.area-filter-popover .afp-row.unchecked { color: var(--mute); }
+.area-filter-popover .afp-row input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
 /* Custom period popover (month grid) */
 .popover-backdrop {
   position: fixed; inset: 0;

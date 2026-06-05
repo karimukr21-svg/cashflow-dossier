@@ -13,6 +13,7 @@ import Operations from './Operations'
 import Overall from './Overall'
 import AllAreas from './AllAreas'
 import CustomPeriodPopover from '@/components/CustomPeriodPopover'
+import AreaFilterPopover from '@/components/AreaFilterPopover'
 
 export type Grain = 'monthly' | 'quarterly' | 'yearly'
 export type GroupBy = 'category' | 'nature'
@@ -146,6 +147,22 @@ export default function Dossier() {
   }, [fy, fm, ty, tm])
 
   const [showCustom, setShowCustom] = useState(false)
+  const [showAreaFilter, setShowAreaFilter] = useState(false)
+
+  /* All Areas page filter — stores EXCLUDED area names so newly-added
+   * areas default in without Karim having to re-tick them. */
+  const ALLAREAS_EXCLUDED_KEY = 'dossier-allareas-excluded-v1'
+  const [excludedAreas, setExcludedAreas] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(ALLAREAS_EXCLUDED_KEY)
+      return new Set(raw ? JSON.parse(raw) : [])
+    } catch { return new Set() }
+  })
+  const updateExcluded = (next: Set<string>) => {
+    setExcludedAreas(next)
+    try { localStorage.setItem(ALLAREAS_EXCLUDED_KEY, JSON.stringify([...next])) } catch {}
+  }
+  const selectedAreas = areas.filter(a => !excludedAreas.has(a))
 
   const navItems: { label: string; group: string; view: View; placeholder?: boolean }[] = [
     { group: 'SUMMARY', label: 'Overall',            view: { kind: 'summary', lens: 'overall' } },
@@ -176,6 +193,7 @@ export default function Dossier() {
   })()
   const showGrain = !!USES_GRAIN[grainKey]
   const showGroupBy = !!USES_GROUPBY[grainKey]
+  const showAreaFilterChip = view.kind === 'summary' && view.lens === 'allareas'
 
   const renderContent = () => {
     if (loadingCatalog) return <div className="placeholder-box">Loading…</div>
@@ -185,6 +203,7 @@ export default function Dossier() {
       primaryVersion, compareVersion,
       fromYear: fy, fromMonth: fm, toYear: ty, toMonth: tm,
       areas, lines, latestActualYM, grain, groupBy,
+      selectedAreas,
     }
 
     if (view.kind === 'summary') {
@@ -229,6 +248,13 @@ export default function Dossier() {
           <div className="brand">Cash Flow Dossier</div>
           <div className="asof-pill">Actuals · {asOfLabel}</div>
           <div className="period-pill">Period · {periodLabel}</div>
+          {showAreaFilterChip && (
+            <button
+              className={`areas-pill ${excludedAreas.size > 0 ? 'filtered' : ''}`}
+              onClick={() => setShowAreaFilter(true)}>
+              Areas · {selectedAreas.length} of {areas.length}
+            </button>
+          )}
 
           {showGrain && (
             <>
@@ -320,6 +346,15 @@ export default function Dossier() {
         />
       )}
 
+      {showAreaFilter && (
+        <AreaFilterPopover
+          areas={areas}
+          excluded={excludedAreas}
+          onChange={updateExcluded}
+          onClose={() => setShowAreaFilter(false)}
+        />
+      )}
+
       <div className="leftnav">
         <div className="leftnav-scroll">
           {(['SUMMARY', 'BANK POSITION', 'AREAS', 'AUDIT'] as const).map(group => (
@@ -355,4 +390,7 @@ export type Scope = {
   latestActualYM: number;
   grain: Grain;
   groupBy: GroupBy;
+  /* Areas selected for aggregation on the All Areas view. Other views
+   * read `areas` directly and ignore this. */
+  selectedAreas: string[];
 }
