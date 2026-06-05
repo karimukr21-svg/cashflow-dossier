@@ -97,13 +97,14 @@ export function AreaCategoryCards({
     return touched ? t : null
   }
 
-  // Wrap everything in a horizontally-scrollable container so all tables
-  // scroll together and columns stay aligned visually.
+  // Cards shrink/grow with column count. Inner container is exactly the
+  // table width — when narrower than viewport the cards are narrow too;
+  // when wider, the outer wrapper scrolls horizontally.
   const tableMinWidth = LABEL_COL_PX + (columns.length * PERIOD_COL_PX) + TOTAL_COL_PX
 
   return (
     <div style={{ overflowX: 'auto' }}>
-      <div style={{ minWidth: tableMinWidth }}>
+      <div style={{ width: tableMinWidth }}>
         {groups.map(grp => {
           const natureClass = `nature-${grp.nature.toLowerCase()}`
           const periodTotal = catTotal(grp.lines.map(l => l.line_code), () => true) || 0

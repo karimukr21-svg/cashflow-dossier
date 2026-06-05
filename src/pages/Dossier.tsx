@@ -197,10 +197,7 @@ export default function Dossier() {
   const periodPills: { key: PresetKey; label: string }[] = [
     { key: 'ytd', label: 'YTD' },
     { key: 'last12', label: 'Last 12 mo' },
-    { key: 'q1-26', label: 'Q1 ’26' },
-    { key: 'q2-26', label: 'Q2 ’26' },
     { key: 'full-26', label: 'Full 2026' },
-    { key: 'plan', label: 'Plan horizon' },
     { key: 'custom', label: 'Custom' },
   ]
 
@@ -219,10 +216,25 @@ export default function Dossier() {
           <div className="asof-pill">Actuals · {asOfLabel}</div>
           <div className="period-pill">Period · {periodLabel}</div>
 
-          {/* Spacer absorbs any width change in the period pill so the right cluster stays put */}
+          {showGrain && (
+            <>
+              <div className="ctrl" style={{ marginLeft: 8 }}><label>Grain</label></div>
+              <div className="pill-row">
+                {grainPills.map(p => (
+                  <button key={p.key}
+                    onClick={() => setUrl({ g: p.key })}
+                    className={`pill-btn ${grain === p.key ? 'active' : ''}`}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Spacer absorbs left-side width changes so the right cluster stays put */}
           <div style={{ flex: 1 }} />
 
-          {/* Right cluster — toggles. Order: Version · Compare · Period · Grain */}
+          {/* Right cluster — toggles. Order: Version · Compare · Period */}
           <div className="ctrl"><label>Version</label></div>
           <div className="pill-row">
             {versions.map(v => (
@@ -263,20 +275,6 @@ export default function Dossier() {
             ))}
           </div>
 
-          {showGrain && (
-            <>
-              <div className="ctrl" style={{ marginLeft: 8 }}><label>Grain</label></div>
-              <div className="pill-row">
-                {grainPills.map(p => (
-                  <button key={p.key}
-                    onClick={() => setUrl({ g: p.key })}
-                    className={`pill-btn ${grain === p.key ? 'active' : ''}`}>
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
         </div>
       </div>
 
