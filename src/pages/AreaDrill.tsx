@@ -50,6 +50,45 @@ const LABEL_COL_PX = 240
 const PERIOD_COL_PX = 80
 const TOTAL_COL_PX = 100
 
+/* Persisted collapse state for the area-page section/category rows.
+ * Keyed by `${groupBy}|${blockKey}|sub:Receipts` or `…|cat:Operation` etc.
+ * Shared across area drill + all-areas + every area switch on purpose:
+ * if Karim collapses Operations Payments, that survives navigation. */
+const COLLAPSED_STORAGE_KEY = 'dossier-area-collapsed-v1'
+
+function useCollapsedSections() {
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(COLLAPSED_STORAGE_KEY)
+      return new Set(raw ? JSON.parse(raw) : [])
+    } catch { return new Set() }
+  })
+  const toggle = (key: string) => {
+    setCollapsed(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      try { localStorage.setItem(COLLAPSED_STORAGE_KEY, JSON.stringify([...next])) } catch {}
+      return next
+    })
+  }
+  return { collapsed, toggle }
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <span style={{
+      display: 'inline-block',
+      width: 10,
+      marginRight: 8,
+      fontSize: 9,
+      opacity: 0.65,
+      transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
+      transition: 'transform 0.15s ease',
+    }}>▶</span>
+  )
+}
+
 /* Section layout for the area page.
  *
  * Category mode is the structural default Karim locked 2026-06-05 (night):
@@ -85,6 +124,8 @@ export function AreaCategoryCards({
   scope: Pick<Scope, 'fromYear' | 'fromMonth' | 'toYear' | 'toMonth' | 'latestActualYM'>;
   groupBy: GroupBy;
 }) {
+  const { collapsed, toggle } = useCollapsedSections()
+
   const activeLines = useMemo(() =>
     lines.filter(l => l.is_active).sort((a, b) => a.sort_order - b.sort_order),
     [lines])
@@ -169,7 +210,8 @@ export function AreaCategoryCards({
             <FlowCard key={blk.key} block={blk}
               columns={columns} tableMinWidth={tableMinWidth}
               sumLineCol={sumLineCol} sumLinesCol={sumLinesCol}
-              groupBy={groupBy} />
+              groupBy={groupBy}
+              collapsed={collapsed} toggle={toggle} />
           )
         })}
       </div>
@@ -240,7 +282,7 @@ function BalanceCard({
  * (receipts card has no payments and vice versa); the Net row is suppressed
  * since "Net Receipts" alone is not meaningful. */
 function FlowCard({
-  block, columns, tableMinWidth, sumLineCol, sumLinesCol, groupBy,
+  block, columns, tableMinWidth, sumLineCol, sumLinesCol, groupBy, collapsed, toggle,
 }: {
   block: { key: string; label: string; receipts: CfLine[]; payments: CfLine[]; natureClass: string };
   columns: Column[];
@@ -248,6 +290,8 @@ function FlowCard({
   sumLineCol: (lineCode: string, matches: (y: number, m: number) => boolean) => number | null;
   sumLinesCol: (lineCodes: string[], matches: (y: number, m: number) => boolean) => number | null;
   groupBy: GroupBy;
+  collapsed: Set<string>;
+  toggle: (key: string) => void;
 }) {
   const hasReceipts = block.receipts.length > 0
   const hasPayments = block.payments.length > 0
@@ -305,7 +349,10 @@ function FlowCard({
               columns={columns}
               sumLineCol={sumLineCol}
               sumLinesCol={sumLinesCol}
-              subgroupClass="subgroup-receipts" />
+              subgroupClass="subgroup-receipts"
+              blockKey={block.key} groupBy={groupBy}
+              collapsed={collapsed} toggle={toggle}
+              showSubgroupHeader={groupBy === 'category'} />
           )}
           {hasPayments && (
             <FlowSubgroup label="Payments"
@@ -313,7 +360,10 @@ function FlowCard({
               columns={columns}
               sumLineCol={sumLineCol}
               sumLinesCol={sumLinesCol}
-              subgroupClass="subgroup-payments" />
+              subgroupClass="subgroup-payments"
+              blockKey={block.key} groupBy={groupBy}
+              collapsed={collapsed} toggle={toggle}
+              showSubgroupHeader={groupBy === 'category'} />
           )}
           {showNet && (
             <tr className="total net-row">
@@ -339,6 +389,7 @@ function FlowCard({
 
 function FlowSubgroup({
   label, groups, columns, sumLineCol, sumLinesCol, subgroupClass,
+  blockKey, groupBy, collapsed, toggle, showSubgroupHeader,
 }: {
   label: 'Receipts' | 'Payments';
   groups: { category: string; lines: CfLine[] }[];
@@ -346,44 +397,85 @@ function FlowSubgroup({
   sumLineCol: (lineCode: string, matches: (y: number, m: number) => boolean) => number | null;
   sumLinesCol: (lineCodes: string[], matches: (y: number, m: number) => boolean) => number | null;
   subgroupClass: string;
+  blockKey: string;
+  groupBy: GroupBy;
+  collapsed: Set<string>;
+  toggle: (key: string) => void;
+  showSubgroupHeader: boolean;
 }) {
   const allLineCodes = groups.flatMap(g => g.lines.map(l => l.line_code))
   const subtotal = sumLinesCol(allLineCodes, () => true)
   const colSpan = columns.length + 2
 
+  /* Collapse keys are scoped by groupBy so flipping the toggle doesn't
+   * carry stale collapses across modes (the structures don't line up). */
+  const subgroupKey = `${groupBy}|${blockKey}|sub:${label}`
+  const subgroupCollapsed = showSubgroupHeader && collapsed.has(subgroupKey)
+
   return (
     <>
-      <tr className={`subgroup-header ${subgroupClass}`}>
-        <td colSpan={colSpan}>{label}</td>
-      </tr>
-      {groups.map(grp => (
-        <Fragment key={`${label}-grp-${grp.category || 'all'}`}>
-          {grp.category && (
-            <tr className="category-divider">
-              <td colSpan={colSpan}>{grp.category}</td>
-            </tr>
-          )}
-          {grp.lines.map(l => {
-            const rowTotal = sumLineCol(l.line_code, () => true)
-            return (
-              <tr key={`${label}-${l.line_code}`}>
-                <td className="label">{l.description}</td>
+      {showSubgroupHeader && (
+        <tr className={`subgroup-header ${subgroupClass} clickable`}
+            onClick={() => toggle(subgroupKey)}>
+          <td colSpan={colSpan}>
+            <Chevron open={!subgroupCollapsed} />{label}
+          </td>
+        </tr>
+      )}
+      {!subgroupCollapsed && groups.map(grp => {
+        const catKey = grp.category
+          ? `${groupBy}|${blockKey}|cat:${grp.category}`
+          : null
+        const catCollapsed = !!catKey && collapsed.has(catKey)
+        const catLineCodes = grp.lines.map(l => l.line_code)
+        const catSubtotal = sumLinesCol(catLineCodes, () => true)
+
+        return (
+          <Fragment key={`${label}-grp-${grp.category || 'all'}`}>
+            {grp.category && (
+              <tr className="category-divider clickable"
+                  onClick={() => catKey && toggle(catKey)}>
+                <td colSpan={colSpan}>
+                  <Chevron open={!catCollapsed} />{grp.category}
+                </td>
+              </tr>
+            )}
+            {!catCollapsed && grp.lines.map(l => {
+              const rowTotal = sumLineCol(l.line_code, () => true)
+              return (
+                <tr key={`${label}-${l.line_code}`}>
+                  <td className="label">{l.description}</td>
+                  {columns.map(col => {
+                    const v = sumLineCol(l.line_code, col.matches)
+                    return (
+                      <td key={col.key} className={`${classNum(v)} ${col.isActual ? 'cell actual' : 'cell forecast'}`}>
+                        {v == null ? '' : fmt(v)}
+                      </td>
+                    )
+                  })}
+                  <td className={classNum(rowTotal)} style={{ fontWeight: 500 }}>
+                    {rowTotal == null ? '' : fmt(rowTotal)}
+                  </td>
+                </tr>
+              )
+            })}
+            {catCollapsed && grp.category && (
+              <tr className="subtotal-row category-subtotal">
+                <td className="label">{grp.category} subtotal</td>
                 {columns.map(col => {
-                  const v = sumLineCol(l.line_code, col.matches)
+                  const v = sumLinesCol(catLineCodes, col.matches)
                   return (
-                    <td key={col.key} className={`${classNum(v)} ${col.isActual ? 'cell actual' : 'cell forecast'}`}>
+                    <td key={col.key} className={classNum(v)}>
                       {v == null ? '' : fmt(v)}
                     </td>
                   )
                 })}
-                <td className={classNum(rowTotal)} style={{ fontWeight: 500 }}>
-                  {rowTotal == null ? '' : fmt(rowTotal)}
-                </td>
+                <td className={classNum(catSubtotal)}>{catSubtotal == null ? '' : fmt(catSubtotal)}</td>
               </tr>
-            )
-          })}
-        </Fragment>
-      ))}
+            )}
+          </Fragment>
+        )
+      })}
       <tr className="subtotal-row">
         <td className="label">{label} subtotal</td>
         {columns.map(col => {

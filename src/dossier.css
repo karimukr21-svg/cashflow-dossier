@@ -399,16 +399,26 @@ body, html, #root {
 }
 .cf-table tr.subgroup-header.subgroup-receipts td { color: var(--good); }
 .cf-table tr.subgroup-header.subgroup-payments td { color: var(--bad); }
+.cf-table tr.subgroup-header.clickable:hover td { background: rgba(0, 0, 0, 0.04); }
 
 /* Category divider rows inside Nature-mode subgroups */
 .cf-table tr.category-divider td {
   text-align: left;
   background: transparent;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
-  color: var(--mute);
-  padding: 4px 12px 2px;
+  color: var(--charcoal);
+  padding: 6px 12px 4px;
   border-bottom: none;
+}
+.cf-table tr.category-divider.clickable:hover td { background: rgba(0, 0, 0, 0.03); }
+
+/* Category subtotal row (rendered in place of lines when a category is collapsed) */
+.cf-table tr.category-subtotal td {
+  font-style: normal;
+}
+.cf-table tr.category-subtotal td.label::before {
+  content: '';
 }
 
 /* Subtotal row inside a subgroup */
