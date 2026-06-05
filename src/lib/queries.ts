@@ -198,6 +198,33 @@ export async function fetchForecasts(opts: {
     .map(r => ({ ...r, value: Number(r.value) }))
 }
 
+/** Bank position — monthly aggregates across all areas, for a calendar year.
+ *  Returns one row per month present, group-level totals for cash / loans / od. */
+export async function fetchBankPositionMonthly(year: number): Promise<{
+  ym: number; cash: number; loans: number; od: number; netFunds: number;
+}[]> {
+  const { data, error } = await supabase
+    .from('bank_position')
+    .select('period, account, balance')
+    .gte('period', `${year}-01-01`).lt('period', `${year + 1}-01-01`)
+  if (error) throw error
+  const byPeriod = new Map<string, { cash: number; loans: number; od: number }>()
+  for (const r of data || []) {
+    const k = r.period
+    if (!byPeriod.has(k)) byPeriod.set(k, { cash: 0, loans: 0, od: 0 })
+    const acc = (r.account || '').toLowerCase()
+    const bal = Number(r.balance)
+    if (acc === 'cash') byPeriod.get(k)!.cash += bal
+    else if (acc === 'loans') byPeriod.get(k)!.loans += bal
+    else if (acc === 'overdrafts') byPeriod.get(k)!.od += bal
+  }
+  const out = [...byPeriod.entries()].map(([period, t]) => {
+    const [y, m] = period.split('-').map(Number)
+    return { ym: y * 100 + m, cash: t.cash, loans: t.loans, od: t.od, netFunds: t.cash + t.loans + t.od }
+  })
+  return out.sort((a, b) => a.ym - b.ym)
+}
+
 /** Bank position — latest period across areas */
 export async function fetchBankPositionLatest(): Promise<{
   period: string;
