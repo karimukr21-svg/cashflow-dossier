@@ -51,6 +51,14 @@ body, html, #root {
   gap: 14px;
   flex-wrap: wrap;
 }
+/* Row 2 always renders even when empty so toggling views doesn't shift
+ * row 1's content vertically. Min-height matches a pill-row's box. */
+.topbar-row-display {
+  min-height: 26px;
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+  margin-top: -2px;
+}
 .topbar .brand {
   font-weight: 500;
   color: var(--crimson);
@@ -94,12 +102,17 @@ body, html, #root {
   border: 1px solid var(--crimson);
   background: #fff;
   color: var(--crimson);
+  font-family: inherit;
 }
 .period-pill::before {
   content: '';
   width: 6px; height: 6px;
   border-radius: 50%;
   background: var(--crimson);
+}
+.period-pill.clickable { cursor: pointer; }
+.period-pill.clickable:hover {
+  background: #fff5f6;
 }
 
 /* Areas pill — click target that opens the AreaFilterPopover.
@@ -244,6 +257,46 @@ body, html, #root {
   color: var(--mute);
   margin-bottom: 16px;
 }
+/* Preset action buttons at the top of the period popover */
+.popover .pop-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 14px;
+}
+.popover .pop-preset-btn {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--charcoal);
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.popover .pop-preset-btn:hover { background: var(--surface-alt); }
+.popover .pop-preset-btn.active {
+  background: var(--crimson);
+  border-color: var(--crimson);
+  color: #fff;
+}
+.popover .pop-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: 8px 0 12px;
+  color: var(--mute);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.popover .pop-divider::before,
+.popover .pop-divider::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--border);
+}
+.popover .pop-divider span { padding: 0 10px; }
 .year-grid-row {
   display: grid;
   grid-template-columns: 60px repeat(12, 1fr);

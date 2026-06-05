@@ -221,14 +221,6 @@ export default function Dossier() {
     return null
   }
 
-  /* Period preset pills */
-  const periodPills: { key: PresetKey; label: string }[] = [
-    { key: 'ytd', label: 'YTD' },
-    { key: 'last12', label: 'Last 12 mo' },
-    { key: 'full-26', label: 'Full 2026' },
-    { key: 'custom', label: 'Custom' },
-  ]
-
   const grainPills: { key: Grain; label: string }[] = [
     { key: 'monthly', label: 'Monthly' },
     { key: 'quarterly', label: 'Quarterly' },
@@ -243,11 +235,17 @@ export default function Dossier() {
   return (
     <div className="shell">
       <div className="topbar">
-        <div className="topbar-row">
-          {/* Left cluster — status pills (variable width is fine; only the spacer between flexes) */}
+        {/* Row 1 — data context: what is being viewed.
+           Slots are fixed left-to-right; conditional items collapse out
+           without reordering anything to their right. */}
+        <div className="topbar-row topbar-row-status">
           <div className="brand">Cash Flow Dossier</div>
           <div className="asof-pill">Actuals · {asOfLabel}</div>
-          <div className="period-pill">Period · {periodLabel}</div>
+          <button className="period-pill clickable"
+                  onClick={() => setShowCustom(true)}
+                  title="Change period">
+            Period · {periodLabel}
+          </button>
           {showAreaFilterChip && (
             <button
               className={`areas-pill ${excludedAreas.size > 0 ? 'filtered' : ''}`}
@@ -255,26 +253,7 @@ export default function Dossier() {
               Areas · {selectedAreas.length} of {areas.length}
             </button>
           )}
-
-          {showGrain && (
-            <>
-              <div className="ctrl" style={{ marginLeft: 8 }}><label>Grain</label></div>
-              <div className="pill-row">
-                {grainPills.map(p => (
-                  <button key={p.key}
-                    onClick={() => setUrl({ g: p.key })}
-                    className={`pill-btn ${grain === p.key ? 'active' : ''}`}>
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-
-          {/* Spacer absorbs left-side width changes so the right cluster stays put */}
           <div style={{ flex: 1 }} />
-
-          {/* Right cluster — toggles. Order: Version · Compare · Period */}
           <div className="ctrl"><label>Version</label></div>
           <div className="pill-row">
             {versions.map(v => (
@@ -285,7 +264,6 @@ export default function Dossier() {
               </button>
             ))}
           </div>
-
           <div className="ctrl" style={{ marginLeft: 8 }}><label>Compare</label></div>
           <div className="pill-row">
             <button onClick={() => setUrl({ c: null })}
@@ -300,21 +278,27 @@ export default function Dossier() {
             <button onClick={() => setUrl({ c: 'Actual' })}
               className={`pill-btn ${compareVersion === 'Actual' ? 'active' : ''}`}>Actual</button>
           </div>
+        </div>
 
-          <div className="ctrl" style={{ marginLeft: 8 }}><label>Period</label></div>
-          <div className="pill-row">
-            {periodPills.map(p => (
-              <button key={p.key}
-                onClick={() => {
-                  if (p.key === 'custom') { setShowCustom(true) }
-                  else { setUrl({ p: p.key, from: null, to: null }) }
-                }}
-                className={`pill-btn ${preset === p.key ? 'active' : ''}`}>
-                {p.label}
-              </button>
-            ))}
-          </div>
-
+        {/* Row 2 — display toggles: how to format the view.
+           Empty on pages that don't use Grain/Sections; positions held
+           so toggling views never shifts what stays. */}
+        <div className="topbar-row topbar-row-display">
+          <div style={{ flex: 1 }} />
+          {showGrain && (
+            <>
+              <div className="ctrl"><label>Grain</label></div>
+              <div className="pill-row">
+                {grainPills.map(p => (
+                  <button key={p.key}
+                    onClick={() => setUrl({ g: p.key })}
+                    className={`pill-btn ${grain === p.key ? 'active' : ''}`}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
           {showGroupBy && (
             <>
               <div className="ctrl" style={{ marginLeft: 8 }}><label>Sections</label></div>
@@ -329,7 +313,6 @@ export default function Dossier() {
               </div>
             </>
           )}
-
         </div>
       </div>
 
@@ -338,9 +321,14 @@ export default function Dossier() {
           fromYM={fromYM}
           toYM={toYM}
           latestActualYM={latestActualYM}
+          activePreset={preset}
           onClose={() => setShowCustom(false)}
           onApply={(f, t) => {
             setUrl({ p: 'custom', from: f, to: t })
+            setShowCustom(false)
+          }}
+          onApplyPreset={(key) => {
+            setUrl({ p: key, from: null, to: null })
             setShowCustom(false)
           }}
         />

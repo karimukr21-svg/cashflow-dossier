@@ -8,14 +8,18 @@ type YM = { year: number; month: number }
 function ymInt(ym: YM) { return ym.year * 100 + ym.month }
 function ymLte(a: YM, b: YM) { return ymInt(a) <= ymInt(b) }
 
+type PresetKey = 'ytd' | 'last12' | 'full-26'
+
 export default function CustomPeriodPopover({
-  fromYM, toYM, latestActualYM, onClose, onApply,
+  fromYM, toYM, latestActualYM, activePreset, onClose, onApply, onApplyPreset,
 }: {
   fromYM: string;  // "YYYY-MM"
   toYM: string;
   latestActualYM: number;  // YYYYMM as int
+  activePreset: string;    // current ?p= value so we can highlight the matching shortcut
   onClose: () => void;
   onApply: (from: string, to: string) => void;
+  onApplyPreset: (key: PresetKey) => void;
 }) {
   const parse = (s: string): YM => {
     const [y, m] = s.split('-').map(Number)
@@ -56,6 +60,23 @@ export default function CustomPeriodPopover({
     <div className="popover-backdrop" onClick={onClose}>
       <div className="popover" onClick={e => e.stopPropagation()}>
         <h3>Pick period</h3>
+
+        <div className="pop-presets">
+          {([
+            { key: 'ytd' as PresetKey, label: 'YTD' },
+            { key: 'last12' as PresetKey, label: 'Last 12 months' },
+            { key: 'full-26' as PresetKey, label: 'Full 2026' },
+          ]).map(p => (
+            <button key={p.key}
+              className={`pop-preset-btn ${activePreset === p.key ? 'active' : ''}`}
+              onClick={() => onApplyPreset(p.key)}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="pop-divider"><span>or pick a custom range</span></div>
+
         <div className="pop-sub">
           {pickingEnd ? 'Click an end month' : 'Click a start month — then an end month'}{' · '}
           Current: {start.year}-{String(start.month).padStart(2, '0')} → {end.year}-{String(end.month).padStart(2, '0')}
