@@ -109,9 +109,12 @@ const groupRank = (g: string) => {
 
 export async function fetchCanonicalAreas(): Promise<CanonicalArea[]> {
   const [areasRes, sheetsRes] = await Promise.all([
+    // is_active filter dropped 2026-06-05: IRQ is is_active=false in
+    // public.areas but has cf_country data + cf_actuals rows. Letting any
+    // canonical area with a cf_country mapping surface; is_virtual still
+    // excludes the OVH-* rollups seeded for the Overheads page.
     supabase.from('areas')
       .select('area_id, area_name, display_name, group_name, sort_order, is_active, is_virtual')
-      .eq('is_active', true)
       .eq('is_virtual', false),
     supabase.from('cashflow_sheets')
       .select('cf_area, cf_country, area_id')
