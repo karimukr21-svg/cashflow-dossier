@@ -53,29 +53,59 @@ export default function AllAreasPivot({ actuals, forecasts, lines, scope, areas,
    Mode 1 — Area-outer (ANC / ACN)
    One card per selected area, identical to AreaDrill's rendering.
    ord[1] picks the inner groupBy (Nature or Category).
+   Areas start collapsed; click the heading to expand.
    ════════════════════════════════════════════════════════════════════════ */
+const AREA_EXPANDED_STORAGE_KEY = 'pivot-area-expanded-v1'
+function useExpandedAreas() {
+  const [expanded, setExpanded] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(AREA_EXPANDED_STORAGE_KEY)
+      return new Set(raw ? JSON.parse(raw) : [])
+    } catch { return new Set() }
+  })
+  const toggle = (areaId: string) => {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(areaId)) next.delete(areaId)
+      else next.add(areaId)
+      try { localStorage.setItem(AREA_EXPANDED_STORAGE_KEY, JSON.stringify([...next])) } catch {}
+      return next
+    })
+  }
+  return { expanded, toggle }
+}
+
 function AreaOuter({
   actuals, forecasts, lines, scope, areas,
 }: Omit<Props, 'onSelectArea'>) {
   const innerGroupBy: 'category' | 'nature' = scope.ord[1] === 'N' ? 'nature' : 'category'
+  const { expanded, toggle } = useExpandedAreas()
   return (
     <div>
       {areas.map(area => {
+        const isOpen = expanded.has(area.area_id)
         const aSet = new Set(area.cf_areas)
         const aActuals = actuals.filter(c => aSet.has(c.area))
         const aForecasts = forecasts.filter(c => aSet.has(c.area))
         return (
           <div key={area.area_id} className="pivot-area-section">
-            <h2 className="pivot-area-heading">{area.display_name}</h2>
-            <AreaCategoryCards
-              actuals={aActuals}
-              forecasts={aForecasts}
-              lines={lines}
-              grain={scope.grain}
-              scope={scope}
-              groupBy={innerGroupBy}
-            />
-            <div style={{ height: 24 }} />
+            <h2 className="pivot-area-heading clickable" onClick={() => toggle(area.area_id)}>
+              <span style={{ display: 'inline-block', width: 12, marginRight: 8, fontSize: 11, opacity: 0.65, transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s ease' }}>▶</span>
+              {area.display_name}
+            </h2>
+            {isOpen && (
+              <>
+                <AreaCategoryCards
+                  actuals={aActuals}
+                  forecasts={aForecasts}
+                  lines={lines}
+                  grain={scope.grain}
+                  scope={scope}
+                  groupBy={innerGroupBy}
+                />
+                <div style={{ height: 24 }} />
+              </>
+            )}
           </div>
         )
       })}
@@ -371,7 +401,7 @@ function FlowAreaSubgroup({
   onSelectArea: (areaId: string) => void;
 }) {
   const subKey = `${sectionKey}|${label}`
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
 
   const allLineCodes = useMemo(() => new Set(lines.map(l => l.line_code)), [lines])
   const subtotal = sumCells(allLineCodes, null, () => true)
@@ -407,7 +437,7 @@ function FlowAreaSubgroup({
           <td className={classNum(subtotal)}>{subtotal == null ? '' : fmt(subtotal)}</td>
         </tr>
       )}
-      {open && categoryGroups.map(grp => (
+      {(!showSubgroupHeader || open) && categoryGroups.map(grp => (
         <CategoryAreaGroup
           key={grp.category || 'all'}
           category={grp.category}
@@ -436,7 +466,7 @@ function CategoryAreaGroup({
   subKey: string;
   onSelectArea: (areaId: string) => void;
 }) {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const subtotal = sumCells(lineCodes, null, () => true)
   return (
     <>
@@ -454,7 +484,7 @@ function CategoryAreaGroup({
           <td className={classNum(subtotal)}>{subtotal == null ? '' : fmt(subtotal)}</td>
         </tr>
       )}
-      {open && areas.map(area => (
+      {(!category || open) && areas.map(area => (
         <AreaRow
           key={`${subKey}|${category}|${area.area_id}`}
           area={area}

@@ -508,6 +508,8 @@ body, html, #root {
   padding-bottom: 4px;
   border-bottom: 1px solid var(--border);
 }
+.pivot-area-heading.clickable { cursor: pointer; user-select: none; }
+.pivot-area-heading.clickable:hover { background: rgba(0,0,0,0.02); }
 /* Area-leaf mode: per-area total rows are clickable to deep-link into
  * that area's drill. Subtle hover affordance; same row height as line items. */
 .pivot-area-row { cursor: pointer; }
