@@ -80,6 +80,14 @@ function AreaOuter({
 }: Omit<Props, 'onSelectArea'>) {
   const innerGroupBy: 'category' | 'nature' = scope.ord[1] === 'N' ? 'nature' : 'category'
   const { expanded, toggle } = useExpandedAreas()
+
+  /* Build line→nature lookup once for header-stat aggregation. */
+  const lineNature = useMemo(() => {
+    const m = new Map<string, 'Receipts' | 'Payments' | 'Balance'>()
+    for (const l of lines) m.set(l.line_code, l.nature)
+    return m
+  }, [lines])
+
   return (
     <div>
       {areas.map(area => {
@@ -87,14 +95,52 @@ function AreaOuter({
         const aSet = new Set(area.cf_areas)
         const aActuals = actuals.filter(c => aSet.has(c.area))
         const aForecasts = forecasts.filter(c => aSet.has(c.area))
+
+        /* Compute Receipts / Payments / Net for the card header — same
+         * shape Karim already reads in FlowAreaSubgroup subtotals. */
+        let receipts = 0, payments = 0, touchedR = false, touchedP = false
+        for (const c of aActuals) {
+          const nat = lineNature.get(c.line_code)
+          if (nat === 'Receipts') { receipts += c.value; touchedR = true }
+          else if (nat === 'Payments') { payments += c.value; touchedP = true }
+        }
+        for (const c of aForecasts) {
+          const nat = lineNature.get(c.line_code)
+          if (nat === 'Receipts') { receipts += c.value; touchedR = true }
+          else if (nat === 'Payments') { payments += c.value; touchedP = true }
+        }
+        const net = (touchedR || touchedP) ? receipts + payments : null
+
         return (
-          <div key={area.area_id} className="pivot-area-section">
-            <h2 className="pivot-area-heading clickable" onClick={() => toggle(area.area_id)}>
-              <span style={{ display: 'inline-block', width: 12, marginRight: 8, fontSize: 11, opacity: 0.65, transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s ease' }}>▶</span>
-              {area.display_name}
-            </h2>
+          <div key={area.area_id} className={`pivot-area-card ${isOpen ? 'open' : ''}`}>
+            <div className="pivot-area-card-header clickable" onClick={() => toggle(area.area_id)}>
+              <div className="pivot-area-card-name">
+                <span className="pivot-card-chev">▶</span>
+                {area.display_name}
+              </div>
+              <div className="pivot-area-card-stats">
+                <div className="pivot-stat">
+                  <span className="pivot-stat-label">Receipts</span>
+                  <span className={`pivot-stat-value ${classNum(touchedR ? receipts : null)}`}>
+                    {touchedR ? fmt(receipts) : '—'}
+                  </span>
+                </div>
+                <div className="pivot-stat">
+                  <span className="pivot-stat-label">Payments</span>
+                  <span className={`pivot-stat-value ${classNum(touchedP ? payments : null)}`}>
+                    {touchedP ? fmt(payments) : '—'}
+                  </span>
+                </div>
+                <div className="pivot-stat pivot-stat-net">
+                  <span className="pivot-stat-label">Net</span>
+                  <span className={`pivot-stat-value ${classNum(net)}`}>
+                    {net == null ? '—' : fmt(net)}
+                  </span>
+                </div>
+              </div>
+            </div>
             {isOpen && (
-              <>
+              <div className="pivot-area-card-body">
                 <AreaCategoryCards
                   actuals={aActuals}
                   forecasts={aForecasts}
@@ -103,8 +149,7 @@ function AreaOuter({
                   scope={scope}
                   groupBy={innerGroupBy}
                 />
-                <div style={{ height: 24 }} />
-              </>
+              </div>
             )}
           </div>
         )

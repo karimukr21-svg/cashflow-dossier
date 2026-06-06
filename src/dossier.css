@@ -497,19 +497,75 @@ body, html, #root {
 }
 .ord-swap:hover { opacity: 1; background: rgba(0,0,0,0.06); }
 
-/* ───── AllAreas pivot ─────
- * Area-outer mode renders one block per area, each with its own heading. */
-.pivot-area-section { margin-bottom: 8px; }
-.pivot-area-heading {
-  font-size: 18px;
-  font-weight: 500;
-  color: var(--charcoal);
-  margin: 16px 0 8px;
-  padding-bottom: 4px;
+/* ───── AllAreas pivot — Area-outer card ─────
+ * Each canonical area renders as a card with a chevron header carrying
+ * Receipts / Payments / Net totals across the active period. Click the
+ * header to expand the full per-area breakdown beneath. */
+.pivot-area-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 10px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.pivot-area-card-header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 10px 14px;
+  background: var(--surface);
+}
+.pivot-area-card-header.clickable { cursor: pointer; user-select: none; }
+.pivot-area-card-header.clickable:hover { background: rgba(0,0,0,0.025); }
+.pivot-area-card.open .pivot-area-card-header {
   border-bottom: 1px solid var(--border);
 }
-.pivot-area-heading.clickable { cursor: pointer; user-select: none; }
-.pivot-area-heading.clickable:hover { background: rgba(0,0,0,0.02); }
+.pivot-area-card-name {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--charcoal);
+  display: flex;
+  align-items: center;
+}
+.pivot-card-chev {
+  display: inline-block;
+  width: 10px;
+  margin-right: 10px;
+  font-size: 10px;
+  opacity: 0.65;
+  transition: transform 0.15s ease;
+}
+.pivot-area-card.open .pivot-card-chev { transform: rotate(90deg); }
+.pivot-area-card-stats {
+  display: flex;
+  gap: 28px;
+  align-items: flex-end;
+}
+.pivot-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 82px;
+}
+.pivot-stat-label {
+  font-size: 9.5px;
+  color: var(--mute);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 2px;
+}
+.pivot-stat-value {
+  font-size: 13.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--charcoal);
+}
+.pivot-stat-net .pivot-stat-value { font-size: 15px; font-weight: 600; }
+.pivot-area-card-body {
+  padding: 10px 14px 14px;
+}
+
 /* Area-leaf mode: per-area total rows are clickable to deep-link into
  * that area's drill. Subtle hover affordance; same row height as line items. */
 .pivot-area-row { cursor: pointer; }
