@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/lib/auth'
 import {
@@ -17,6 +17,17 @@ import AreaFilterPopover from '@/components/AreaFilterPopover'
 
 export type Grain = 'monthly' | 'quarterly' | 'yearly'
 export type GroupBy = 'category' | 'nature'
+
+/* 3-letter permutation of Area / Nature / Category — drives the AllAreas
+ * pivot. Leftmost = outermost group, rightmost = innermost (leaf).
+ * Area at innermost renders per-area totals (no line items); Area at
+ * outermost or middle keeps line items at the leaf. */
+export type GrainOrd = 'ANC' | 'ACN' | 'NCA' | 'NAC' | 'CNA' | 'CAN'
+const VALID_ORDS: GrainOrd[] = ['ANC', 'ACN', 'NCA', 'NAC', 'CNA', 'CAN']
+function parseOrd(raw: string | null): GrainOrd {
+  if (raw && (VALID_ORDS as string[]).includes(raw)) return raw as GrainOrd
+  return 'CNA' // default: Category outer → Nature middle → per-area totals at leaf
+}
 
 type View =
   | { kind: 'summary'; lens: 'overall' | 'treasury' | 'loans' | 'operations' | 'allareas' }
@@ -110,6 +121,7 @@ export default function Dossier() {
   const preset = (sp.get('p') || 'ytd') as PresetKey
   const grain = (sp.get('g') || 'monthly') as Grain
   const groupBy = (sp.get('gb') === 'nature' ? 'nature' : 'category') as GroupBy
+  const ord = parseOrd(sp.get('ord'))
 
   const { from: presetFrom, to: presetTo } =
     resolvePreset(preset === 'custom' ? 'custom' : preset, latestActualYM, new Date())
@@ -216,6 +228,20 @@ export default function Dossier() {
   const showGrain = !!USES_GRAIN[grainKey]
   const showGroupBy = !!USES_GROUPBY[grainKey]
   const showAreaFilterChip = view.kind === 'summary' && view.lens === 'allareas'
+  /* AllAreas uses the 3-chip ord reorder control instead of the 2-pill
+   * groupBy toggle. AreaDrill keeps the 2-pill (Area is implicitly outermost
+   * there — there's no Area dimension to reorder). */
+  const isAllAreas = view.kind === 'summary' && view.lens === 'allareas'
+  const showOrdControl = isAllAreas
+  const showGroupByPills = showGroupBy && !isAllAreas
+
+  /* Swap two adjacent positions in the current ord string. */
+  const swapOrdAt = (i: 0 | 1) => {
+    const arr = ord.split('')
+    ;[arr[i], arr[i + 1]] = [arr[i + 1], arr[i]]
+    setUrl({ ord: arr.join('') === 'CNA' ? null : arr.join('') })
+  }
+  const ORD_LABEL: Record<string, string> = { A: 'Area', N: 'Nature', C: 'Category' }
 
   const renderContent = () => {
     if (loadingCatalog) return <div className="placeholder-box">Loading…</div>
@@ -229,7 +255,7 @@ export default function Dossier() {
     const scope = {
       primaryVersion, compareVersion,
       fromYear: fy, fromMonth: fm, toYear: ty, toMonth: tm,
-      areas, lines, latestActualYM, grain, groupBy,
+      areas, lines, latestActualYM, grain, groupBy, ord,
       selectedAreas, cfToCanonical,
     }
 
@@ -238,7 +264,7 @@ export default function Dossier() {
       if (view.lens === 'treasury')   return <TreasuryMovements scope={scope} />
       if (view.lens === 'loans')      return <LoansOverdrafts scope={scope} />
       if (view.lens === 'operations') return <Operations scope={scope} />
-      if (view.lens === 'allareas')   return <AllAreas scope={scope} />
+      if (view.lens === 'allareas')   return <AllAreas scope={scope} onSelectArea={(areaId) => goto({ kind: 'area', area: areaId })} />
     }
     if (view.kind === 'bank' && view.sub === 'snapshot') return <BankSnapshot />
     if (view.kind === 'area') return <AreaDrill area={view.area} scope={scope} />
@@ -323,7 +349,7 @@ export default function Dossier() {
               </div>
             </>
           )}
-          {showGroupBy && (
+          {showGroupByPills && (
             <>
               <div className="ctrl" style={{ marginLeft: 8 }}><label>Sections</label></div>
               <div className="pill-row">
@@ -333,6 +359,25 @@ export default function Dossier() {
                     className={`pill-btn ${groupBy === p.key ? 'active' : ''}`}>
                     {p.label}
                   </button>
+                ))}
+              </div>
+            </>
+          )}
+          {showOrdControl && (
+            <>
+              <div className="ctrl" style={{ marginLeft: 8 }}><label>Grain</label></div>
+              <div className="ord-row" title="Outermost on the left, innermost on the right. Click ⇄ to swap two chips.">
+                {ord.split('').map((ch, i) => (
+                  <Fragment key={i}>
+                    <span className="ord-chip">{ORD_LABEL[ch]}</span>
+                    {i < 2 && (
+                      <button
+                        className="ord-swap"
+                        aria-label={`Swap ${ORD_LABEL[ch]} with ${ORD_LABEL[ord[i + 1]]}`}
+                        title={`Swap ${ORD_LABEL[ch]} ⇄ ${ORD_LABEL[ord[i + 1]]}`}
+                        onClick={() => swapOrdAt(i as 0 | 1)}>⇄</button>
+                    )}
+                  </Fragment>
                 ))}
               </div>
             </>
@@ -406,6 +451,9 @@ export type Scope = {
   latestActualYM: number;
   grain: Grain;
   groupBy: GroupBy;
+  /* Chip ordering for the AllAreas pivot. Unused on per-area drills
+   * (Area is implicitly outermost when the rail picks a country). */
+  ord: GrainOrd;
   /* Areas selected for aggregation on the All Areas view. Other views
    * read `areas` directly and ignore this. */
   selectedAreas: CanonicalArea[];

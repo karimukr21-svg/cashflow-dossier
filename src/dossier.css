@@ -462,6 +462,62 @@ body, html, #root {
 .pill-btn.active:hover { background: #b80020; }
 .pill-btn.placeholder { color: var(--mute); cursor: default; }
 
+/* ───── Grain ord chip control (AllAreas) ─────
+ * Three chips with small swap buttons between them. Leftmost = outermost
+ * group; rightmost = innermost (leaf). Clicking ⇄ swaps two adjacent chips. */
+.ord-row {
+  display: inline-flex;
+  align-items: center;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 4px;
+  gap: 2px;
+}
+.ord-chip {
+  background: var(--crimson);
+  color: white;
+  font-weight: 500;
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.ord-swap {
+  background: transparent;
+  border: none;
+  color: var(--charcoal);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 0 6px;
+  cursor: pointer;
+  border-radius: 4px;
+  opacity: 0.6;
+  font-family: inherit;
+}
+.ord-swap:hover { opacity: 1; background: rgba(0,0,0,0.06); }
+
+/* ───── AllAreas pivot ─────
+ * Area-outer mode renders one block per area, each with its own heading. */
+.pivot-area-section { margin-bottom: 8px; }
+.pivot-area-heading {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--charcoal);
+  margin: 16px 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+/* Area-leaf mode: per-area total rows are clickable to deep-link into
+ * that area's drill. Subtle hover affordance; same row height as line items. */
+.pivot-area-row { cursor: pointer; }
+.pivot-area-row:hover td { background: rgba(225,0,32,0.04); }
+.pivot-area-row td.label {
+  color: var(--charcoal);
+  font-weight: 400;
+}
+
+
 .topbar select, .topbar input[type=range] {
   background: var(--surface-alt);
   border: 1px solid var(--border);

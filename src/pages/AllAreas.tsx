@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { fetchActuals, fetchForecasts, type CfCell } from '@/lib/queries'
-import { AreaCategoryCards } from './AreaDrill'
+import AllAreasPivot from './AllAreasPivot'
 import type { Scope } from './Dossier'
 
 /* Consolidated Group view — sums the selected areas into one block,
- * renders the same category cards as the per-area drill. Area selection
- * is controlled via the topbar Areas chip; everything checked = full
- * group consolidation. */
-export default function AllAreas({ scope }: { scope: Scope }) {
+ * pivots by the chip ordering (`ord` in scope). Area selection is still
+ * controlled via the topbar Areas chip; the pivot operates over the
+ * resulting `scope.selectedAreas` set. */
+export default function AllAreas({ scope, onSelectArea }: { scope: Scope; onSelectArea: (areaId: string) => void }) {
   const [actuals, setActuals] = useState<(CfCell & { source_version: string })[]>([])
   const [forecasts, setForecasts] = useState<(CfCell & { version: string })[]>([])
   const [loading, setLoading] = useState(true)
@@ -48,20 +48,24 @@ export default function AllAreas({ scope }: { scope: Scope }) {
     ? `all ${totalAreas} areas`
     : `${selectedCount} of ${totalAreas} areas`
 
+  /* The ORD chip control sits in the topbar (Dossier.tsx). This page just
+   * passes scope.ord through to the pivot renderer. */
+  const ordPretty = scope.ord.split('').map(c => ({ A: 'Area', N: 'Nature', C: 'Category' }[c])).join(' ▸ ')
+
   return (
     <div>
       <h1>Group consolidation</h1>
       <div style={{ marginTop: 4, color: 'var(--mute)', fontSize: 13 }}>
-        Summing {titleSuffix}.
+        Summing {titleSuffix} · grouped {ordPretty}.
       </div>
       <div style={{ height: 16 }} />
-      <AreaCategoryCards
+      <AllAreasPivot
         actuals={filteredActuals}
         forecasts={filteredForecasts}
         lines={scope.lines}
-        grain={scope.grain}
         scope={scope}
-        groupBy={scope.groupBy}
+        areas={scope.selectedAreas}
+        onSelectArea={onSelectArea}
       />
     </div>
   )
