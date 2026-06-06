@@ -497,37 +497,17 @@ body, html, #root {
 }
 .ord-swap:hover { opacity: 1; background: rgba(0,0,0,0.06); }
 
-/* ───── AllAreas pivot — Area-outer card ─────
- * Each canonical area renders as a card with a chevron header carrying
- * Receipts / Payments / Net totals across the active period. Click the
- * header to expand the full per-area breakdown beneath. */
-.pivot-area-card {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  margin-bottom: 10px;
+/* ───── AllAreas pivot — Area-outer (one big hierarchical table) ─────
+ * Each area is a clickable header row showing per-period Net values.
+ * Click to expand a details row (colSpan-wide) holding the full
+ * AreaCategoryCards breakdown for that area. */
+.pivot-area-table { margin: 0; }
+.pivot-area-headrow td {
   background: var(--surface);
-  overflow: hidden;
-}
-.pivot-area-card-header {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  padding: 10px 14px;
-  background: var(--surface);
-}
-.pivot-area-card-header.clickable { cursor: pointer; user-select: none; }
-.pivot-area-card-header.clickable:hover { background: rgba(0,0,0,0.025); }
-.pivot-area-card.open .pivot-area-card-header {
-  border-bottom: 1px solid var(--border);
-}
-.pivot-area-card-name {
-  flex: 1;
-  font-size: 15px;
   font-weight: 500;
-  color: var(--charcoal);
-  display: flex;
-  align-items: center;
 }
+.pivot-area-headrow:hover td { background: rgba(0,0,0,0.04); }
+.pivot-area-headrow.open td { background: rgba(225,0,32,0.05); }
 .pivot-card-chev {
   display: inline-block;
   width: 10px;
@@ -536,38 +516,17 @@ body, html, #root {
   opacity: 0.65;
   transition: transform 0.15s ease;
 }
-.pivot-area-card.open .pivot-card-chev { transform: rotate(90deg); }
-.pivot-area-card-stats {
-  display: flex;
-  gap: 28px;
-  align-items: flex-end;
+.pivot-area-headrow.open .pivot-card-chev { transform: rotate(90deg); }
+.pivot-area-expandedrow > td {
+  padding: 14px 0 18px 0 !important;
+  border-top: 1px dashed var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-alt);
 }
-.pivot-stat {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  min-width: 82px;
-}
-.pivot-stat-label {
-  font-size: 9.5px;
-  color: var(--mute);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin-bottom: 2px;
-}
-.pivot-stat-value {
-  font-size: 13.5px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  color: var(--charcoal);
-}
-.pivot-stat-net .pivot-stat-value { font-size: 15px; font-weight: 600; }
-.pivot-area-card-body {
-  padding: 10px 14px 14px;
-}
+.pivot-area-expanded-cell { /* inner padding handled by child cards */ }
 
-/* Area-leaf mode: per-area total rows are clickable to deep-link into
- * that area's drill. Subtle hover affordance; same row height as line items. */
+/* Area-leaf mode (Section-outer orderings): per-area total rows clickable
+ * to deep-link into that area's drill. */
 .pivot-area-row { cursor: pointer; }
 .pivot-area-row:hover td { background: rgba(225,0,32,0.04); }
 .pivot-area-row td.label {

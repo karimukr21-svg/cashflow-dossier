@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import type { CfCell, CfLine, CanonicalArea } from '@/lib/queries'
 import type { Scope } from './Dossier'
 import { fmt, classNum } from '@/lib/format'
@@ -81,79 +81,108 @@ function AreaOuter({
   const innerGroupBy: 'category' | 'nature' = scope.ord[1] === 'N' ? 'nature' : 'category'
   const { expanded, toggle } = useExpandedAreas()
 
-  /* Build line→nature lookup once for header-stat aggregation. */
+  /* Line code → nature, so per-area Net rows can ignore Balance lines. */
   const lineNature = useMemo(() => {
     const m = new Map<string, 'Receipts' | 'Payments' | 'Balance'>()
     for (const l of lines) m.set(l.line_code, l.nature)
     return m
   }, [lines])
 
+  /* Pre-bucket cells by canonical area_id so per-row sums are O(cells_in_area)
+   * per (column × area) rather than O(all_cells). */
+  const cellsByArea = useMemo(() => {
+    const m = new Map<string, { actuals: typeof actuals; forecasts: typeof forecasts }>()
+    for (const a of areas) m.set(a.area_id, { actuals: [], forecasts: [] })
+    const cfToArea = new Map<string, string>()
+    for (const a of areas) for (const cf of a.cf_areas) cfToArea.set(cf, a.area_id)
+    for (const c of actuals)   { const aId = cfToArea.get(c.area); if (aId) m.get(aId)!.actuals.push(c) }
+    for (const c of forecasts) { const aId = cfToArea.get(c.area); if (aId) m.get(aId)!.forecasts.push(c) }
+    return m
+  }, [actuals, forecasts, areas])
+
+  const columns = useMemo(
+    () => buildColumns(scope.grain, scope, scope.latestActualYM),
+    [scope.grain, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth, scope.latestActualYM])
+  const tableMinWidth = LABEL_COL_PX + (columns.length * PERIOD_COL_PX) + TOTAL_COL_PX
+
+  /* Net (Receipts + Payments) for a given area + column matcher. Balance
+   * lines are skipped (they're point-in-time positions, not flows). */
+  const areaNet = (areaId: string, matches: (y: number, m: number) => boolean): number | null => {
+    const bucket = cellsByArea.get(areaId)
+    if (!bucket) return null
+    let sum: number | null = null
+    for (const c of bucket.actuals) {
+      const nat = lineNature.get(c.line_code)
+      if (nat !== 'Receipts' && nat !== 'Payments') continue
+      if (!matches(c.year, c.month)) continue
+      sum = (sum ?? 0) + c.value
+    }
+    for (const c of bucket.forecasts) {
+      const nat = lineNature.get(c.line_code)
+      if (nat !== 'Receipts' && nat !== 'Payments') continue
+      if (!matches(c.year, c.month)) continue
+      sum = (sum ?? 0) + c.value
+    }
+    return sum
+  }
+
   return (
-    <div>
-      {areas.map(area => {
-        const isOpen = expanded.has(area.area_id)
-        const aSet = new Set(area.cf_areas)
-        const aActuals = actuals.filter(c => aSet.has(c.area))
-        const aForecasts = forecasts.filter(c => aSet.has(c.area))
-
-        /* Compute Receipts / Payments / Net for the card header — same
-         * shape Karim already reads in FlowAreaSubgroup subtotals. */
-        let receipts = 0, payments = 0, touchedR = false, touchedP = false
-        for (const c of aActuals) {
-          const nat = lineNature.get(c.line_code)
-          if (nat === 'Receipts') { receipts += c.value; touchedR = true }
-          else if (nat === 'Payments') { payments += c.value; touchedP = true }
-        }
-        for (const c of aForecasts) {
-          const nat = lineNature.get(c.line_code)
-          if (nat === 'Receipts') { receipts += c.value; touchedR = true }
-          else if (nat === 'Payments') { payments += c.value; touchedP = true }
-        }
-        const net = (touchedR || touchedP) ? receipts + payments : null
-
-        return (
-          <div key={area.area_id} className={`pivot-area-card ${isOpen ? 'open' : ''}`}>
-            <div className="pivot-area-card-header clickable" onClick={() => toggle(area.area_id)}>
-              <div className="pivot-area-card-name">
-                <span className="pivot-card-chev">▶</span>
-                {area.display_name}
-              </div>
-              <div className="pivot-area-card-stats">
-                <div className="pivot-stat">
-                  <span className="pivot-stat-label">Receipts</span>
-                  <span className={`pivot-stat-value ${classNum(touchedR ? receipts : null)}`}>
-                    {touchedR ? fmt(receipts) : '—'}
-                  </span>
-                </div>
-                <div className="pivot-stat">
-                  <span className="pivot-stat-label">Payments</span>
-                  <span className={`pivot-stat-value ${classNum(touchedP ? payments : null)}`}>
-                    {touchedP ? fmt(payments) : '—'}
-                  </span>
-                </div>
-                <div className="pivot-stat pivot-stat-net">
-                  <span className="pivot-stat-label">Net</span>
-                  <span className={`pivot-stat-value ${classNum(net)}`}>
-                    {net == null ? '—' : fmt(net)}
-                  </span>
-                </div>
-              </div>
-            </div>
-            {isOpen && (
-              <div className="pivot-area-card-body">
-                <AreaCategoryCards
-                  actuals={aActuals}
-                  forecasts={aForecasts}
-                  lines={lines}
-                  grain={scope.grain}
-                  scope={scope}
-                  groupBy={innerGroupBy}
-                />
-              </div>
-            )}
-          </div>
-        )
-      })}
+    <div style={{ overflowX: 'auto' }}>
+      <table className="cf-table pivot-area-table" style={{ tableLayout: 'fixed', width: tableMinWidth }}>
+        <colgroup>
+          <col style={{ width: LABEL_COL_PX }} />
+          {columns.map(c => <col key={c.key} style={{ width: PERIOD_COL_PX }} />)}
+          <col style={{ width: TOTAL_COL_PX }} />
+        </colgroup>
+        <thead>
+          <tr>
+            <th className="label" style={{ position: 'sticky', left: 0, background: 'var(--surface)' }}>Area</th>
+            {columns.map(c => (
+              <th key={c.key} className={c.isActual ? 'cell actual' : 'cell forecast'}>{c.label}</th>
+            ))}
+            <th>Net</th>
+          </tr>
+        </thead>
+        <tbody>
+          {areas.map(area => {
+            const isOpen = expanded.has(area.area_id)
+            const rowTotal = areaNet(area.area_id, () => true)
+            const bucket = cellsByArea.get(area.area_id)
+            return (
+              <Fragment key={area.area_id}>
+                <tr className={`pivot-area-headrow subtotal-row clickable ${isOpen ? 'open' : ''}`}
+                    onClick={() => toggle(area.area_id)}>
+                  <td className="label">
+                    <span className="pivot-card-chev">▶</span>
+                    {area.display_name}
+                  </td>
+                  {columns.map(col => {
+                    const v = areaNet(area.area_id, col.matches)
+                    return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
+                  })}
+                  <td className={classNum(rowTotal)} style={{ fontWeight: 600 }}>
+                    {rowTotal == null ? '' : fmt(rowTotal)}
+                  </td>
+                </tr>
+                {isOpen && bucket && (
+                  <tr className="pivot-area-expandedrow">
+                    <td colSpan={2 + columns.length} className="pivot-area-expanded-cell">
+                      <AreaCategoryCards
+                        actuals={bucket.actuals}
+                        forecasts={bucket.forecasts}
+                        lines={lines}
+                        grain={scope.grain}
+                        scope={scope}
+                        groupBy={innerGroupBy}
+                      />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            )
+          })}
+        </tbody>
+      </table>
     </div>
   )
 }
