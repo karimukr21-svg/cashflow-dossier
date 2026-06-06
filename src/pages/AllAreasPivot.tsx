@@ -2,7 +2,7 @@ import { Fragment, useMemo, useState } from 'react'
 import type { CfCell, CfLine, CanonicalArea } from '@/lib/queries'
 import type { Scope } from './Dossier'
 import { fmt, classNum } from '@/lib/format'
-import { AreaCategoryCards, buildColumns } from './AreaDrill'
+import { buildColumns } from './AreaDrill'
 
 /* ───── Layout constants — kept in sync with AreaDrill so cards line up ───── */
 const LABEL_COL_PX = 240
@@ -165,18 +165,14 @@ function AreaOuter({
                   </td>
                 </tr>
                 {isOpen && bucket && (
-                  <tr className="pivot-area-expandedrow">
-                    <td colSpan={2 + columns.length} className="pivot-area-expanded-cell">
-                      <AreaCategoryCards
-                        actuals={bucket.actuals}
-                        forecasts={bucket.forecasts}
-                        lines={lines}
-                        grain={scope.grain}
-                        scope={scope}
-                        groupBy={innerGroupBy}
-                      />
-                    </td>
-                  </tr>
+                  <AreaInnerRows
+                    areaKey={area.area_id}
+                    actuals={bucket.actuals}
+                    forecasts={bucket.forecasts}
+                    lines={lines}
+                    columns={columns}
+                    innerGroupBy={innerGroupBy}
+                  />
                 )}
               </Fragment>
             )
@@ -629,3 +625,336 @@ function NetInlineRow({
   )
 }
 
+/* ════════════════════════════════════════════════════════════════════════
+   Area-inner rows — emitted inline beneath an expanded area row in the
+   outer Area-outer table. Same hierarchical-row pattern as the rest of
+   the pivot: section → subgroup/category → line. Period header lives on
+   the outer table only, so all monthly columns line up vertically.
+   ════════════════════════════════════════════════════════════════════════ */
+function AreaInnerRows({
+  areaKey, actuals, forecasts, lines, columns, innerGroupBy,
+}: {
+  areaKey: string;
+  actuals: CfCell[];
+  forecasts: CfCell[];
+  lines: CfLine[];
+  columns: Column[];
+  innerGroupBy: 'category' | 'nature';
+}) {
+  const activeLines = useMemo(
+    () => lines.filter(l => l.is_active).sort((a, b) => a.sort_order - b.sort_order),
+    [lines])
+
+  /* Sum a single line code over the area's cells with a column matcher. */
+  const sumLine = (lineCode: string, matches: (y: number, m: number) => boolean): number | null => {
+    let sum: number | null = null
+    for (const c of actuals)   { if (c.line_code === lineCode && matches(c.year, c.month)) sum = (sum ?? 0) + c.value }
+    for (const c of forecasts) { if (c.line_code === lineCode && matches(c.year, c.month)) sum = (sum ?? 0) + c.value }
+    return sum
+  }
+  const sumLines = (lineCodes: string[], matches: (y: number, m: number) => boolean): number | null => {
+    let t = 0; let touched = false
+    for (const lc of lineCodes) {
+      const s = sumLine(lc, matches)
+      if (s != null) { t += s; touched = true }
+    }
+    return touched ? t : null
+  }
+
+  if (innerGroupBy === 'category') {
+    const sections = SECTIONS_BY_CATEGORY.map(sec => {
+      const inSec = activeLines.filter(l => sec.categories.includes(l.category))
+      return {
+        key: sec.key,
+        label: sec.label,
+        kind: sec.kind,
+        lines: inSec,
+        receipts: inSec.filter(l => l.nature === 'Receipts'),
+        payments: inSec.filter(l => l.nature === 'Payments'),
+      }
+    }).filter(s => s.lines.length > 0)
+    return (
+      <>
+        {sections.map(sec => (
+          <InnerSectionRow
+            key={`${areaKey}|${sec.key}`}
+            areaKey={areaKey}
+            sec={sec}
+            mode="category"
+            columns={columns}
+            sumLine={sumLine}
+            sumLines={sumLines}
+          />
+        ))}
+      </>
+    )
+  }
+  // innerGroupBy === 'nature'
+  const opening = activeLines.filter(l => l.category === 'Opening Balance')
+  const receipts = activeLines.filter(l => l.nature === 'Receipts')
+  const payments = activeLines.filter(l => l.nature === 'Payments')
+  const closing = activeLines.filter(l => ['Ending Balance', 'Accumulated Loans', 'Overdrafts'].includes(l.category))
+  const natureSections = [
+    opening.length ? { key: 'opening',  label: 'Opening Balance',  kind: 'balance' as const, lines: opening,  receipts: [],       payments: []    } : null,
+    receipts.length ? { key: 'receipts', label: 'Receipts',         kind: 'flow' as const,    lines: receipts, receipts,           payments: []    } : null,
+    payments.length ? { key: 'payments', label: 'Payments',         kind: 'flow' as const,    lines: payments, receipts: [],       payments        } : null,
+    closing.length ? { key: 'closing',  label: 'Closing Position', kind: 'balance' as const, lines: closing,  receipts: [],       payments: []    } : null,
+  ].filter(Boolean) as { key: string; label: string; kind: 'balance' | 'flow'; lines: CfLine[]; receipts: CfLine[]; payments: CfLine[] }[]
+  return (
+    <>
+      {natureSections.map(sec => (
+        <InnerSectionRow
+          key={`${areaKey}|${sec.key}`}
+          areaKey={areaKey}
+          sec={sec}
+          mode="nature"
+          columns={columns}
+          sumLine={sumLine}
+          sumLines={sumLines}
+        />
+      ))}
+    </>
+  )
+}
+
+/* One section row inside an expanded area. Click to expand; reveals
+ * subgroup / category rows (depth 2) which in turn hold line rows (depth 3). */
+function InnerSectionRow({
+  areaKey, sec, mode, columns, sumLine, sumLines,
+}: {
+  areaKey: string;
+  sec: { key: string; label: string; kind: 'balance' | 'flow'; lines: CfLine[]; receipts: CfLine[]; payments: CfLine[] };
+  mode: 'category' | 'nature';
+  columns: Column[];
+  sumLine: (lc: string, m: (y: number, mo: number) => boolean) => number | null;
+  sumLines: (lcs: string[], m: (y: number, mo: number) => boolean) => number | null;
+}) {
+  const [open, setOpen] = useState(false)
+  const allCodes = sec.lines.map(l => l.line_code)
+  const headTotal = sumLines(allCodes, () => true)
+  return (
+    <>
+      <tr className={`pivot-section-row subtotal-row clickable ${open ? 'open' : ''}`}
+          onClick={() => setOpen(o => !o)}>
+        <td className="label" style={{ paddingLeft: 24 }}>
+          <span className="pivot-card-chev">▶</span>
+          {sec.label}
+        </td>
+        {columns.map(col => {
+          const v = sumLines(allCodes, col.matches)
+          return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
+        })}
+        <td className={classNum(headTotal)} style={{ fontWeight: 600 }}>
+          {sec.kind === 'balance' || headTotal == null ? '' : fmt(headTotal)}
+        </td>
+      </tr>
+      {open && (sec.kind === 'balance'
+        ? <>{sec.lines.map(l => (
+            <InnerLineRow key={`${areaKey}|${sec.key}|${l.line_code}`} line={l} columns={columns} sumLine={sumLine} depth={2} />
+          ))}</>
+        : mode === 'category'
+          ? <InnerFlowChildren areaKey={areaKey} sec={sec} columns={columns} sumLine={sumLine} sumLines={sumLines} />
+          : <InnerCategoryChildren areaKey={areaKey} lines={sec.lines} sectionKey={sec.key} columns={columns} sumLine={sumLine} sumLines={sumLines} />
+      )}
+    </>
+  )
+}
+
+/* Category-mode Flow section: emit Receipts subgroup, Payments subgroup,
+ * Net row. Each subgroup row expands to its line items. */
+function InnerFlowChildren({
+  areaKey, sec, columns, sumLine, sumLines,
+}: {
+  areaKey: string;
+  sec: { key: string; label: string; receipts: CfLine[]; payments: CfLine[] };
+  columns: Column[];
+  sumLine: (lc: string, m: (y: number, mo: number) => boolean) => number | null;
+  sumLines: (lcs: string[], m: (y: number, mo: number) => boolean) => number | null;
+}) {
+  return (
+    <>
+      {sec.receipts.length > 0 && (
+        <InnerSubgroupRow
+          areaKey={areaKey} sectionKey={sec.key}
+          label="Receipts" subgroupClass="subgroup-receipts"
+          lines={sec.receipts} columns={columns}
+          sumLine={sumLine} sumLines={sumLines}
+        />
+      )}
+      {sec.payments.length > 0 && (
+        <InnerSubgroupRow
+          areaKey={areaKey} sectionKey={sec.key}
+          label="Payments" subgroupClass="subgroup-payments"
+          lines={sec.payments} columns={columns}
+          sumLine={sumLine} sumLines={sumLines}
+        />
+      )}
+      {sec.receipts.length > 0 && sec.payments.length > 0 && (
+        <InnerNetRow sec={sec} columns={columns} sumLines={sumLines} />
+      )}
+    </>
+  )
+}
+
+/* Nature-mode Flow section (Receipts or Payments): group lines by category
+ * and emit a category-divider row per group with line items beneath. */
+function InnerCategoryChildren({
+  areaKey, lines, sectionKey, columns, sumLine, sumLines,
+}: {
+  areaKey: string;
+  lines: CfLine[];
+  sectionKey: string;
+  columns: Column[];
+  sumLine: (lc: string, m: (y: number, mo: number) => boolean) => number | null;
+  sumLines: (lcs: string[], m: (y: number, mo: number) => boolean) => number | null;
+}) {
+  const groups = useMemo(() => {
+    const map = new Map<string, CfLine[]>()
+    for (const l of lines) {
+      if (!map.has(l.category)) map.set(l.category, [])
+      map.get(l.category)!.push(l)
+    }
+    return [...map.entries()].map(([category, lines]) => ({ category, lines }))
+  }, [lines])
+  return (
+    <>
+      {groups.map(grp => (
+        <InnerCategoryRow
+          key={`${areaKey}|${sectionKey}|${grp.category}`}
+          areaKey={areaKey}
+          sectionKey={sectionKey}
+          category={grp.category}
+          lines={grp.lines}
+          columns={columns}
+          sumLine={sumLine}
+          sumLines={sumLines}
+        />
+      ))}
+    </>
+  )
+}
+
+function InnerSubgroupRow({
+  areaKey, sectionKey, label, subgroupClass, lines, columns, sumLine, sumLines,
+}: {
+  areaKey: string;
+  sectionKey: string;
+  label: 'Receipts' | 'Payments';
+  subgroupClass: string;
+  lines: CfLine[];
+  columns: Column[];
+  sumLine: (lc: string, m: (y: number, mo: number) => boolean) => number | null;
+  sumLines: (lcs: string[], m: (y: number, mo: number) => boolean) => number | null;
+}) {
+  const [open, setOpen] = useState(false)
+  const codes = lines.map(l => l.line_code)
+  const subtotal = sumLines(codes, () => true)
+  return (
+    <>
+      <tr className={`pivot-subgroup-row subtotal-row ${subgroupClass} clickable ${open ? 'open' : ''}`}
+          onClick={() => setOpen(o => !o)}>
+        <td className="label" style={{ paddingLeft: 48 }}>
+          <span className="pivot-card-chev">▶</span>
+          {label}
+        </td>
+        {columns.map(col => {
+          const v = sumLines(codes, col.matches)
+          return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
+        })}
+        <td className={classNum(subtotal)} style={{ fontWeight: 500 }}>{subtotal == null ? '' : fmt(subtotal)}</td>
+      </tr>
+      {open && lines.map(l => (
+        <InnerLineRow key={`${areaKey}|${sectionKey}|${label}|${l.line_code}`} line={l} columns={columns} sumLine={sumLine} depth={3} />
+      ))}
+    </>
+  )
+}
+
+function InnerCategoryRow({
+  areaKey, sectionKey, category, lines, columns, sumLine, sumLines,
+}: {
+  areaKey: string;
+  sectionKey: string;
+  category: string;
+  lines: CfLine[];
+  columns: Column[];
+  sumLine: (lc: string, m: (y: number, mo: number) => boolean) => number | null;
+  sumLines: (lcs: string[], m: (y: number, mo: number) => boolean) => number | null;
+}) {
+  const [open, setOpen] = useState(false)
+  const codes = lines.map(l => l.line_code)
+  const subtotal = sumLines(codes, () => true)
+  return (
+    <>
+      <tr className={`pivot-subgroup-row subtotal-row category-divider clickable ${open ? 'open' : ''}`}
+          onClick={() => setOpen(o => !o)}>
+        <td className="label" style={{ paddingLeft: 48 }}>
+          <span className="pivot-card-chev">▶</span>
+          {category}
+        </td>
+        {columns.map(col => {
+          const v = sumLines(codes, col.matches)
+          return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
+        })}
+        <td className={classNum(subtotal)} style={{ fontWeight: 500 }}>{subtotal == null ? '' : fmt(subtotal)}</td>
+      </tr>
+      {open && lines.map(l => (
+        <InnerLineRow key={`${areaKey}|${sectionKey}|${category}|${l.line_code}`} line={l} columns={columns} sumLine={sumLine} depth={3} />
+      ))}
+    </>
+  )
+}
+
+function InnerLineRow({
+  line, columns, sumLine, depth,
+}: {
+  line: CfLine;
+  columns: Column[];
+  sumLine: (lc: string, m: (y: number, mo: number) => boolean) => number | null;
+  depth: number;
+}) {
+  const rowTotal = sumLine(line.line_code, () => true)
+  const indent = 12 + depth * 24
+  return (
+    <tr>
+      <td className="label" style={{ paddingLeft: indent }}>{line.description}</td>
+      {columns.map(col => {
+        const v = sumLine(line.line_code, col.matches)
+        return (
+          <td key={col.key} className={`${classNum(v)} ${col.isActual ? 'cell actual' : 'cell forecast'}`}>
+            {v == null ? '' : fmt(v)}
+          </td>
+        )
+      })}
+      <td className={classNum(rowTotal)} style={{ fontWeight: 500 }}>
+        {rowTotal == null ? '' : fmt(rowTotal)}
+      </td>
+    </tr>
+  )
+}
+
+function InnerNetRow({
+  sec, columns, sumLines,
+}: {
+  sec: { label: string; receipts: CfLine[]; payments: CfLine[] };
+  columns: Column[];
+  sumLines: (lcs: string[], m: (y: number, mo: number) => boolean) => number | null;
+}) {
+  const r = sumLines(sec.receipts.map(l => l.line_code), () => true)
+  const p = sumLines(sec.payments.map(l => l.line_code), () => true)
+  const netTotal = (r == null && p == null) ? null : (r ?? 0) + (p ?? 0)
+  return (
+    <tr className="pivot-net-row total net-row">
+      <td className="label" style={{ paddingLeft: 48 }}>Net {sec.label}</td>
+      {columns.map(col => {
+        const rv = sumLines(sec.receipts.map(l => l.line_code), col.matches)
+        const pv = sumLines(sec.payments.map(l => l.line_code), col.matches)
+        const v = (rv == null && pv == null) ? null : ((rv ?? 0) + (pv ?? 0))
+        return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
+      })}
+      <td className={classNum(netTotal)} style={{ fontWeight: 600 }}>
+        {netTotal == null ? '' : fmt(netTotal)}
+      </td>
+    </tr>
+  )
+}
