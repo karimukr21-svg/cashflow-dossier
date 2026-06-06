@@ -497,17 +497,15 @@ body, html, #root {
 }
 .ord-swap:hover { opacity: 1; background: rgba(0,0,0,0.06); }
 
-/* ───── AllAreas pivot — Area-outer (one big hierarchical table) ─────
- * Each area is a clickable header row showing per-period Net values.
- * Click to expand a details row (colSpan-wide) holding the full
- * AreaCategoryCards breakdown for that area. */
+/* ───── AllAreas pivot — one hierarchical table ─────
+ * Three row kinds, all in one table so monthly columns line up:
+ *   .pivot-section-row   — outermost group (Area for ANC/ACN, Nature for
+ *                          NCA/NAC, Category for CNA/CAN)
+ *   .pivot-subgroup-row  — middle group (Receipts/Payments, Category divider)
+ *   .pivot-area-row      — leaf (per-area totals; clickable → area drill)
+ *   .pivot-net-row       — Net row inside Category-outer Flow sections
+ * Common chevron + collapse state on .open. */
 .pivot-area-table { margin: 0; }
-.pivot-area-headrow td {
-  background: var(--surface);
-  font-weight: 500;
-}
-.pivot-area-headrow:hover td { background: rgba(0,0,0,0.04); }
-.pivot-area-headrow.open td { background: rgba(225,0,32,0.05); }
 .pivot-card-chev {
   display: inline-block;
   width: 10px;
@@ -516,17 +514,50 @@ body, html, #root {
   opacity: 0.65;
   transition: transform 0.15s ease;
 }
-.pivot-area-headrow.open .pivot-card-chev { transform: rotate(90deg); }
+.pivot-area-headrow.open .pivot-card-chev,
+.pivot-section-row.open .pivot-card-chev,
+.pivot-subgroup-row.open .pivot-card-chev { transform: rotate(90deg); }
+
+/* Area-outer (ANC / ACN) — section row = an area. Clickable. Expanded
+ * body uses a colSpan'd details row that hosts AreaCategoryCards. */
+.pivot-area-headrow td {
+  background: var(--surface);
+  font-weight: 500;
+}
+.pivot-area-headrow:hover td { background: rgba(0,0,0,0.04); }
+.pivot-area-headrow.open td { background: rgba(225,0,32,0.05); }
 .pivot-area-expandedrow > td {
   padding: 14px 0 18px 0 !important;
   border-top: 1px dashed var(--border);
   border-bottom: 1px solid var(--border);
   background: var(--surface-alt);
 }
-.pivot-area-expanded-cell { /* inner padding handled by child cards */ }
 
-/* Area-leaf mode (Section-outer orderings): per-area total rows clickable
- * to deep-link into that area's drill. */
+/* Section-outer (NCA / CNA / NAC / CAN) — section row = a Nature/Category
+ * bucket. Bold, stronger background, hover. */
+.pivot-section-row td {
+  background: var(--surface);
+  font-weight: 600;
+  font-size: 12.5px;
+}
+.pivot-section-row:hover td { background: rgba(0,0,0,0.04); }
+.pivot-section-row.open td { background: rgba(225,0,32,0.04); }
+
+.pivot-subgroup-row td {
+  background: var(--surface);
+  font-weight: 500;
+}
+.pivot-subgroup-row:hover td { background: rgba(0,0,0,0.03); }
+.pivot-subgroup-row.open td { background: rgba(225,0,32,0.025); }
+
+.pivot-net-row td {
+  background: rgba(0,0,0,0.02);
+  font-weight: 600;
+  border-top: 1px solid var(--border);
+}
+
+/* Per-area total row at the leaf — clickable to deep-link into the
+ * area's drill. */
 .pivot-area-row { cursor: pointer; }
 .pivot-area-row:hover td { background: rgba(225,0,32,0.04); }
 .pivot-area-row td.label {

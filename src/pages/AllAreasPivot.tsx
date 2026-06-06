@@ -271,197 +271,172 @@ function SectionOuter({ actuals, forecasts, lines, scope, areas, onSelectArea }:
     return out
   }, [activeLines, outer])
 
+  /* V1: all section-outer orderings (NCA / CNA / NAC / CAN) treat Area as
+   * the leaf with per-area total rows. NAC / CAN technically place Area in
+   * the middle position (line items beneath each area) — that view is
+   * deferred to v2. middle / inner are unused below for that reason but
+   * we keep them in scope so the dispatcher (Dossier) can still set them. */
+  void middle; void inner;
+
   return (
     <div style={{ overflowX: 'auto' }}>
-      <div style={{ width: tableMinWidth }}>
-        {outerSections.map(sec => (
-          <SectionCard
-            key={sec.key}
-            sec={sec}
-            ord={scope.ord}
-            outer={outer} middle={middle} inner={inner}
-            columns={columns}
-            tableMinWidth={tableMinWidth}
-            areas={areas}
-            sumCells={sumCells}
-            onSelectArea={onSelectArea}
-          />
-        ))}
-      </div>
-    </div>
-  )
-}
-
-/* ───── One outer section card ───── */
-function SectionCard({
-  sec, ord, outer, middle, inner,
-  columns, tableMinWidth, areas, sumCells, onSelectArea,
-}: {
-  sec: { key: string; label: string; kind: SectionKind; lines: CfLine[]; receipts: CfLine[]; payments: CfLine[]; natureClass: string };
-  ord: string;
-  outer: 'N' | 'C';
-  middle: 'A' | 'N' | 'C';
-  inner: 'A' | 'N' | 'C';
-  columns: Column[];
-  tableMinWidth: number;
-  areas: CanonicalArea[];
-  sumCells: (lineCodes: Set<string>, areaIds: Set<string> | null, matches: (y: number, m: number) => boolean) => number | null;
-  onSelectArea: (areaId: string) => void;
-}) {
-  const allAreaIds = useMemo(() => new Set(areas.map(a => a.area_id)), [areas])
-  const allLineCodes = useMemo(() => new Set(sec.lines.map(l => l.line_code)), [sec.lines])
-
-  // Header subtotal for the whole card (across ALL areas, all lines in section)
-  const cardTotal = sumCells(allLineCodes, null, () => true)
-
-  return (
-    <div className="cat-group">
-      <div className={`cat-group-header ${sec.natureClass}`}>
-        <span>{sec.label}</span>
-        {cardTotal != null && (
-          <span className="cat-totals">{sec.kind === 'balance' ? 'Total' : 'Total'}: {fmt(cardTotal)}</span>
-        )}
-      </div>
-      <table className="cf-table" style={{ tableLayout: 'fixed', width: sec.kind === 'balance' ? tableMinWidth - TOTAL_COL_PX : tableMinWidth }}>
+      <table className="cf-table pivot-area-table" style={{ tableLayout: 'fixed', width: tableMinWidth }}>
         <colgroup>
           <col style={{ width: LABEL_COL_PX }} />
           {columns.map(c => <col key={c.key} style={{ width: PERIOD_COL_PX }} />)}
-          {sec.kind === 'flow' && <col style={{ width: TOTAL_COL_PX }} />}
+          <col style={{ width: TOTAL_COL_PX }} />
         </colgroup>
         <thead>
           <tr>
             <th className="label" style={{ position: 'sticky', left: 0, background: 'var(--surface)' }}>
-              {sec.kind === 'balance' ? 'Line' : 'Line'}
+              {outer === 'N' ? 'Nature' : 'Category'}
             </th>
             {columns.map(c => (
               <th key={c.key} className={c.isActual ? 'cell actual' : 'cell forecast'}>{c.label}</th>
             ))}
-            {sec.kind === 'flow' && <th>Total</th>}
+            <th>Net</th>
           </tr>
         </thead>
         <tbody>
-          <SectionBody
-            sec={sec} ord={ord} middle={middle} inner={inner}
-            columns={columns} areas={areas} allAreaIds={allAreaIds}
-            sumCells={sumCells} onSelectArea={onSelectArea}
-          />
+          {outerSections.map(sec => (
+            <SectionRow
+              key={sec.key}
+              sec={sec}
+              outer={outer}
+              columns={columns}
+              areas={areas}
+              sumCells={sumCells}
+              onSelectArea={onSelectArea}
+            />
+          ))}
         </tbody>
       </table>
     </div>
   )
 }
 
-/* ───── Section body — branches on whether Area is middle or inner ───── */
-function SectionBody({
-  sec, ord, middle, inner, columns, areas, allAreaIds, sumCells, onSelectArea,
+/* ───── Section row in the unified Section-outer table ─────
+ * Each section emits its own <tr> header row + (when open) the rows for
+ * its children. All sections share one outer table so monthly columns
+ * line up vertically and Karim can scan period-by-period across the
+ * whole picture. */
+function SectionRow({
+  sec, outer, columns, areas, sumCells, onSelectArea,
 }: {
-  sec: { key: string; label: string; kind: SectionKind; lines: CfLine[]; receipts: CfLine[]; payments: CfLine[] };
-  ord: string;
-  middle: 'A' | 'N' | 'C';
-  inner: 'A' | 'N' | 'C';
-  columns: Column[];
-  areas: CanonicalArea[];
-  allAreaIds: Set<string>;
-  sumCells: (lineCodes: Set<string>, areaIds: Set<string> | null, matches: (y: number, m: number) => boolean) => number | null;
-  onSelectArea: (areaId: string) => void;
-}) {
-  /* V1: all section-outer orderings (NCA / CNA / NAC / CAN) treat Area as
-   * the leaf with per-area total rows. NAC / CAN technically place Area in
-   * the middle position (line items beneath each area) — that view is
-   * deferred to v2. For v1 the swap arrow can still produce CAN/NAC but
-   * the rendering matches CNA/NCA respectively. ord[1] is what we honor:
-   *  - outer === 'C': Receipts/Payments subgroups inside Flow sections
-   *  - outer === 'N': Category dividers inside Flow sections
-   * (which dimension sits at middle in the chip control doesn't change
-   * what the leaf shows — Area at any non-outer position renders totals.) */
-  const outerDim = ord[0] as 'N' | 'C'
-  return (
-    <SectionAreaLeaf
-      sec={sec} columns={columns} areas={areas} sumCells={sumCells}
-      showNatureSubgroups={outerDim === 'C' && sec.kind === 'flow'}
-      showCategoryDividers={outerDim === 'N' && sec.kind === 'flow'}
-      onSelectArea={onSelectArea}
-    />
-  )
-}
-
-/* ───── Per-area leaf renderer ─────
- * Rendered inside a section card. If the section is Flow and we should show
- * Nature subgroups (Receipts/Payments), emits two area-row groups. If we
- * should show category dividers, splits Receipts/Payments lines by category
- * first. Per-area total rows at the deepest level. */
-function SectionAreaLeaf({
-  sec, columns, areas, sumCells, showCategoryDividers, showNatureSubgroups, onSelectArea,
-}: {
-  sec: { key: string; label: string; kind: SectionKind; lines: CfLine[]; receipts: CfLine[]; payments: CfLine[] };
+  sec: { key: string; label: string; kind: SectionKind; lines: CfLine[]; receipts: CfLine[]; payments: CfLine[]; natureClass: string };
+  outer: 'N' | 'C';
   columns: Column[];
   areas: CanonicalArea[];
   sumCells: (lineCodes: Set<string>, areaIds: Set<string> | null, matches: (y: number, m: number) => boolean) => number | null;
-  showCategoryDividers: boolean;
-  showNatureSubgroups: boolean;
   onSelectArea: (areaId: string) => void;
 }) {
-  /* Balance sections: skip Receipts/Payments split — just per-area rows
-   * for the section's balance lines. */
-  if (sec.kind === 'balance') {
-    const lineCodes = new Set(sec.lines.map(l => l.line_code))
-    return (
-      <>
-        {areas.map(area => (
-          <AreaRow
-            key={area.area_id}
-            area={area}
-            lineCodes={lineCodes}
-            columns={columns}
-            sumCells={sumCells}
-            isBalance={true}
-            onSelectArea={onSelectArea}
-          />
-        ))}
-      </>
-    )
-  }
+  const [open, setOpen] = useState(false)
+  const allLineCodes = useMemo(() => new Set(sec.lines.map(l => l.line_code)), [sec.lines])
+  const headTotal = sumCells(allLineCodes, null, () => true)
 
-  /* Flow sections: render Receipts and Payments as subgroups, with per-area
-   * totals beneath each. Category dividers slot in between when ord includes
-   * Category as a middle dimension. */
   return (
     <>
-      {sec.receipts.length > 0 && (
-        <FlowAreaSubgroup
-          label="Receipts" subgroupClass="subgroup-receipts"
-          lines={sec.receipts} columns={columns} areas={areas}
-          sumCells={sumCells}
-          showCategoryDividers={showCategoryDividers}
-          showSubgroupHeader={showNatureSubgroups || showCategoryDividers}
-          sectionKey={sec.key}
-          onSelectArea={onSelectArea}
-        />
-      )}
-      {sec.payments.length > 0 && (
-        <FlowAreaSubgroup
-          label="Payments" subgroupClass="subgroup-payments"
-          lines={sec.payments} columns={columns} areas={areas}
-          sumCells={sumCells}
-          showCategoryDividers={showCategoryDividers}
-          showSubgroupHeader={showNatureSubgroups || showCategoryDividers}
-          sectionKey={sec.key}
-          onSelectArea={onSelectArea}
-        />
-      )}
-      {sec.receipts.length > 0 && sec.payments.length > 0 && (
-        <NetRow sec={sec} columns={columns} sumCells={sumCells} />
+      <tr className={`pivot-section-row subtotal-row clickable ${sec.natureClass} ${open ? 'open' : ''}`}
+          onClick={() => setOpen(o => !o)}>
+        <td className="label">
+          <span className="pivot-card-chev">▶</span>
+          {sec.label}
+        </td>
+        {columns.map(col => {
+          const v = sumCells(allLineCodes, null, col.matches)
+          return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
+        })}
+        <td className={classNum(headTotal)} style={{ fontWeight: 600 }}>
+          {sec.kind === 'balance' || headTotal == null ? '' : fmt(headTotal)}
+        </td>
+      </tr>
+      {open && (sec.kind === 'balance'
+        ? <BalanceAreaRows sec={sec} columns={columns} areas={areas} sumCells={sumCells} onSelectArea={onSelectArea} />
+        : <FlowSectionChildren sec={sec} outer={outer} columns={columns} areas={areas} sumCells={sumCells} onSelectArea={onSelectArea} />
       )}
     </>
   )
 }
 
-/* Subgroup (Receipts / Payments) — header row + per-area totals. When
- * showCategoryDividers is true, splits the lines into category dividers
- * with per-area rows under each. */
-function FlowAreaSubgroup({
-  label, subgroupClass, lines, columns, areas, sumCells,
-  showCategoryDividers, showSubgroupHeader, sectionKey, onSelectArea,
+/* Balance section expanded view: just per-area rows for the balance lines. */
+function BalanceAreaRows({
+  sec, columns, areas, sumCells, onSelectArea,
+}: {
+  sec: { key: string; lines: CfLine[] };
+  columns: Column[];
+  areas: CanonicalArea[];
+  sumCells: (lineCodes: Set<string>, areaIds: Set<string> | null, matches: (y: number, m: number) => boolean) => number | null;
+  onSelectArea: (areaId: string) => void;
+}) {
+  const lineCodes = useMemo(() => new Set(sec.lines.map(l => l.line_code)), [sec.lines])
+  return (
+    <>
+      {areas.map(area => (
+        <AreaLeafRow
+          key={`${sec.key}|${area.area_id}`}
+          area={area}
+          lineCodes={lineCodes}
+          columns={columns}
+          sumCells={sumCells}
+          isBalance={true}
+          depth={1}
+          onSelectArea={onSelectArea}
+        />
+      ))}
+    </>
+  )
+}
+
+/* Flow section expanded view. outer='C' → Receipts/Payments subgroup rows
+ * + Net row. outer='N' → category dividers (single-nature already at top). */
+function FlowSectionChildren({
+  sec, outer, columns, areas, sumCells, onSelectArea,
+}: {
+  sec: { key: string; label: string; lines: CfLine[]; receipts: CfLine[]; payments: CfLine[] };
+  outer: 'N' | 'C';
+  columns: Column[];
+  areas: CanonicalArea[];
+  sumCells: (lineCodes: Set<string>, areaIds: Set<string> | null, matches: (y: number, m: number) => boolean) => number | null;
+  onSelectArea: (areaId: string) => void;
+}) {
+  if (outer === 'C') {
+    return (
+      <>
+        {sec.receipts.length > 0 && (
+          <SubgroupRow
+            label="Receipts" subgroupClass="subgroup-receipts"
+            lines={sec.receipts} columns={columns} areas={areas}
+            sumCells={sumCells} sectionKey={sec.key} onSelectArea={onSelectArea}
+          />
+        )}
+        {sec.payments.length > 0 && (
+          <SubgroupRow
+            label="Payments" subgroupClass="subgroup-payments"
+            lines={sec.payments} columns={columns} areas={areas}
+            sumCells={sumCells} sectionKey={sec.key} onSelectArea={onSelectArea}
+          />
+        )}
+        {sec.receipts.length > 0 && sec.payments.length > 0 && (
+          <NetInlineRow sec={sec} columns={columns} sumCells={sumCells} />
+        )}
+      </>
+    )
+  }
+  /* outer === 'N': section is Receipts or Payments. Group lines by
+   * category as middle-level rows, with per-area rows underneath. */
+  return (
+    <CategoryRowGroup
+      lines={sec.lines}
+      columns={columns} areas={areas} sumCells={sumCells}
+      sectionKey={sec.key} onSelectArea={onSelectArea}
+    />
+  )
+}
+
+/* Subgroup row (Receipts / Payments inside a Category-outer section).
+ * Header row + (when open) per-area leaf rows. */
+function SubgroupRow({
+  label, subgroupClass, lines, columns, areas, sumCells, sectionKey, onSelectArea,
 }: {
   label: 'Receipts' | 'Payments';
   subgroupClass: string;
@@ -469,57 +444,75 @@ function FlowAreaSubgroup({
   columns: Column[];
   areas: CanonicalArea[];
   sumCells: (lineCodes: Set<string>, areaIds: Set<string> | null, matches: (y: number, m: number) => boolean) => number | null;
-  showCategoryDividers: boolean;
-  showSubgroupHeader: boolean;
   sectionKey: string;
   onSelectArea: (areaId: string) => void;
 }) {
-  const subKey = `${sectionKey}|${label}`
   const [open, setOpen] = useState(false)
+  const lineCodes = useMemo(() => new Set(lines.map(l => l.line_code)), [lines])
+  const subtotal = sumCells(lineCodes, null, () => true)
+  return (
+    <>
+      <tr className={`pivot-subgroup-row subtotal-row ${subgroupClass} clickable ${open ? 'open' : ''}`}
+          onClick={() => setOpen(o => !o)}>
+        <td className="label" style={{ paddingLeft: 32 }}>
+          <span className="pivot-card-chev">▶</span>
+          {label}
+        </td>
+        {columns.map(col => {
+          const v = sumCells(lineCodes, null, col.matches)
+          return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
+        })}
+        <td className={classNum(subtotal)} style={{ fontWeight: 500 }}>{subtotal == null ? '' : fmt(subtotal)}</td>
+      </tr>
+      {open && areas.map(area => (
+        <AreaLeafRow
+          key={`${sectionKey}|${label}|${area.area_id}`}
+          area={area}
+          lineCodes={lineCodes}
+          columns={columns}
+          sumCells={sumCells}
+          isBalance={false}
+          depth={2}
+          onSelectArea={onSelectArea}
+        />
+      ))}
+    </>
+  )
+}
 
-  const allLineCodes = useMemo(() => new Set(lines.map(l => l.line_code)), [lines])
-  const subtotal = sumCells(allLineCodes, null, () => true)
-
-  /* Build category dividers when needed (Category dimension is in the
-   * middle/inner mix). Each divider holds the lines for that category
-   * (within this subgroup's nature). */
-  const categoryGroups = useMemo(() => {
-    if (!showCategoryDividers) return [{ category: '', lines, lineCodes: allLineCodes }]
+/* Group lines by category (Nature-outer Flow sections). Each category
+ * becomes its own collapsible row → per-area leaf rows beneath. */
+function CategoryRowGroup({
+  lines, columns, areas, sumCells, sectionKey, onSelectArea,
+}: {
+  lines: CfLine[];
+  columns: Column[];
+  areas: CanonicalArea[];
+  sumCells: (lineCodes: Set<string>, areaIds: Set<string> | null, matches: (y: number, m: number) => boolean) => number | null;
+  sectionKey: string;
+  onSelectArea: (areaId: string) => void;
+}) {
+  const groups = useMemo(() => {
     const map = new Map<string, CfLine[]>()
     for (const l of lines) {
       if (!map.has(l.category)) map.set(l.category, [])
       map.get(l.category)!.push(l)
     }
     return [...map.entries()].map(([category, lines]) => ({
-      category, lines, lineCodes: new Set(lines.map(l => l.line_code)),
+      category, lineCodes: new Set(lines.map(l => l.line_code)),
     }))
-  }, [lines, allLineCodes, showCategoryDividers])
-
+  }, [lines])
   return (
     <>
-      {showSubgroupHeader && (
-        <tr className={`subgroup-header subtotal-row ${subgroupClass} clickable`}
-            onClick={() => setOpen(o => !o)}>
-          <td className="label">
-            <span style={{ display: 'inline-block', width: 10, marginRight: 8, fontSize: 9, opacity: 0.65, transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s ease' }}>▶</span>
-            {label}
-          </td>
-          {columns.map(col => {
-            const v = sumCells(allLineCodes, null, col.matches)
-            return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
-          })}
-          <td className={classNum(subtotal)}>{subtotal == null ? '' : fmt(subtotal)}</td>
-        </tr>
-      )}
-      {(!showSubgroupHeader || open) && categoryGroups.map(grp => (
-        <CategoryAreaGroup
-          key={grp.category || 'all'}
+      {groups.map(grp => (
+        <CategoryRow
+          key={grp.category}
           category={grp.category}
           lineCodes={grp.lineCodes}
           columns={columns}
           areas={areas}
           sumCells={sumCells}
-          subKey={subKey}
+          sectionKey={sectionKey}
           onSelectArea={onSelectArea}
         />
       ))}
@@ -527,45 +520,42 @@ function FlowAreaSubgroup({
   )
 }
 
-/* Inside a subgroup: optional category divider header, then per-area
- * totals rows. Toggle to expand/collapse category. */
-function CategoryAreaGroup({
-  category, lineCodes, columns, areas, sumCells, subKey, onSelectArea,
+function CategoryRow({
+  category, lineCodes, columns, areas, sumCells, sectionKey, onSelectArea,
 }: {
   category: string;
   lineCodes: Set<string>;
   columns: Column[];
   areas: CanonicalArea[];
   sumCells: (lineCodes: Set<string>, areaIds: Set<string> | null, matches: (y: number, m: number) => boolean) => number | null;
-  subKey: string;
+  sectionKey: string;
   onSelectArea: (areaId: string) => void;
 }) {
   const [open, setOpen] = useState(false)
   const subtotal = sumCells(lineCodes, null, () => true)
   return (
     <>
-      {category && (
-        <tr className="category-divider subtotal-row category-subtotal clickable"
-            onClick={() => setOpen(o => !o)}>
-          <td className="label">
-            <span style={{ display: 'inline-block', width: 10, marginRight: 8, fontSize: 9, opacity: 0.65, transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s ease' }}>▶</span>
-            {category}
-          </td>
-          {columns.map(col => {
-            const v = sumCells(lineCodes, null, col.matches)
-            return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
-          })}
-          <td className={classNum(subtotal)}>{subtotal == null ? '' : fmt(subtotal)}</td>
-        </tr>
-      )}
-      {(!category || open) && areas.map(area => (
-        <AreaRow
-          key={`${subKey}|${category}|${area.area_id}`}
+      <tr className={`pivot-subgroup-row subtotal-row category-divider clickable ${open ? 'open' : ''}`}
+          onClick={() => setOpen(o => !o)}>
+        <td className="label" style={{ paddingLeft: 32 }}>
+          <span className="pivot-card-chev">▶</span>
+          {category}
+        </td>
+        {columns.map(col => {
+          const v = sumCells(lineCodes, null, col.matches)
+          return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
+        })}
+        <td className={classNum(subtotal)} style={{ fontWeight: 500 }}>{subtotal == null ? '' : fmt(subtotal)}</td>
+      </tr>
+      {open && areas.map(area => (
+        <AreaLeafRow
+          key={`${sectionKey}|${category}|${area.area_id}`}
           area={area}
           lineCodes={lineCodes}
           columns={columns}
           sumCells={sumCells}
           isBalance={false}
+          depth={2}
           onSelectArea={onSelectArea}
         />
       ))}
@@ -573,22 +563,25 @@ function CategoryAreaGroup({
   )
 }
 
-/* One per-area total row at the leaf. Clicking deep-links to that area. */
-function AreaRow({
-  area, lineCodes, columns, sumCells, isBalance, onSelectArea,
+/* Per-area leaf row. Clickable → deep-links into that area's drill. */
+function AreaLeafRow({
+  area, lineCodes, columns, sumCells, isBalance, depth, onSelectArea,
 }: {
   area: CanonicalArea;
   lineCodes: Set<string>;
   columns: Column[];
   sumCells: (lineCodes: Set<string>, areaIds: Set<string> | null, matches: (y: number, m: number) => boolean) => number | null;
   isBalance: boolean;
+  depth: number;
   onSelectArea: (areaId: string) => void;
 }) {
   const areaSet = useMemo(() => new Set([area.area_id]), [area.area_id])
   const rowTotal = isBalance ? null : sumCells(lineCodes, areaSet, () => true)
+  const indent = 12 + depth * 24
   return (
-    <tr className="pivot-area-row clickable" onClick={() => onSelectArea(area.area_id)} title={`Open ${area.display_name} drill`}>
-      <td className="label" style={{ paddingLeft: 24 }}>{area.display_name}</td>
+    <tr className="pivot-area-row clickable" onClick={() => onSelectArea(area.area_id)}
+        title={`Open ${area.display_name} drill`}>
+      <td className="label" style={{ paddingLeft: indent }}>{area.display_name}</td>
       {columns.map(col => {
         const v = sumCells(lineCodes, areaSet, col.matches)
         return (
@@ -597,18 +590,15 @@ function AreaRow({
           </td>
         )
       })}
-      {!isBalance && (
-        <td className={classNum(rowTotal)} style={{ fontWeight: 500 }}>
-          {rowTotal == null ? '' : fmt(rowTotal)}
-        </td>
-      )}
+      <td className={classNum(rowTotal)} style={{ fontWeight: 500 }}>
+        {rowTotal == null ? '' : fmt(rowTotal)}
+      </td>
     </tr>
   )
 }
 
-/* Net row at the bottom of a Flow section (Receipts + Payments) — only
- * rendered when both Receipts and Payments exist in the section. */
-function NetRow({
+/* Net row inside a Category-outer Flow section (after R/P subgroups). */
+function NetInlineRow({
   sec, columns, sumCells,
 }: {
   sec: { label: string; receipts: CfLine[]; payments: CfLine[] };
@@ -624,15 +614,17 @@ function NetRow({
     return (r ?? 0) + (p ?? 0)
   })()
   return (
-    <tr className="total net-row">
-      <td className="label">Net {sec.label}</td>
+    <tr className="pivot-net-row total net-row">
+      <td className="label" style={{ paddingLeft: 32 }}>Net {sec.label}</td>
       {columns.map(col => {
         const r = sumCells(receiptsCodes, null, col.matches)
         const p = sumCells(paymentsCodes, null, col.matches)
         const v = (r == null && p == null) ? null : ((r ?? 0) + (p ?? 0))
         return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
       })}
-      <td className={classNum(netTotal)}>{netTotal == null ? '' : fmt(netTotal)}</td>
+      <td className={classNum(netTotal)} style={{ fontWeight: 600 }}>
+        {netTotal == null ? '' : fmt(netTotal)}
+      </td>
     </tr>
   )
 }
