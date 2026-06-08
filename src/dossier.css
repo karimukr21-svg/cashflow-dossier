@@ -926,3 +926,157 @@ body, html, #root {
 
 /* Trajectory chart */
 .runway-chart { width: 100%; height: auto; max-height: 320px; }
+
+/* ─── Areas Funders vs Consumers ────────────────────────────────────────── */
+.funders-page h1 { margin: 0 0 4px 0; }
+.funders-subtitle { color: var(--mute); font-size: 13px; margin-bottom: 16px; }
+
+.funders-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 20px;
+  align-items: start;
+}
+
+.funders-grid-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.funders-grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.funders-grid th,
+.funders-grid td {
+  padding: 0;
+  border-bottom: 1px solid var(--border);
+}
+.funders-grid thead th {
+  font-weight: 500;
+  color: var(--mute);
+  text-align: center;
+  padding: 8px 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: #fafafa;
+  position: sticky; top: 0; z-index: 1;
+}
+.funders-grid thead th.funders-col-area { text-align: left; padding-left: 12px; }
+.funders-grid thead th.funders-col-net { text-align: right; padding-right: 12px; }
+
+.funders-col-area {
+  text-align: left;
+  padding: 6px 12px;
+  white-space: nowrap;
+  font-weight: 500;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.funders-col-month {
+  width: 44px;
+  padding: 2px;
+  vertical-align: middle;
+}
+.funders-col-net {
+  width: 120px;
+  padding: 2px 8px;
+  vertical-align: middle;
+}
+
+.funders-row { cursor: pointer; }
+.funders-row:hover { background: #f8fafc; }
+
+.funders-flip-row td {
+  padding: 6px 12px;
+  background: #fafafa;
+  border-top: 1px dashed var(--border);
+  border-bottom: 1px dashed var(--border);
+  font-size: 10px;
+  color: var(--mute);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Per-cell bar */
+.funders-bar-cell {
+  position: relative;
+  height: 18px;
+  width: 100%;
+}
+.funders-bar-axis {
+  position: absolute;
+  left: 50%;
+  top: 0; bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+.funders-bar {
+  position: absolute;
+  top: 4px;
+  height: 10px;
+  border-radius: 1px;
+}
+.funders-bar.funders-pos { background: var(--good); }
+.funders-bar.funders-neg { background: var(--bad); }
+
+/* Net column has a label next to the bar */
+.funders-net-cell {
+  position: relative;
+  height: 20px;
+  width: 100%;
+}
+.funders-net-label {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--mute);
+}
+.funders-net-label.funders-pos { color: var(--good); }
+.funders-net-label.funders-neg { color: var(--bad); }
+
+/* Side panel — top funders / top consumers */
+.funders-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.funders-side-block {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  padding: 12px;
+}
+.funders-side-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--mute);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.funders-side-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 12px;
+}
+.funders-side-row:last-child { border-bottom: none; }
+.funders-side-row:hover { background: #f8fafc; }
+.funders-side-name { font-weight: 500; }
+.funders-side-val { font-variant-numeric: tabular-nums; font-weight: 600; }
+.funders-side-val.funders-pos { color: var(--good); }
+.funders-side-val.funders-neg { color: var(--bad); }
+.funders-side-empty { color: var(--mute); font-size: 12px; font-style: italic; }

@@ -12,6 +12,7 @@ import LoansOverdrafts from './LoansOverdrafts'
 import Operations from './Operations'
 import Overall from './Overall'
 import AllAreas from './AllAreas'
+import AreasFunders from './AreasFunders'
 import CustomPeriodPopover from '@/components/CustomPeriodPopover'
 import AreaFilterPopover from '@/components/AreaFilterPopover'
 
@@ -30,7 +31,7 @@ function parseOrd(raw: string | null): GrainOrd {
 }
 
 type View =
-  | { kind: 'summary'; lens: 'overall' | 'treasury' | 'loans' | 'operations' | 'allareas' }
+  | { kind: 'summary'; lens: 'overall' | 'treasury' | 'loans' | 'operations' | 'allareas' | 'funders' }
   | { kind: 'bank'; sub: 'snapshot' }
   | { kind: 'area'; area: string }
 
@@ -39,7 +40,7 @@ function parseView(sp: URLSearchParams): View {
   const sub = sp.get('sub') || ''
   if (view === 'bank') return { kind: 'bank', sub: 'snapshot' }
   if (view === 'area' && sp.get('area')) return { kind: 'area', area: sp.get('area')! }
-  const lens = (['overall', 'treasury', 'loans', 'operations', 'allareas'].includes(sub) ? sub : 'overall') as any
+  const lens = (['overall', 'treasury', 'loans', 'operations', 'allareas', 'funders'].includes(sub) ? sub : 'overall') as any
   return { kind: 'summary', lens }
 }
 
@@ -197,6 +198,7 @@ export default function Dossier() {
     { group: 'SUMMARY', label: 'Loans & Overdrafts', view: { kind: 'summary', lens: 'loans' } },
     { group: 'SUMMARY', label: 'Operations',         view: { kind: 'summary', lens: 'operations' } },
     { group: 'SUMMARY', label: 'All Areas',          view: { kind: 'summary', lens: 'allareas' } },
+    { group: 'SUMMARY', label: 'Funders vs Consumers', view: { kind: 'summary', lens: 'funders' } },
     { group: 'BANK POSITION', label: 'Snapshot',     view: { kind: 'bank', sub: 'snapshot' } },
     ...areas.map(a => ({
       group: AREA_GROUP_LABEL[a.group_name],
@@ -265,6 +267,7 @@ export default function Dossier() {
       if (view.lens === 'loans')      return <LoansOverdrafts scope={scope} />
       if (view.lens === 'operations') return <Operations scope={scope} />
       if (view.lens === 'allareas')   return <AllAreas scope={scope} onSelectArea={(areaId) => goto({ kind: 'area', area: areaId })} />
+      if (view.lens === 'funders')    return <AreasFunders scope={scope} onSelectArea={(areaId) => goto({ kind: 'area', area: areaId })} />
     }
     if (view.kind === 'bank' && view.sub === 'snapshot') return <BankSnapshot />
     if (view.kind === 'area') return <AreaDrill area={view.area} scope={scope} />
