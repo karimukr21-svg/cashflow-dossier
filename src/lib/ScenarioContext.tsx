@@ -40,6 +40,13 @@ const AUTOSAVE_INTERVAL_MS = 30_000
 /* ── Hydration helpers (synchronous, only run on mount) ─────────────────── */
 
 function readActiveId(): string {
+  /* URL param wins over LS — lets the Manage tab in the work dashboard
+   * deep-link to a specific scenario by appending ?scenarioId=<uuid>. */
+  try {
+    const sp = new URLSearchParams(window.location.search)
+    const urlId = sp.get('scenarioId')
+    if (urlId) return urlId
+  } catch {}
   try {
     const v = localStorage.getItem(LS.activeId)
     return v || 'baseline'

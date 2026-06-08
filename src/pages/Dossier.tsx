@@ -19,6 +19,7 @@ import AreaFilterPopover from '@/components/AreaFilterPopover'
 import { ScenarioPill } from '@/components/ScenarioPill'
 import { BulkOpsPanel } from '@/components/BulkOpsPanel'
 import { ScenarioTileBar } from '@/components/ScenarioTileBar'
+import { ScenarioBanner } from '@/components/ScenarioBanner'
 import { useScenario } from '@/lib/ScenarioContext'
 
 export type Grain = 'monthly' | 'quarterly' | 'yearly'
@@ -446,6 +447,7 @@ export default function Dossier() {
       </div>
 
       <div className="content">
+        <ScenarioBanner latestVersionCode={versions[0]?.version_code || ''} />
         <ScenarioTileBar lines={lines} primaryVersionCode={primaryVersion} currentYear={ty} />
         {renderContent()}
       </div>
