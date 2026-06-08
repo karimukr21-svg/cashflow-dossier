@@ -136,7 +136,11 @@ const SECTIONS_BY_CATEGORY: SectionDef[] = [
   { key: 'nonop', label: 'Non-Operational', kind: 'flow', categories: ['Non Operational'] },
   { key: 'wg', label: 'Within Group', kind: 'flow', categories: ['Within Group'] },
   { key: 'bf', label: 'Bank Financing', kind: 'flow', categories: ['Bank Financing'] },
-  { key: 'closing', label: 'Closing Position', kind: 'balance', categories: ['Ending Balance', 'Accumulated Loans', 'Overdrafts'] },
+  /* Cash closing only — derived from Opening + movements. Loans + OD are
+   * separate balance tracks (not part of the cash chain) and live in
+   * their own section below. */
+  { key: 'closing', label: 'Cash Closing', kind: 'balance', categories: ['Ending Balance'] },
+  { key: 'loansod', label: 'Loans & Overdrafts', kind: 'balance', categories: ['Accumulated Loans', 'Overdrafts'] },
 ]
 
 type Column = {

@@ -23,9 +23,13 @@ const SECTIONS_BY_CATEGORY: SectionDef[] = [
   { key: 'bf',         label: 'Bank Financing',   kind: 'flow',    categories: ['Bank Financing'] },
   { key: 'closing',    label: 'Closing Position', kind: 'balance', categories: ['Ending Balance', 'Accumulated Loans', 'Overdrafts'] },
 ]
-/* Nature mode top split: 4 buckets keyed by line property. */
+/* Nature mode top split: 5 buckets keyed by line property. Loans + OD are
+ * a SEPARATE balance bucket from cash closing — they're not part of the
+ * cash chain, and bundling them under "Closing Position" double-counts
+ * vs. the user mental model (opening + movements = closing). */
 const BALANCE_OPEN_CATS = new Set(['Opening Balance'])
-const BALANCE_CLOSE_CATS = new Set(['Ending Balance', 'Accumulated Loans', 'Overdrafts'])
+const BALANCE_CASH_CLOSE_CATS = new Set(['Ending Balance'])
+const BALANCE_LOANS_OD_CATS = new Set(['Accumulated Loans', 'Overdrafts'])
 
 type Column = { key: string; label: string; matches: (y: number, m: number) => boolean; isActual: boolean }
 
@@ -264,13 +268,86 @@ function SectionOuter({ actuals, forecasts, lines, scope, areas, onSelectArea }:
     [scope.grain, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth, scope.latestActualYM])
   const tableMinWidth = LABEL_COL_PX + (columns.length * PERIOD_COL_PX) + TOTAL_COL_PX
 
+  /* Build derived chain once for the full area pool (sum of all selected
+   * areas). Also build per-area chains keyed by canonical area_id so the
+   * per-area leaf rows can show derived balances too. */
+  const lineByCode = useMemo(() => {
+    const m = new Map<string, CfLine>()
+    for (const l of lines) m.set(l.line_code, l)
+    return m
+  }, [lines])
+  const derivedAll = useMemo(() => computeDerivedBalances({
+    cells: allCells, lines,
+    fromYear: scope.fromYear, fromMonth: scope.fromMonth,
+    toYear: scope.toYear, toMonth: scope.toMonth,
+  }), [allCells, lines, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth])
+  const derivedByArea = useMemo(() => {
+    const out = new Map<string, ReturnType<typeof computeDerivedBalances>>()
+    const cellsPerArea = new Map<string, CfCell[]>()
+    for (const c of allCells) {
+      const aId = cellByAreaCanon.get(c.area)
+      if (!aId) continue
+      let arr = cellsPerArea.get(aId)
+      if (!arr) { arr = []; cellsPerArea.set(aId, arr) }
+      arr.push(c)
+    }
+    for (const [aId, cells] of cellsPerArea) {
+      out.set(aId, computeDerivedBalances({
+        cells, lines,
+        fromYear: scope.fromYear, fromMonth: scope.fromMonth,
+        toYear: scope.toYear, toMonth: scope.toMonth,
+      }))
+    }
+    return out
+  }, [allCells, cellByAreaCanon, lines, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth])
+
   /* Cell sum scoped to: a set of line codes, optionally a set of canonical
-   * area ids, and a column matcher. Returns null if nothing touched. */
+   * area ids, and a column matcher. Returns null if nothing touched.
+   *
+   * For Opening Balance / Ending Balance lines, returns the DERIVED chain
+   * value at the column endpoint instead of summing stored values. Loans /
+   * OD lines fall through to stored sum — they're separate balance tracks. */
   const sumCells = (
     lineCodes: Set<string>,
     areaIds: Set<string> | null,
     matches: (y: number, m: number) => boolean,
   ): number | null => {
+    /* Balance-line short-circuit: applies when every line in the set is a
+     * cash-balance line (Opening or Ending Balance category). */
+    let allOpening = lineCodes.size > 0
+    let allClosing = lineCodes.size > 0
+    for (const lc of lineCodes) {
+      const line = lineByCode.get(lc)
+      if (!line || line.nature !== 'Balance') { allOpening = false; allClosing = false; break }
+      if (line.category !== 'Opening Balance') allOpening = false
+      if (line.category !== 'Ending Balance') allClosing = false
+    }
+    if (allOpening || allClosing) {
+      const ep = getColumnYMEndpoints(matches, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth)
+      if (!ep) return null
+      let chain = derivedAll
+      if (areaIds && areaIds.size === 1) {
+        const onlyId = [...areaIds][0]
+        const d = derivedByArea.get(onlyId)
+        if (d) chain = d
+      } else if (areaIds && areaIds.size > 1) {
+        /* Multi-area subgroup not used in current SectionOuter; fall back
+         * to summing per-area derived chains. */
+        const map = allOpening ? 'openingByYM' : 'closingByYM'
+        const ym = allOpening ? ep.first : ep.last
+        let total: number | null = null
+        for (const aId of areaIds) {
+          const d = derivedByArea.get(aId)
+          if (!d) continue
+          const v = (d[map] as Map<number, number>).get(ym)
+          if (v !== undefined) total = (total ?? 0) + v
+        }
+        return total
+      }
+      if (allOpening) return chain.openingByYM.get(ep.first) ?? null
+      return chain.closingByYM.get(ep.last) ?? null
+    }
+
     let sum: number | null = null
     for (const c of allCells) {
       if (!lineCodes.has(c.line_code)) continue
@@ -311,14 +388,16 @@ function SectionOuter({ actuals, forecasts, lines, scope, areas, onSelectArea }:
     }
     // outer === 'N'
     const opening = activeLines.filter(l => BALANCE_OPEN_CATS.has(l.category))
-    const closing = activeLines.filter(l => BALANCE_CLOSE_CATS.has(l.category))
+    const cashClosing = activeLines.filter(l => BALANCE_CASH_CLOSE_CATS.has(l.category))
+    const loansOd = activeLines.filter(l => BALANCE_LOANS_OD_CATS.has(l.category))
     const receipts = activeLines.filter(l => l.nature === 'Receipts')
     const payments = activeLines.filter(l => l.nature === 'Payments')
     const out: OuterSection[] = []
-    if (opening.length)  out.push({ key: 'opening',  label: 'Opening Balance',  kind: 'balance', lines: opening,  receipts: [], payments: [],       natureClass: 'nature-balance' })
-    if (receipts.length) out.push({ key: 'receipts', label: 'Receipts',         kind: 'flow',    lines: receipts, receipts,     payments: [],       natureClass: 'nature-receipts' })
-    if (payments.length) out.push({ key: 'payments', label: 'Payments',         kind: 'flow',    lines: payments, receipts: [], payments,           natureClass: 'nature-payments' })
-    if (closing.length)  out.push({ key: 'closing',  label: 'Closing Position', kind: 'balance', lines: closing,  receipts: [], payments: [],       natureClass: 'nature-balance' })
+    if (opening.length)     out.push({ key: 'opening',  label: 'Opening Balance',   kind: 'balance', lines: opening,     receipts: [], payments: [],       natureClass: 'nature-balance' })
+    if (receipts.length)    out.push({ key: 'receipts', label: 'Receipts',          kind: 'flow',    lines: receipts,    receipts,     payments: [],       natureClass: 'nature-receipts' })
+    if (payments.length)    out.push({ key: 'payments', label: 'Payments',          kind: 'flow',    lines: payments,    receipts: [], payments,           natureClass: 'nature-payments' })
+    if (cashClosing.length) out.push({ key: 'closing',  label: 'Cash Closing',      kind: 'balance', lines: cashClosing, receipts: [], payments: [],       natureClass: 'nature-balance' })
+    if (loansOd.length)     out.push({ key: 'loansod', label: 'Loans & Overdrafts', kind: 'balance', lines: loansOd,     receipts: [], payments: [],       natureClass: 'nature-balance' })
     return out
   }, [activeLines, outer])
 
