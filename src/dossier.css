@@ -1319,3 +1319,192 @@ body:has(.bulk-panel) .content { padding-right: 356px; }
   cursor: pointer;
   padding: 0 4px;
 }
+
+/* ─── Treasury Heatmap ──────────────────────────────────────────────────── */
+.heatmap-page h1 { margin: 0 0 4px 0; }
+.heatmap-subtitle { color: var(--mute); font-size: 13px; margin-bottom: 16px; }
+
+.heatmap-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.heatmap-kpi {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  padding: 10px 14px;
+}
+.heatmap-kpi-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--mute);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.heatmap-kpi-value {
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.heatmap-kpi-value.pos { color: var(--good); }
+.heatmap-kpi-value.neg { color: var(--bad); }
+
+.heatmap-grid {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+}
+
+.heatmap-band {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  height: 160px;
+  gap: 4px;
+}
+.heatmap-band-in { align-items: end; }
+.heatmap-band-out { align-items: start; }
+
+.heatmap-col {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+}
+.heatmap-band-out .heatmap-col { justify-content: flex-start; }
+
+.heatmap-stack {
+  width: 70%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 2px;
+  overflow: hidden;
+  min-height: 1px;
+}
+.heatmap-stack.stack-down { flex-direction: column-reverse; }
+.heatmap-stack-seg { width: 100%; }
+.heatmap-stack-empty { width: 70%; height: 1px; background: var(--border); }
+
+.heatmap-axis {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  height: 60px;
+  gap: 4px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: #f9fafb;
+}
+.heatmap-axis-line {
+  position: absolute;
+  left: 0; right: 0; top: 50%;
+  height: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+.heatmap-axis-col {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.heatmap-month-label {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  color: var(--mute);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.heatmap-pos-dot {
+  position: absolute;
+  left: 50%;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.2);
+}
+.heatmap-pos-dot.pos-high { background: var(--good); }
+.heatmap-pos-dot.pos-mid { background: #d97706; }
+.heatmap-pos-dot.pos-low { background: #dc2626; }
+.heatmap-pos-dot.pos-neg { background: var(--bad); box-shadow: 0 0 0 2px rgba(220,38,38,0.4); }
+
+.heatmap-legend {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.heatmap-legend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.heatmap-legend-chip:hover { background: #f3f4f6; }
+.heatmap-legend-swatch {
+  width: 10px; height: 10px;
+  border-radius: 2px;
+}
+
+/* ─── Editable cell ───────────────────────────────────────────────────── */
+.cell-editable {
+  position: relative;
+  padding: 0 !important;
+}
+.cell-edit-trigger {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: 0;
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  cursor: text;
+}
+.cell-edit-trigger:hover {
+  background: #fef3f2;
+  outline: 1px dashed var(--bad);
+  outline-offset: -1px;
+}
+.cell-overridden .cell-edit-trigger {
+  color: var(--bad);
+  font-weight: 600;
+}
+.cell-overridden .cell-edit-trigger::before {
+  content: "Δ";
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  font-size: 8px;
+  color: var(--bad);
+  font-weight: 600;
+}
+.cell-input {
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--bad);
+  background: #fff;
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  outline: none;
+}

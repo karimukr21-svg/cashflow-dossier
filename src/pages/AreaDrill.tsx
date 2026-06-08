@@ -1,6 +1,9 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { fetchActuals, fetchForecasts, type CfCell, type CfLine } from '@/lib/queries'
 import { fmt, classNum } from '@/lib/format'
+import { applyDeltaToCell } from '@/lib/scenario'
+import { useScenario } from '@/lib/ScenarioContext'
+import { EditableCell } from '@/components/EditableCell'
 import type { Scope, Grain, GroupBy } from './Dossier'
 
 /* `area` is now the canonical area_id (e.g. 'KSA', 'ACR', 'CYP'). The
@@ -59,6 +62,7 @@ export default function AreaDrill({ area, scope }: { area: string; scope: Scope 
         grain={scope.grain}
         scope={scope}
         groupBy={scope.groupBy}
+        cfArea={cfAreas[0]}
       />
     </div>
   )
@@ -134,10 +138,18 @@ const SECTIONS_BY_CATEGORY: SectionDef[] = [
   { key: 'closing', label: 'Closing Position', kind: 'balance', categories: ['Ending Balance', 'Accumulated Loans', 'Overdrafts'] },
 ]
 
-type Column = { key: string; label: string; matches: (y: number, m: number) => boolean; isActual: boolean }
+type Column = {
+  key: string; label: string;
+  matches: (y: number, m: number) => boolean;
+  isActual: boolean;
+  /* Populated only on monthly grain — single concrete (year, month) the
+   * column refers to. Used by EditableCell to write deltas to the right
+   * coordinate. Undefined on quarterly/yearly aggregates (not editable). */
+  singleMonth?: { year: number; month: number };
+}
 
 export function AreaCategoryCards({
-  actuals, forecasts, lines, grain, scope, groupBy,
+  actuals, forecasts, lines, grain, scope, groupBy, cfArea,
 }: {
   actuals: CfCell[];
   forecasts: CfCell[];
@@ -145,8 +157,10 @@ export function AreaCategoryCards({
   grain: Grain;
   scope: Pick<Scope, 'fromYear' | 'fromMonth' | 'toYear' | 'toMonth' | 'latestActualYM'>;
   groupBy: GroupBy;
+  cfArea?: string;
 }) {
   const { expanded, toggle } = useExpandedSections()
+  const { workingIndex, savedIndex } = useScenario()
 
   const activeLines = useMemo(() =>
     lines.filter(l => l.is_active).sort((a, b) => a.sort_order - b.sort_order),
@@ -155,8 +169,28 @@ export function AreaCategoryCards({
   const columns = useMemo(() => buildColumns(grain, scope, scope.latestActualYM),
     [grain, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth, scope.latestActualYM])
 
-  // Indexed sums for fast per-cell lookup.
+  // Indexed sums for fast per-cell lookup. Applies scenario delta on top of
+  // baseline so the drill stays in sync with bulk-ops + cell edits.
   const sumLineCol = (lineCode: string, matches: (y: number, m: number) => boolean): number | null => {
+    let sum: number | null = null
+    for (const c of actuals) {
+      if (c.line_code !== lineCode) continue
+      if (!matches(c.year, c.month)) continue
+      const v = applyDeltaToCell(workingIndex, savedIndex, c.area, c.line_code, c.year, c.month, c.value)
+      sum = (sum ?? 0) + v
+    }
+    for (const c of forecasts) {
+      if (c.line_code !== lineCode) continue
+      if (!matches(c.year, c.month)) continue
+      const v = applyDeltaToCell(workingIndex, savedIndex, c.area, c.line_code, c.year, c.month, c.value)
+      sum = (sum ?? 0) + v
+    }
+    return sum
+  }
+
+  // Baseline-only sum (pre-scenario). Used by EditableCell to seed the
+  // baseline_value on a fresh override.
+  const baselineSumLineCol = (lineCode: string, matches: (y: number, m: number) => boolean): number | null => {
     let sum: number | null = null
     for (const c of actuals) {
       if (c.line_code !== lineCode) continue
@@ -232,6 +266,8 @@ export function AreaCategoryCards({
             <FlowCard key={blk.key} block={blk}
               columns={columns} tableMinWidth={tableMinWidth}
               sumLineCol={sumLineCol} sumLinesCol={sumLinesCol}
+              baselineSumLineCol={baselineSumLineCol}
+              cfArea={cfArea}
               groupBy={groupBy}
               expanded={expanded} toggle={toggle} />
           )
@@ -299,13 +335,16 @@ function BalanceCard({
  * (receipts card has no payments and vice versa); the Net row is suppressed
  * since "Net Receipts" alone is not meaningful. */
 function FlowCard({
-  block, columns, tableMinWidth, sumLineCol, sumLinesCol, groupBy, expanded, toggle,
+  block, columns, tableMinWidth, sumLineCol, sumLinesCol, baselineSumLineCol, cfArea,
+  groupBy, expanded, toggle,
 }: {
   block: { key: string; label: string; receipts: CfLine[]; payments: CfLine[]; natureClass: string };
   columns: Column[];
   tableMinWidth: number;
   sumLineCol: (lineCode: string, matches: (y: number, m: number) => boolean) => number | null;
   sumLinesCol: (lineCodes: string[], matches: (y: number, m: number) => boolean) => number | null;
+  baselineSumLineCol: (lineCode: string, matches: (y: number, m: number) => boolean) => number | null;
+  cfArea?: string;
   groupBy: GroupBy;
   expanded: Set<string>;
   toggle: (key: string) => void;
@@ -366,6 +405,8 @@ function FlowCard({
               columns={columns}
               sumLineCol={sumLineCol}
               sumLinesCol={sumLinesCol}
+              baselineSumLineCol={baselineSumLineCol}
+              cfArea={cfArea}
               subgroupClass="subgroup-receipts"
               blockKey={block.key} groupBy={groupBy}
               expanded={expanded} toggle={toggle}
@@ -377,6 +418,8 @@ function FlowCard({
               columns={columns}
               sumLineCol={sumLineCol}
               sumLinesCol={sumLinesCol}
+              baselineSumLineCol={baselineSumLineCol}
+              cfArea={cfArea}
               subgroupClass="subgroup-payments"
               blockKey={block.key} groupBy={groupBy}
               expanded={expanded} toggle={toggle}
@@ -405,7 +448,7 @@ function FlowCard({
 }
 
 function FlowSubgroup({
-  label, groups, columns, sumLineCol, sumLinesCol, subgroupClass,
+  label, groups, columns, sumLineCol, sumLinesCol, baselineSumLineCol, cfArea, subgroupClass,
   blockKey, groupBy, expanded, toggle, showSubgroupHeader,
 }: {
   label: 'Receipts' | 'Payments';
@@ -413,6 +456,8 @@ function FlowSubgroup({
   columns: Column[];
   sumLineCol: (lineCode: string, matches: (y: number, m: number) => boolean) => number | null;
   sumLinesCol: (lineCodes: string[], matches: (y: number, m: number) => boolean) => number | null;
+  baselineSumLineCol: (lineCode: string, matches: (y: number, m: number) => boolean) => number | null;
+  cfArea?: string;
   subgroupClass: string;
   blockKey: string;
   groupBy: GroupBy;
@@ -483,10 +528,20 @@ function FlowSubgroup({
                   <td className="label">{l.description}</td>
                   {columns.map(col => {
                     const v = sumLineCol(l.line_code, col.matches)
+                    const baseline = baselineSumLineCol(l.line_code, col.matches)
+                    const className = `${classNum(v)} ${col.isActual ? 'cell actual' : 'cell forecast'}`
                     return (
-                      <td key={col.key} className={`${classNum(v)} ${col.isActual ? 'cell actual' : 'cell forecast'}`}>
-                        {v == null ? '' : fmt(v)}
-                      </td>
+                      <EditableCell
+                        key={col.key}
+                        cfArea={cfArea}
+                        lineCode={l.line_code}
+                        year={col.singleMonth?.year}
+                        month={col.singleMonth?.month}
+                        isActual={col.isActual}
+                        baselineValue={baseline}
+                        scenarioValue={v}
+                        className={className}
+                      />
                     )
                   })}
                   <td className={classNum(rowTotal)} style={{ fontWeight: 500 }}>
@@ -503,7 +558,7 @@ function FlowSubgroup({
 }
 
 export function buildColumns(grain: Grain, scope: Pick<Scope, 'fromYear' | 'fromMonth' | 'toYear' | 'toMonth'>, asOfYM: number) {
-  const cols: { key: string; label: string; matches: (y: number, m: number) => boolean; isActual: boolean }[] = []
+  const cols: Column[] = []
   const months: { y: number; m: number }[] = []
   for (let y = scope.fromYear; y <= scope.toYear; y++) {
     const startM = y === scope.fromYear ? scope.fromMonth : 1
@@ -519,6 +574,7 @@ export function buildColumns(grain: Grain, scope: Pick<Scope, 'fromYear' | 'from
         label: `${String(y).slice(2)}-${String(m).padStart(2, '0')}`,
         matches: (yy, mm) => yy === y && mm === m,
         isActual: ym <= asOfYM,
+        singleMonth: { year: y, month: m },
       })
     })
   } else if (grain === 'quarterly') {
