@@ -518,51 +518,44 @@ body, html, #root {
 .pivot-section-row.open .pivot-card-chev,
 .pivot-subgroup-row.open .pivot-card-chev { transform: rotate(90deg); }
 
-/* Area-outer (ANC / ACN) — section row = an area. Clickable. Expanded
- * body uses a colSpan'd details row that hosts AreaCategoryCards. */
-.pivot-area-headrow td {
-  background: var(--surface);
-  font-weight: 500;
-}
-.pivot-area-headrow:hover td { background: rgba(0,0,0,0.04); }
-.pivot-area-headrow.open td { background: rgba(225,0,32,0.05); }
-.pivot-area-expandedrow > td {
-  padding: 14px 0 18px 0 !important;
-  border-top: 1px dashed var(--border);
-  border-bottom: 1px solid var(--border);
-  background: var(--surface-alt);
-}
+/* Level shading — three discrete tints so the eye reads depth at a
+ * glance. Darker = higher in the hierarchy. */
 
-/* Section-outer (NCA / CNA / NAC / CAN) — section row = a Nature/Category
- * bucket. Bold, stronger background, hover. */
+/* Level 1 — outermost (Area row in Area-outer, Section row in Section-outer).
+ * Bold + darkest tint. */
+.pivot-area-headrow td,
 .pivot-section-row td {
-  background: var(--surface);
+  background: rgba(0,0,0,0.055);
   font-weight: 600;
   font-size: 12.5px;
 }
-.pivot-section-row:hover td { background: rgba(0,0,0,0.04); }
-.pivot-section-row.open td { background: rgba(225,0,32,0.04); }
+.pivot-area-headrow:hover td,
+.pivot-section-row:hover td { background: rgba(0,0,0,0.085); }
+.pivot-area-headrow.open td,
+.pivot-section-row.open td { background: rgba(225,0,32,0.07); }
 
+/* Level 2 — middle (Subgroup / Category divider). Medium tint. */
 .pivot-subgroup-row td {
-  background: var(--surface);
+  background: rgba(0,0,0,0.025);
   font-weight: 500;
 }
-.pivot-subgroup-row:hover td { background: rgba(0,0,0,0.03); }
-.pivot-subgroup-row.open td { background: rgba(225,0,32,0.025); }
+.pivot-subgroup-row:hover td { background: rgba(0,0,0,0.05); }
+.pivot-subgroup-row.open td { background: rgba(225,0,32,0.035); }
 
+/* Level 3 — leaf (per-area total row or line item). Plain surface so
+ * cells read naturally as the bottom of the hierarchy. */
+.pivot-area-row { cursor: pointer; }
+.pivot-area-row td { background: var(--surface); font-weight: 400; }
+.pivot-area-row:hover td { background: rgba(225,0,32,0.04); }
+.pivot-area-row td.label { color: var(--charcoal); }
+
+/* Net row kept defined for the (rare) Nature-outer case where both
+ * Receipts + Payments coexist; suppressed in Category-outer Flow sections
+ * to avoid duplicating the section-header Net number. */
 .pivot-net-row td {
   background: rgba(0,0,0,0.02);
   font-weight: 600;
   border-top: 1px solid var(--border);
-}
-
-/* Per-area total row at the leaf — clickable to deep-link into the
- * area's drill. */
-.pivot-area-row { cursor: pointer; }
-.pivot-area-row:hover td { background: rgba(225,0,32,0.04); }
-.pivot-area-row td.label {
-  color: var(--charcoal);
-  font-weight: 400;
 }
 
 

@@ -396,6 +396,8 @@ function FlowSectionChildren({
   onSelectArea: (areaId: string) => void;
 }) {
   if (outer === 'C') {
+    /* Section row already shows the Net total in its header — don't repeat
+     * it as a Net row at the bottom of the expansion. */
     return (
       <>
         {sec.receipts.length > 0 && (
@@ -411,9 +413,6 @@ function FlowSectionChildren({
             lines={sec.payments} columns={columns} areas={areas}
             sumCells={sumCells} sectionKey={sec.key} onSelectArea={onSelectArea}
           />
-        )}
-        {sec.receipts.length > 0 && sec.payments.length > 0 && (
-          <NetInlineRow sec={sec} columns={columns} sumCells={sumCells} />
         )}
       </>
     )
@@ -593,37 +592,6 @@ function AreaLeafRow({
   )
 }
 
-/* Net row inside a Category-outer Flow section (after R/P subgroups). */
-function NetInlineRow({
-  sec, columns, sumCells,
-}: {
-  sec: { label: string; receipts: CfLine[]; payments: CfLine[] };
-  columns: Column[];
-  sumCells: (lineCodes: Set<string>, areaIds: Set<string> | null, matches: (y: number, m: number) => boolean) => number | null;
-}) {
-  const receiptsCodes = new Set(sec.receipts.map(l => l.line_code))
-  const paymentsCodes = new Set(sec.payments.map(l => l.line_code))
-  const netTotal = (() => {
-    const r = sumCells(receiptsCodes, null, () => true)
-    const p = sumCells(paymentsCodes, null, () => true)
-    if (r == null && p == null) return null
-    return (r ?? 0) + (p ?? 0)
-  })()
-  return (
-    <tr className="pivot-net-row total net-row">
-      <td className="label" style={{ paddingLeft: 32 }}>Net {sec.label}</td>
-      {columns.map(col => {
-        const r = sumCells(receiptsCodes, null, col.matches)
-        const p = sumCells(paymentsCodes, null, col.matches)
-        const v = (r == null && p == null) ? null : ((r ?? 0) + (p ?? 0))
-        return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
-      })}
-      <td className={classNum(netTotal)} style={{ fontWeight: 600 }}>
-        {netTotal == null ? '' : fmt(netTotal)}
-      </td>
-    </tr>
-  )
-}
 
 /* ════════════════════════════════════════════════════════════════════════
    Area-inner rows — emitted inline beneath an expanded area row in the
@@ -771,6 +739,8 @@ function InnerFlowChildren({
   sumLine: (lc: string, m: (y: number, mo: number) => boolean) => number | null;
   sumLines: (lcs: string[], m: (y: number, mo: number) => boolean) => number | null;
 }) {
+  /* Section row already carries the Net total in its header — skip the
+   * redundant Net row at the bottom of the Flow expansion. */
   return (
     <>
       {sec.receipts.length > 0 && (
@@ -788,9 +758,6 @@ function InnerFlowChildren({
           lines={sec.payments} columns={columns}
           sumLine={sumLine} sumLines={sumLines}
         />
-      )}
-      {sec.receipts.length > 0 && sec.payments.length > 0 && (
-        <InnerNetRow sec={sec} columns={columns} sumLines={sumLines} />
       )}
     </>
   )
@@ -933,28 +900,3 @@ function InnerLineRow({
   )
 }
 
-function InnerNetRow({
-  sec, columns, sumLines,
-}: {
-  sec: { label: string; receipts: CfLine[]; payments: CfLine[] };
-  columns: Column[];
-  sumLines: (lcs: string[], m: (y: number, mo: number) => boolean) => number | null;
-}) {
-  const r = sumLines(sec.receipts.map(l => l.line_code), () => true)
-  const p = sumLines(sec.payments.map(l => l.line_code), () => true)
-  const netTotal = (r == null && p == null) ? null : (r ?? 0) + (p ?? 0)
-  return (
-    <tr className="pivot-net-row total net-row">
-      <td className="label" style={{ paddingLeft: 48 }}>Net {sec.label}</td>
-      {columns.map(col => {
-        const rv = sumLines(sec.receipts.map(l => l.line_code), col.matches)
-        const pv = sumLines(sec.payments.map(l => l.line_code), col.matches)
-        const v = (rv == null && pv == null) ? null : ((rv ?? 0) + (pv ?? 0))
-        return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
-      })}
-      <td className={classNum(netTotal)} style={{ fontWeight: 600 }}>
-        {netTotal == null ? '' : fmt(netTotal)}
-      </td>
-    </tr>
-  )
-}
