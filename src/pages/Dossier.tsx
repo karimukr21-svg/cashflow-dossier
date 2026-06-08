@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState, type ComponentProps } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/lib/auth'
 import {
@@ -15,6 +15,10 @@ import AllAreas from './AllAreas'
 import AreasFunders from './AreasFunders'
 import CustomPeriodPopover from '@/components/CustomPeriodPopover'
 import AreaFilterPopover from '@/components/AreaFilterPopover'
+import { ScenarioPill } from '@/components/ScenarioPill'
+import { BulkOpsPanel } from '@/components/BulkOpsPanel'
+import { ScenarioTileBar } from '@/components/ScenarioTileBar'
+import { useScenario } from '@/lib/ScenarioContext'
 
 export type Grain = 'monthly' | 'quarterly' | 'yearly'
 export type GroupBy = 'category' | 'nature'
@@ -299,6 +303,7 @@ export default function Dossier() {
                   title="Change period">
             Period · {periodLabel}
           </button>
+          <ScenarioPill primaryVersionCode={primaryVersion} />
           {showAreaFilterChip && (
             <button
               className={`areas-pill ${excludedAreas.size > 0 ? 'filtered' : ''}`}
@@ -437,9 +442,27 @@ export default function Dossier() {
         </div>
       </div>
 
-      <div className="content">{renderContent()}</div>
+      <div className="content">
+        <ScenarioTileBar lines={lines} primaryVersionCode={primaryVersion} currentYear={ty} />
+        {renderContent()}
+      </div>
+      <BulkOpsPanelMount
+        areas={areas}
+        lines={lines}
+        primaryVersionCode={primaryVersion}
+        fromYear={fy} fromMonth={fm} toYear={ty} toMonth={tm}
+        latestActualYM={latestActualYM}
+      />
     </div>
   )
+}
+
+/* Only mount the panel when a scenario is active. Avoids the baseline-fetch
+ * useEffect inside BulkOpsPanel from firing pointlessly. */
+function BulkOpsPanelMount(props: ComponentProps<typeof BulkOpsPanel>) {
+  const { activeId } = useScenario()
+  if (activeId === 'baseline') return null
+  return <BulkOpsPanel {...props} />
 }
 
 export type Scope = {

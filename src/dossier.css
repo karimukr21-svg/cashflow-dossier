@@ -1080,3 +1080,242 @@ body, html, #root {
 .funders-side-val.funders-pos { color: var(--good); }
 .funders-side-val.funders-neg { color: var(--bad); }
 .funders-side-empty { color: var(--mute); font-size: 12px; font-style: italic; }
+
+/* ─── Scenario pill (topbar) ────────────────────────────────────────────── */
+.scenario-pill-wrap { position: relative; display: inline-flex; align-items: center; }
+.scenario-pill {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--mute);
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.scenario-pill:hover { border-color: #9ca3af; color: #374151; }
+.scenario-pill.active {
+  background: var(--bad);
+  border-color: var(--bad);
+  color: #fff;
+}
+.scenario-pill.active:hover { background: #a51717; }
+.scenario-pill-dot { font-size: 18px; line-height: 0; }
+.scenario-pop {
+  position: absolute;
+  top: 100%; margin-top: 6px; left: 0;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.08);
+  min-width: 280px;
+  max-width: 360px;
+  z-index: 50;
+  padding: 6px 0;
+}
+.scenario-pop-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 7px 14px;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  font-size: 12px;
+  cursor: pointer;
+  color: #1f2937;
+}
+.scenario-pop-row:hover { background: #f3f4f6; }
+.scenario-pop-row.selected { background: #fef2f2; color: var(--bad); font-weight: 500; }
+.scenario-pop-row.inactive { color: var(--mute); }
+.scenario-pop-check { font-size: 9px; color: var(--bad); }
+.scenario-pop-new { color: var(--bad); font-weight: 500; }
+.scenario-pop-divider {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--mute);
+  padding: 8px 14px 4px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+.scenario-pop-baseline {
+  font-size: 10px;
+  color: var(--mute);
+  padding: 4px 14px 2px;
+  font-weight: 500;
+}
+.scenario-pop-name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.scenario-pop-meta { font-size: 11px; color: var(--mute); display: flex; align-items: center; gap: 6px; }
+.scenario-pop-final {
+  background: var(--bad); color: #fff;
+  font-size: 9px; padding: 1px 6px; border-radius: 999px;
+}
+.scenario-pop-link { text-decoration: none; color: #1f2937; }
+.scenario-pop-new-form { padding: 8px 14px; display: flex; flex-direction: column; gap: 6px; }
+.scenario-pop-input {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: inherit;
+}
+.scenario-pop-new-actions { display: flex; gap: 6px; }
+.scenario-pop-new-actions button {
+  flex: 1;
+  border: 1px solid var(--border);
+  background: #fff;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.scenario-pop-new-actions button:first-child {
+  background: var(--bad);
+  border-color: var(--bad);
+  color: #fff;
+}
+.scenario-pop-new-actions button[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+/* ─── Tile bar (pinned strip above content) ─────────────────────────────── */
+.tile-bar {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+.tile-eyebrow {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--mute);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.tile-value {
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.tile-value.neg { color: var(--bad); }
+.tile-value.pos { color: var(--good); }
+.tile-delta {
+  font-size: 12px;
+  color: var(--mute);
+  font-weight: 500;
+}
+
+/* ─── Bulk-ops panel ───────────────────────────────────────────────────── */
+.shell { position: relative; }
+.bulk-panel {
+  position: fixed;
+  top: 0; right: 0; bottom: 0;
+  width: 340px;
+  background: #fff;
+  border-left: 1px solid var(--border);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  overflow-y: auto;
+  box-shadow: -4px 0 16px rgba(0,0,0,0.04);
+}
+.content {
+  /* Push content over when the panel is mounted via right padding on the
+   * shell — handled in JS via class? Simpler: leave content as-is and panel
+   * overlays. For Step 4-6, that's acceptable; Step 11 polish can do a
+   * proper push layout. */
+  padding-right: 0;
+}
+body:has(.bulk-panel) .content { padding-right: 356px; }
+
+.bulk-panel-head {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  background: #fafafa;
+}
+.bulk-panel-title { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+.bulk-panel-meta { color: var(--mute); font-size: 11px; margin-bottom: 8px; }
+.bulk-panel-actions { display: flex; gap: 6px; }
+.bulk-btn {
+  flex: 1;
+  border: 1px solid var(--border);
+  background: #fff;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.bulk-btn:hover:not(:disabled) { background: #f3f4f6; }
+.bulk-btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+.bulk-btn.primary {
+  background: var(--bad); border-color: var(--bad); color: #fff;
+}
+.bulk-btn.primary:hover:not(:disabled) { background: #a51717; }
+.bulk-btn.danger { color: var(--bad); }
+.bulk-loading { padding: 12px 16px; color: var(--mute); font-style: italic; }
+.bulk-section {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.bulk-section-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--mute);
+  font-weight: 600;
+}
+.bulk-section label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--mute);
+}
+.bulk-section select,
+.bulk-section input[type="number"] {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  background: #fff;
+}
+.bulk-range { display: flex; align-items: center; gap: 4px; }
+.bulk-range select { flex: 1; }
+.bulk-pct-row { display: flex; align-items: center; gap: 6px; }
+.bulk-pct-row input { flex: 1; }
+.bulk-empty { color: var(--mute); font-style: italic; font-size: 11px; }
+.bulk-history-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--border);
+  font-size: 11px;
+}
+.bulk-history-row:last-child { border-bottom: none; }
+.bulk-history-label { flex: 1; }
+.bulk-undo {
+  background: transparent;
+  border: 0;
+  color: var(--bad);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0 4px;
+}
