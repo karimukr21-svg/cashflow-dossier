@@ -22,6 +22,8 @@ type Props = {
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
+const PANEL_COLLAPSED_KEY = 'cfd_bulk_panel_collapsed'
+
 export function BulkOpsPanel(props: Props) {
   const { areas, lines, primaryVersionCode, fromYear, fromMonth, toYear, toMonth, latestActualYM } = props
   const {
@@ -33,6 +35,21 @@ export function BulkOpsPanel(props: Props) {
   const [baseline, setBaseline] = useState<CfCell[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem(PANEL_COLLAPSED_KEY) === '1' } catch { return false }
+  })
+  const toggleCollapsed = () => {
+    setCollapsed(v => {
+      const next = !v
+      try { localStorage.setItem(PANEL_COLLAPSED_KEY, next ? '1' : '0') } catch {}
+      try { document.body.classList.toggle('bulk-panel-collapsed', next) } catch {}
+      return next
+    })
+  }
+  useEffect(() => {
+    try { document.body.classList.toggle('bulk-panel-collapsed', collapsed) } catch {}
+    return () => { try { document.body.classList.remove('bulk-panel-collapsed') } catch {} }
+  }, [collapsed])
 
   useEffect(() => {
     if (activeId === 'baseline') return
@@ -201,10 +218,28 @@ export function BulkOpsPanel(props: Props) {
 
   if (activeId === 'baseline') return null
 
+  if (collapsed) {
+    return (
+      <aside className="bulk-panel bulk-panel-strip" onClick={toggleCollapsed} title="Expand bulk-ops panel">
+        <span className="bulk-strip-arrow">◀</span>
+        <span className="bulk-strip-label">Bulk ops</span>
+        <span className="bulk-strip-count">{workingDelta.cells.length} Δ</span>
+      </aside>
+    )
+  }
+
   return (
     <aside className="bulk-panel">
       <header className="bulk-panel-head">
-        <div className="bulk-panel-title">{savedScenario?.name || 'Loading…'}</div>
+        <div className="bulk-panel-title-row">
+          <div className="bulk-panel-title">{savedScenario?.name || 'Loading…'}</div>
+          <button
+            className="bulk-panel-collapse-btn"
+            onClick={toggleCollapsed}
+            title="Hide panel"
+            aria-label="Hide panel"
+          >▶</button>
+        </div>
         <div className="bulk-panel-meta">
           Baseline {savedScenario?.baseline_version_code}
           {' · '}{workingDelta.cells.length} Δ cells

@@ -4,6 +4,7 @@ import { fmt, classNum } from '@/lib/format'
 import { applyDeltaToCell } from '@/lib/scenario'
 import { useScenario } from '@/lib/ScenarioContext'
 import { EditableCell } from '@/components/EditableCell'
+import { computeDerivedBalances, getColumnYMEndpoints } from '@/lib/derivedBalances'
 import type { Scope, Grain, GroupBy } from './Dossier'
 
 /* `area` is now the canonical area_id (e.g. 'KSA', 'ACR', 'CYP'). The
@@ -169,9 +170,45 @@ export function AreaCategoryCards({
   const columns = useMemo(() => buildColumns(grain, scope, scope.latestActualYM),
     [grain, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth, scope.latestActualYM])
 
+  /* Derived cash balance chain (Opening / Closing per month). Source values
+   * for stored balance lines are ignored on display when the line is
+   * categorized Opening Balance or Ending Balance — those rows show the
+   * derived chain so closing[N] always equals opening[N] + movements[N]. */
+  const lineByCode = useMemo(() => {
+    const m = new Map<string, CfLine>()
+    for (const l of lines) m.set(l.line_code, l)
+    return m
+  }, [lines])
+
+  const derived = useMemo(() => {
+    const cells: CfCell[] = []
+    for (const c of actuals) {
+      cells.push({ area: c.area, line_code: c.line_code, year: c.year, month: c.month,
+        value: applyDeltaToCell(workingIndex, savedIndex, c.area, c.line_code, c.year, c.month, c.value) })
+    }
+    for (const c of forecasts) {
+      cells.push({ area: c.area, line_code: c.line_code, year: c.year, month: c.month,
+        value: applyDeltaToCell(workingIndex, savedIndex, c.area, c.line_code, c.year, c.month, c.value) })
+    }
+    return computeDerivedBalances({
+      cells, lines,
+      fromYear: scope.fromYear, fromMonth: scope.fromMonth,
+      toYear: scope.toYear, toMonth: scope.toMonth,
+    })
+  }, [actuals, forecasts, lines, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth, workingIndex, savedIndex])
+
   // Indexed sums for fast per-cell lookup. Applies scenario delta on top of
-  // baseline so the drill stays in sync with bulk-ops + cell edits.
+  // baseline so the drill stays in sync with bulk-ops + cell edits. For
+  // Opening Balance / Ending Balance lines, returns the DERIVED chain value
+  // at the column endpoint — not the stored cell sum (which can drift).
   const sumLineCol = (lineCode: string, matches: (y: number, m: number) => boolean): number | null => {
+    const line = lineByCode.get(lineCode)
+    if (line && line.nature === 'Balance' && (line.category === 'Opening Balance' || line.category === 'Ending Balance')) {
+      const ep = getColumnYMEndpoints(matches, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth)
+      if (!ep) return null
+      if (line.category === 'Opening Balance') return derived.openingByYM.get(ep.first) ?? null
+      return derived.closingByYM.get(ep.last) ?? null
+    }
     let sum: number | null = null
     for (const c of actuals) {
       if (c.line_code !== lineCode) continue
@@ -272,6 +309,15 @@ export function AreaCategoryCards({
               expanded={expanded} toggle={toggle} />
           )
         })}
+        {groupBy === 'nature' && (
+          <NetMovementCard
+            receiptsLines={activeLines.filter(l => l.nature === 'Receipts')}
+            paymentsLines={activeLines.filter(l => l.nature === 'Payments')}
+            columns={columns}
+            tableMinWidth={tableMinWidth}
+            sumLinesCol={sumLinesCol}
+          />
+        )}
       </div>
     </div>
   )
@@ -441,6 +487,89 @@ function FlowCard({
               <td className={classNum(netTotal)}>{netTotal == null ? '' : fmt(netTotal)}</td>
             </tr>
           )}
+          {/* Nature-mode: per-block Total footer row (Receipts-only or Payments-only).
+              In Category mode the Net row above already covers this. */}
+          {!showNet && (
+            <tr className="total net-row">
+              <td className="label">Total {block.label}</td>
+              {columns.map(col => {
+                const codes = (hasReceipts ? block.receipts : block.payments).map(l => l.line_code)
+                const v = sumLinesCol(codes, col.matches)
+                return (
+                  <td key={col.key} className={classNum(v)}>
+                    {v == null ? '' : fmt(v)}
+                  </td>
+                )
+              })}
+              <td className={classNum(hasReceipts ? receiptsTotal : paymentsTotal)}>
+                {hasReceipts
+                  ? (receiptsTotal == null ? '' : fmt(receiptsTotal))
+                  : (paymentsTotal == null ? '' : fmt(paymentsTotal))}
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/* Nature-mode net summary — single row spanning all categories.
+ * Shown after the Payments block in Nature mode. Sums every Receipts line
+ * + every Payments line per column. */
+function NetMovementCard({
+  receiptsLines, paymentsLines, columns, tableMinWidth, sumLinesCol,
+}: {
+  receiptsLines: CfLine[];
+  paymentsLines: CfLine[];
+  columns: Column[];
+  tableMinWidth: number;
+  sumLinesCol: (lineCodes: string[], matches: (y: number, m: number) => boolean) => number | null;
+}) {
+  const receiptCodes = receiptsLines.map(l => l.line_code)
+  const paymentCodes = paymentsLines.map(l => l.line_code)
+  const totalReceipts = sumLinesCol(receiptCodes, () => true)
+  const totalPayments = sumLinesCol(paymentCodes, () => true)
+  const netTotal = (totalReceipts ?? 0) + (totalPayments ?? 0)
+  return (
+    <div className="cat-group">
+      <div className="cat-group-header nature-balance">
+        <span>Net Movement (period)</span>
+        <span className="cat-totals">{fmt(netTotal)}</span>
+      </div>
+      <table className="cf-table" style={{ tableLayout: 'fixed', width: tableMinWidth }}>
+        <colgroup>
+          <col style={{ width: LABEL_COL_PX }} />
+          {columns.map(c => <col key={c.key} style={{ width: PERIOD_COL_PX }} />)}
+          <col style={{ width: TOTAL_COL_PX }} />
+        </colgroup>
+        <tbody>
+          <tr className="total net-row">
+            <td className="label">Receipts total</td>
+            {columns.map(col => {
+              const v = sumLinesCol(receiptCodes, col.matches)
+              return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
+            })}
+            <td className={classNum(totalReceipts)}>{totalReceipts == null ? '' : fmt(totalReceipts)}</td>
+          </tr>
+          <tr className="total net-row">
+            <td className="label">Payments total</td>
+            {columns.map(col => {
+              const v = sumLinesCol(paymentCodes, col.matches)
+              return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
+            })}
+            <td className={classNum(totalPayments)}>{totalPayments == null ? '' : fmt(totalPayments)}</td>
+          </tr>
+          <tr className="total net-row" style={{ borderTop: '2px solid var(--border)' }}>
+            <td className="label" style={{ fontWeight: 600 }}>Net movement</td>
+            {columns.map(col => {
+              const r = sumLinesCol(receiptCodes, col.matches)
+              const p = sumLinesCol(paymentCodes, col.matches)
+              const v = (r == null && p == null) ? null : ((r ?? 0) + (p ?? 0))
+              return <td key={col.key} className={classNum(v)} style={{ fontWeight: 600 }}>{v == null ? '' : fmt(v)}</td>
+            })}
+            <td className={classNum(netTotal)} style={{ fontWeight: 600 }}>{fmt(netTotal)}</td>
+          </tr>
         </tbody>
       </table>
     </div>

@@ -1549,3 +1549,112 @@ body:has(.bulk-panel) .content { padding-right: 356px; }
 .scenario-banner-actions button.primary {
   background: var(--bad); border-color: var(--bad); color: #fff;
 }
+
+/* ─── Left-nav: collapsible groups ─────────────────────────────────────── */
+.leftnav .group.group-collapsible {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.leftnav .group.group-collapsible:hover { color: var(--bad); }
+.leftnav .group-chevron {
+  font-size: 8px;
+  color: var(--mute);
+  width: 8px;
+  display: inline-block;
+}
+.leftnav .group-count {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--mute);
+  background: var(--border);
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-weight: 500;
+}
+.leftnav .group.group-collapsed { color: var(--mute); }
+
+/* ─── Bulk-ops panel: collapsed strip ──────────────────────────────────── */
+.bulk-panel-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+.bulk-panel-collapse-btn {
+  background: transparent;
+  border: 0;
+  font-size: 14px;
+  color: var(--mute);
+  cursor: pointer;
+  padding: 0 6px;
+  line-height: 1;
+}
+.bulk-panel-collapse-btn:hover { color: var(--bad); }
+
+.bulk-panel-strip {
+  width: 36px !important;
+  cursor: pointer;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px 0;
+  background: #fef2f2;
+  border-left: 1px solid var(--bad);
+}
+.bulk-panel-strip:hover { background: #fee2e2; }
+.bulk-strip-arrow {
+  font-size: 14px;
+  color: var(--bad);
+}
+.bulk-strip-label {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--bad);
+  font-weight: 600;
+}
+.bulk-strip-count {
+  background: var(--bad);
+  color: #fff;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+/* Content reflow when panel collapses */
+body.bulk-panel-collapsed .content { padding-right: 52px !important; }
+
+/* ─── AllAreasPivot — derived opening / closing rows ───────────────────── */
+.pivot-area-balance-row td {
+  font-size: 11px;
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+  padding: 4px 8px;
+}
+.pivot-area-opening td { background: #f8fafc; }
+.pivot-area-closing td {
+  background: #f1f5f9;
+  border-bottom: 1px solid var(--border);
+}
+.pivot-balance-label {
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 10px;
+}
+.pivot-area-sublabel {
+  margin-left: 8px;
+  font-size: 10px;
+  color: var(--mute);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

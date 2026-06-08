@@ -182,6 +182,25 @@ export default function Dossier() {
   }
   const selectedAreas = areas.filter(a => !excludedAreas.has(a.area_id))
 
+  /* Left-nav per-group collapsed state. Persisted in LS. SUMMARY + BANK
+   * POSITION ignore this — always open. */
+  const NAV_COLLAPSED_KEY = 'dossier-nav-collapsed-v1'
+  const [navCollapsed, setNavCollapsed] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(NAV_COLLAPSED_KEY)
+      return new Set(raw ? JSON.parse(raw) : ['SUBSIDIARIES', 'CORPORATE', 'CONTINGENCY'])
+    } catch { return new Set(['SUBSIDIARIES', 'CORPORATE', 'CONTINGENCY']) }
+  })
+  const toggleNavGroup = (g: string) => {
+    setNavCollapsed(prev => {
+      const next = new Set(prev)
+      if (next.has(g)) next.delete(g)
+      else next.add(g)
+      try { localStorage.setItem(NAV_COLLAPSED_KEY, JSON.stringify([...next])) } catch {}
+      return next
+    })
+  }
+
   /* 2026-06-05: dossier flattened to country grain. Three buckets are
    * Tony's canonical groupings — Operations / Subsidiaries / Corporate. */
   const AREA_GROUP_LABEL: Record<AreaGroup, string> = {
@@ -427,18 +446,31 @@ export default function Dossier() {
 
       <div className="leftnav">
         <div className="leftnav-scroll">
-          {navGroupOrder.map(group => (
-            <div key={group}>
-              <div className="group">{group}</div>
-              {navItems.filter(n => n.group === group).map(n => (
-                <a key={`${group}-${n.label}`}
-                   className={`item ${isActive(n.view) ? 'active' : ''}`}
-                   onClick={() => goto(n.view)}>
-                  {n.label}
-                </a>
-              ))}
-            </div>
-          ))}
+          {navGroupOrder.map(group => {
+            const items = navItems.filter(n => n.group === group)
+            const hasActive = items.some(n => isActive(n.view))
+            const alwaysOpen = group === 'SUMMARY' || group === 'BANK POSITION'
+            const collapsed = !alwaysOpen && !hasActive && navCollapsed.has(group)
+            return (
+              <div key={group}>
+                <div
+                  className={`group ${alwaysOpen ? '' : 'group-collapsible'} ${collapsed ? 'group-collapsed' : ''}`}
+                  onClick={() => { if (!alwaysOpen) toggleNavGroup(group) }}
+                >
+                  {!alwaysOpen && <span className="group-chevron">{collapsed ? '▶' : '▼'}</span>}
+                  <span>{group}</span>
+                  {!alwaysOpen && collapsed && <span className="group-count">{items.length}</span>}
+                </div>
+                {!collapsed && items.map(n => (
+                  <a key={`${group}-${n.label}`}
+                     className={`item ${isActive(n.view) ? 'active' : ''}`}
+                     onClick={() => goto(n.view)}>
+                    {n.label}
+                  </a>
+                ))}
+              </div>
+            )
+          })}
         </div>
         <div className="leftnav-footer">
           <div className="user-email">{user?.email}</div>

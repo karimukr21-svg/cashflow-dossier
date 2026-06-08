@@ -3,6 +3,7 @@ import type { CfCell, CfLine, CanonicalArea } from '@/lib/queries'
 import type { Scope } from './Dossier'
 import { fmt, classNum } from '@/lib/format'
 import { buildColumns } from './AreaDrill'
+import { computeDerivedBalances, getColumnYMEndpoints } from '@/lib/derivedBalances'
 
 /* ───── Layout constants — kept in sync with AreaDrill so cards line up ───── */
 const LABEL_COL_PX = 240
@@ -100,6 +101,34 @@ function AreaOuter({
     return m
   }, [actuals, forecasts, areas])
 
+  /* Derived cash balance chain per area (Opening / Closing per month). */
+  const derivedByArea = useMemo(() => {
+    const out = new Map<string, ReturnType<typeof computeDerivedBalances>>()
+    for (const a of areas) {
+      const bucket = cellsByArea.get(a.area_id)
+      if (!bucket) continue
+      const cells: CfCell[] = [...bucket.actuals, ...bucket.forecasts]
+      out.set(a.area_id, computeDerivedBalances({
+        cells, lines,
+        fromYear: scope.fromYear, fromMonth: scope.fromMonth,
+        toYear: scope.toYear, toMonth: scope.toMonth,
+      }))
+    }
+    return out
+  }, [areas, cellsByArea, lines, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth])
+
+  const balanceAt = (areaId: string, ym: number, kind: 'opening' | 'closing'): number | null => {
+    const d = derivedByArea.get(areaId)
+    if (!d) return null
+    const map = kind === 'opening' ? d.openingByYM : d.closingByYM
+    return map.get(ym) ?? null
+  }
+  const balanceForCol = (areaId: string, col: Column, kind: 'opening' | 'closing'): number | null => {
+    const ep = getColumnYMEndpoints(col.matches, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth)
+    if (!ep) return null
+    return balanceAt(areaId, kind === 'opening' ? ep.first : ep.last, kind)
+  }
+
   const columns = useMemo(
     () => buildColumns(scope.grain, scope, scope.latestActualYM),
     [scope.grain, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth, scope.latestActualYM])
@@ -148,13 +177,30 @@ function AreaOuter({
             const isOpen = expanded.has(area.area_id)
             const rowTotal = areaNet(area.area_id, () => true)
             const bucket = cellsByArea.get(area.area_id)
+            const derived = derivedByArea.get(area.area_id)
+            /* Opening at first ym in scope; closing at last ym in scope. */
+            const fromYM = scope.fromYear * 100 + scope.fromMonth
+            const toYM = scope.toYear * 100 + scope.toMonth
+            const openingTotal = derived?.openingByYM.get(fromYM) ?? null
+            const closingTotal = derived?.closingByYM.get(toYM) ?? null
             return (
               <Fragment key={area.area_id}>
+                {/* Opening row — always visible, even when collapsed. */}
+                <tr className="pivot-area-balance-row pivot-area-opening">
+                  <td className="label pivot-balance-label">Opening · {area.display_name}</td>
+                  {columns.map(col => {
+                    const v = balanceForCol(area.area_id, col, 'opening')
+                    return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
+                  })}
+                  <td className={classNum(openingTotal)}>{openingTotal == null ? '' : fmt(openingTotal)}</td>
+                </tr>
+                {/* Movement (Net) row — clickable header. */}
                 <tr className={`pivot-area-headrow subtotal-row clickable ${isOpen ? 'open' : ''}`}
                     onClick={() => toggle(area.area_id)}>
                   <td className="label">
                     <span className="pivot-card-chev">▶</span>
                     {area.display_name}
+                    <span className="pivot-area-sublabel">net movement</span>
                   </td>
                   {columns.map(col => {
                     const v = areaNet(area.area_id, col.matches)
@@ -163,6 +209,15 @@ function AreaOuter({
                   <td className={classNum(rowTotal)} style={{ fontWeight: 600 }}>
                     {rowTotal == null ? '' : fmt(rowTotal)}
                   </td>
+                </tr>
+                {/* Closing row — derived, always visible. */}
+                <tr className="pivot-area-balance-row pivot-area-closing">
+                  <td className="label pivot-balance-label">Closing · {area.display_name}</td>
+                  {columns.map(col => {
+                    const v = balanceForCol(area.area_id, col, 'closing')
+                    return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
+                  })}
+                  <td className={classNum(closingTotal)}>{closingTotal == null ? '' : fmt(closingTotal)}</td>
                 </tr>
                 {isOpen && bucket && (
                   <AreaInnerRows
