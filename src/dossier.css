@@ -52,9 +52,11 @@ body, html, #root {
   flex-wrap: wrap;
 }
 /* Row 2 always renders even when empty so toggling views doesn't shift
- * row 1's content vertically. Min-height matches a pill-row's box. */
+ * row 1's content vertically. Min-height matches a pill-row's rendered box
+ * (pill-btn 4+4 padding + ~14px line + pill-row 2+2 padding + 1px border each
+ * side = ~30px). */
 .topbar-row-display {
-  min-height: 26px;
+  min-height: 30px;
   border-top: 1px dashed var(--border);
   padding-top: 8px;
   margin-top: -2px;
