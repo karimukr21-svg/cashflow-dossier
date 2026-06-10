@@ -5,11 +5,9 @@ import {
   fetchCanonicalAreas, fetchVersions, fetchLines, fetchActuals,
   type CfVersion, type CfLine, type CanonicalArea, type AreaGroup,
 } from '@/lib/queries'
-import TreasuryMovements from './TreasuryMovements'
 import AreaDrill from './AreaDrill'
-import BankSnapshot from './BankSnapshot'
-import LoansOverdrafts from './LoansOverdrafts'
-import Operations from './Operations'
+import DebtPosition from './DebtPosition'
+import WhatChanged from './WhatChanged'
 import Overall from './Overall'
 import AllAreas from './AllAreas'
 import AreasFunders from './AreasFunders'
@@ -37,16 +35,14 @@ function parseOrd(raw: string | null): GrainOrd {
 }
 
 type View =
-  | { kind: 'summary'; lens: 'overall' | 'treasury' | 'loans' | 'operations' | 'allareas' | 'funders' | 'heatmap' }
-  | { kind: 'bank'; sub: 'snapshot' }
+  | { kind: 'summary'; lens: 'overall' | 'funders' | 'heatmap' | 'changed' | 'loans' | 'allareas' }
   | { kind: 'area'; area: string }
 
 function parseView(sp: URLSearchParams): View {
   const view = sp.get('view') || 'summary'
   const sub = sp.get('sub') || ''
-  if (view === 'bank') return { kind: 'bank', sub: 'snapshot' }
   if (view === 'area' && sp.get('area')) return { kind: 'area', area: sp.get('area')! }
-  const lens = (['overall', 'treasury', 'loans', 'operations', 'allareas', 'funders', 'heatmap'].includes(sub) ? sub : 'overall') as any
+  const lens = (['overall', 'funders', 'heatmap', 'changed', 'loans', 'allareas'].includes(sub) ? sub : 'overall') as any
   return { kind: 'summary', lens }
 }
 
@@ -217,15 +213,15 @@ export default function Dossier() {
   }
 
   type NavItem = { label: string; group: string; view: View; area?: CanonicalArea }
+  /* SUMMARY = the presentation set: one page per CFO question, in the order
+   * a CFO conversation runs. EXPLORE = analyst tools. */
   const navItems: NavItem[] = [
-    { group: 'SUMMARY', label: 'Overall',            view: { kind: 'summary', lens: 'overall' } },
-    { group: 'SUMMARY', label: 'Treasury Movements', view: { kind: 'summary', lens: 'treasury' } },
-    { group: 'SUMMARY', label: 'Loans & Overdrafts', view: { kind: 'summary', lens: 'loans' } },
-    { group: 'SUMMARY', label: 'Operations',         view: { kind: 'summary', lens: 'operations' } },
-    { group: 'SUMMARY', label: 'All Areas',          view: { kind: 'summary', lens: 'allareas' } },
+    { group: 'SUMMARY', label: 'Cash Runway',          view: { kind: 'summary', lens: 'overall' } },
     { group: 'SUMMARY', label: 'Funders vs Consumers', view: { kind: 'summary', lens: 'funders' } },
-    { group: 'SUMMARY', label: 'Treasury Heatmap',     view: { kind: 'summary', lens: 'heatmap' } },
-    { group: 'BANK POSITION', label: 'Snapshot',     view: { kind: 'bank', sub: 'snapshot' } },
+    { group: 'SUMMARY', label: 'Treasury',             view: { kind: 'summary', lens: 'heatmap' } },
+    { group: 'SUMMARY', label: 'What Changed',         view: { kind: 'summary', lens: 'changed' } },
+    { group: 'SUMMARY', label: 'Debt Position',        view: { kind: 'summary', lens: 'loans' } },
+    { group: 'EXPLORE', label: 'All Areas',            view: { kind: 'summary', lens: 'allareas' } },
     ...areas.map(a => ({
       group: AREA_GROUP_LABEL[a.group_name],
       label: a.display_name,
@@ -234,13 +230,12 @@ export default function Dossier() {
     })),
   ]
   const navGroupOrder: string[] = [
-    'SUMMARY', 'BANK POSITION',
+    'SUMMARY', 'EXPLORE',
     ...areaNavGroups.map(g => g.label),
   ]
 
   const goto = (v: View) => {
     if (v.kind === 'summary') setUrl({ view: 'summary', sub: v.lens, area: null })
-    else if (v.kind === 'bank') setUrl({ view: 'bank', sub: v.sub, area: null })
     else if (v.kind === 'area') setUrl({ view: 'area', area: v.area, sub: null })
     else setUrl({ view: 'audit', sub: null, area: null })
   }
@@ -249,7 +244,6 @@ export default function Dossier() {
 
   const grainKey = (() => {
     if (view.kind === 'summary') return view.lens
-    if (view.kind === 'bank') return view.sub
     if (view.kind === 'area') return 'area'
     return 'audit'
   })()
@@ -289,14 +283,12 @@ export default function Dossier() {
 
     if (view.kind === 'summary') {
       if (view.lens === 'overall')    return <Overall scope={scope} />
-      if (view.lens === 'treasury')   return <TreasuryMovements scope={scope} />
-      if (view.lens === 'loans')      return <LoansOverdrafts scope={scope} />
-      if (view.lens === 'operations') return <Operations scope={scope} />
-      if (view.lens === 'allareas')   return <AllAreas scope={scope} onSelectArea={(areaId) => goto({ kind: 'area', area: areaId })} />
       if (view.lens === 'funders')    return <AreasFunders scope={scope} onSelectArea={(areaId) => goto({ kind: 'area', area: areaId })} />
       if (view.lens === 'heatmap')    return <TreasuryHeatmap scope={scope} onSelectArea={(areaId) => goto({ kind: 'area', area: areaId })} />
+      if (view.lens === 'changed')    return <WhatChanged scope={scope} />
+      if (view.lens === 'loans')      return <DebtPosition scope={scope} />
+      if (view.lens === 'allareas')   return <AllAreas scope={scope} onSelectArea={(areaId) => goto({ kind: 'area', area: areaId })} />
     }
-    if (view.kind === 'bank' && view.sub === 'snapshot') return <BankSnapshot />
     if (view.kind === 'area') return <AreaDrill area={view.area} scope={scope} />
     return null
   }

@@ -5,6 +5,7 @@ import {
 } from '@/lib/queries'
 import { applyDeltaToCell } from '@/lib/scenario'
 import { useScenario } from '@/lib/ScenarioContext'
+import DivergingBars from '@/charts/DivergingBars'
 import type { Scope } from './Dossier'
 
 /* Treasury Heatmap — Step 8
@@ -86,6 +87,11 @@ export default function TreasuryHeatmap({ scope, onSelectArea }: Props) {
     const process = (r: CfCell) => {
       const line = lineByCode.get(r.line_code)
       if (!line || line.nature === 'Balance') return
+      /* Treasury's own aggregate mirror rows (received-from / paid-to areas)
+       * restate flows the area-side wg_*_treasury rows already carry — keep
+       * them out of the stacks so group totals aren't inflated. They feed
+       * the exchange section instead. */
+      if (r.line_code.startsWith('treasury_')) return
       const canonical = scope.cfToCanonical.get(r.area)
       if (!canonical) return
       const v = applyDeltaToCell(workingIndex, savedIndex, r.area, r.line_code, r.year, r.month, r.value)
@@ -157,6 +163,39 @@ export default function TreasuryHeatmap({ scope, onSelectArea }: Props) {
     return out
   }, [loading, bankMonthly, monthlyTotals, year])
 
+  /* Areas ↔ Treasury exchange.
+   * Headline totals from Treasury's own sheet rows (treasury_recpt_areas /
+   * treasury_pay_areas — Tony's "TREASURY RECEIPTS - FROM AREAS" lines).
+   * Per-area split from the area-side wg_recpt_treasury / wg_pay_treasury. */
+  const exchange = useMemo(() => {
+    let fromAreas = 0   // Treasury received from areas
+    let toAreas = 0     // Treasury paid to areas (magnitude)
+    const perArea = new Map<string, { provided: number; received: number }>()
+    const process = (r: CfCell) => {
+      const v = applyDeltaToCell(workingIndex, savedIndex, r.area, r.line_code, r.year, r.month, r.value)
+      if (r.line_code === 'treasury_recpt_areas') fromAreas += v
+      else if (r.line_code === 'treasury_pay_areas') toAreas += Math.abs(v)
+      else if (r.line_code === 'wg_pay_treasury' || r.line_code === 'wg_recpt_treasury') {
+        const canonical = scope.cfToCanonical.get(r.area)
+        if (!canonical) return
+        let s = perArea.get(canonical.area_id)
+        if (!s) { s = { provided: 0, received: 0 }; perArea.set(canonical.area_id, s) }
+        if (r.line_code === 'wg_pay_treasury') s.provided += Math.abs(v)
+        else s.received += v
+      }
+    }
+    for (const r of actuals) process(r)
+    for (const r of forecasts) process(r)
+    const rows = scope.areas
+      .filter(a => perArea.has(a.area_id))
+      .map(a => {
+        const s = perArea.get(a.area_id)!
+        return { areaId: a.area_id, label: a.display_name, provided: s.provided, received: s.received, net: s.provided - s.received }
+      })
+      .sort((x, y) => Math.abs(y.net) - Math.abs(x.net))
+    return { fromAreas, toAreas, rows }
+  }, [actuals, forecasts, scope.areas, scope.cfToCanonical, workingIndex, savedIndex])
+
   const posMax = useMemo(() => Math.max(...position.map(p => Math.abs(p.value)), 1), [position])
 
   const minPosMonth = useMemo(() => {
@@ -172,12 +211,53 @@ export default function TreasuryHeatmap({ scope, onSelectArea }: Props) {
 
   return (
     <div className="heatmap-page">
-      <h1>Treasury Heatmap</h1>
+      <h1>Treasury</h1>
       <div className="heatmap-subtitle">
-        Inflows by area (top) · cash position (mid) · outflows by area (bottom) ·
+        What areas provided vs received · monthly flow stacks · cash position ·
         {' '}{year} · {series.length} active areas
       </div>
 
+      {/* ── Areas ↔ Treasury exchange ───────────────────────────── */}
+      <div className="heatmap-kpis">
+        <div className="heatmap-kpi">
+          <div className="heatmap-kpi-label">Areas → Treasury</div>
+          <div className="heatmap-kpi-value pos">{fmtMoney(exchange.fromAreas)}</div>
+        </div>
+        <div className="heatmap-kpi">
+          <div className="heatmap-kpi-label">Treasury → Areas</div>
+          <div className="heatmap-kpi-value neg">{fmtMoney(exchange.toAreas)}</div>
+        </div>
+        <div className="heatmap-kpi">
+          <div className="heatmap-kpi-label">Net to Treasury</div>
+          <div className={`heatmap-kpi-value ${(exchange.fromAreas - exchange.toAreas) >= 0 ? 'pos' : 'neg'}`}>
+            {fmtMoney(exchange.fromAreas - exchange.toAreas)}
+          </div>
+        </div>
+      </div>
+
+      {exchange.rows.length > 0 && (
+        <div className="sum-section">
+          <h3>Exchange with Treasury by area · {year}</h3>
+          <DivergingBars
+            rows={exchange.rows.map(r => ({
+              key: r.areaId,
+              label: r.label,
+              neg: r.received,
+              pos: r.provided,
+              net: r.net,
+              onClick: () => onSelectArea(r.areaId),
+            }))}
+            negHeader="Received from Treasury"
+            posHeader="Provided to Treasury"
+            showNet
+            fmtValue={fmtMoney}
+          />
+        </div>
+      )}
+
+      <div className="sum-section">
+        <h3>Monthly flows by area · position waveform</h3>
+      </div>
       <div className="heatmap-kpis">
         <div className="heatmap-kpi">
           <div className="heatmap-kpi-label">Total inflows</div>

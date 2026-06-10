@@ -198,6 +198,30 @@ export async function fetchForecasts(opts: {
     .map(r => ({ ...r, value: Number(r.value) }))
 }
 
+export type BridgeEntry = { area_id: string; area_label: string; sort_order: number }
+
+/** Maps ANY cf label — cf_area (old vintages) or cf_country (2026-05+) — to its
+ *  canonical parent area. Lets pages compare vintages stored at different grains
+ *  by rolling both up to the same canonical area level. */
+export async function fetchCashflowBridge(): Promise<Map<string, BridgeEntry>> {
+  const [sheetsRes, areasRes] = await Promise.all([
+    supabase.from('cashflow_sheets').select('cf_area, cf_country, area_id'),
+    supabase.from('areas').select('area_id, display_name, sort_order'),
+  ])
+  if (sheetsRes.error) throw sheetsRes.error
+  if (areasRes.error) throw areasRes.error
+  const areaMeta = new Map((areasRes.data || []).map(a => [a.area_id, a]))
+  const out = new Map<string, BridgeEntry>()
+  for (const s of sheetsRes.data || []) {
+    const meta = areaMeta.get(s.area_id)
+    if (!meta) continue
+    const entry: BridgeEntry = { area_id: s.area_id, area_label: meta.display_name, sort_order: meta.sort_order ?? 999 }
+    if (s.cf_area) out.set(s.cf_area, entry)
+    if (s.cf_country) out.set(s.cf_country, entry)
+  }
+  return out
+}
+
 /** Bank position — monthly aggregates across all areas, for a calendar year.
  *  Returns one row per month present, group-level totals for cash / loans / od. */
 export async function fetchBankPositionMonthly(year: number): Promise<{

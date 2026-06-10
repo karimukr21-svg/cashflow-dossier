@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchActuals, fetchForecasts, fetchBankPositionLatest, fetchBankPositionMonthly } from '@/lib/queries'
 import { fmt, classNum } from '@/lib/format'
+import Waterfall from '@/charts/Waterfall'
 import type { Scope } from './Dossier'
 
 /* ────────────────────────────────────────────────────────────────
@@ -191,6 +192,13 @@ export default function Overall({ scope }: { scope: Scope }) {
       {/* Row 4 — Walkback */}
       <div className="runway-section">
         <div className="runway-eyebrow">How the gap builds · Forecast flows {monthLabel(asOfYM + 1)} → Dec {eoyYear}</div>
+        <Waterfall steps={[
+          { label: `Net Funds · ${monthLabel(asOfYM)}`, value: today.netFunds, kind: 'start' },
+          { label: 'Operations', value: walkback.ops, kind: 'delta' },
+          { label: 'Loan Movement', value: walkback.loanMov, kind: 'delta' },
+          { label: 'Non-Operational', value: walkback.nonOp, kind: 'delta' },
+          { label: `Net Funds · Dec ${eoyYear}`, value: eoy.netFunds, kind: 'end' },
+        ]} />
         <table className="cf-table runway-walkback">
           <thead>
             <tr><th className="label">Bucket</th><th>Δ Net Funds</th><th className="runway-detail">Contains</th></tr>
