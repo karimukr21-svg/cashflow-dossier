@@ -46,8 +46,22 @@ const PALETTE = [
 ]
 
 export default function TreasuryHeatmap({ scope, onSelectArea }: Props) {
-  const year = scope.toYear  // use the end-of-scope year
   const { workingIndex, savedIndex } = useScenario()
+
+  /* Window months from the period selector (capped at 24 columns) */
+  const months = useMemo(() => {
+    const out: { y: number; m: number; ym: number; label: string }[] = []
+    const spansYears = scope.fromYear !== scope.toYear
+    let y = scope.fromYear, m = scope.fromMonth
+    while (y * 100 + m <= scope.toYear * 100 + scope.toMonth && out.length < 24) {
+      out.push({ y, m, ym: y * 100 + m, label: spansYears ? `${MONTH_NAMES[m - 1]} '${String(y).slice(2)}` : MONTH_NAMES[m - 1] })
+      m++; if (m > 12) { m = 1; y++ }
+    }
+    return out
+  }, [scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth])
+  const ymToIdx = useMemo(() => new Map(months.map((mo, i) => [mo.ym, i])), [months])
+  const N = months.length
+  const periodLabel = months.length ? `${months[0].label}${months[0].label.includes("'") ? '' : ` ${months[0].y}`} – ${months[N - 1].label}${months[N - 1].label.includes("'") ? '' : ` ${months[N - 1].y}`}` : ''
 
   const [actuals, setActuals] = useState<CfCell[]>([])
   const [forecasts, setForecasts] = useState<CfCell[]>([])
@@ -57,10 +71,11 @@ export default function TreasuryHeatmap({ scope, onSelectArea }: Props) {
   useEffect(() => {
     let cancel = false
     setLoading(true)
+    const years = [...new Set(months.map(mo => mo.y))]
     Promise.all([
-      fetchActuals({ fromYear: year, fromMonth: 1, toYear: year, toMonth: 12 }),
-      fetchForecasts({ version: scope.primaryVersion, fromYear: year, fromMonth: 1, toYear: year, toMonth: 12 }),
-      fetchBankPositionMonthly(year),
+      fetchActuals({ fromYear: scope.fromYear, fromMonth: scope.fromMonth, toYear: scope.toYear, toMonth: scope.toMonth }),
+      fetchForecasts({ version: scope.primaryVersion, fromYear: scope.fromYear, fromMonth: scope.fromMonth, toYear: scope.toYear, toMonth: scope.toMonth }),
+      Promise.all(years.map(y => fetchBankPositionMonthly(y))).then(arr => arr.flat()),
     ])
       .then(([a, f, b]) => {
         if (cancel) return
@@ -70,7 +85,7 @@ export default function TreasuryHeatmap({ scope, onSelectArea }: Props) {
       })
       .finally(() => { if (!cancel) setLoading(false) })
     return () => { cancel = true }
-  }, [year, scope.primaryVersion])
+  }, [scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth, scope.primaryVersion, months])
 
   const lineByCode = useMemo(() => new Map(scope.lines.map(l => [l.line_code, l])), [scope.lines])
 
@@ -81,7 +96,7 @@ export default function TreasuryHeatmap({ scope, onSelectArea }: Props) {
     const byArea = new Map<string, { inflows: number[]; outflows: number[] }>()
     const ensure = (areaId: string) => {
       let s = byArea.get(areaId)
-      if (!s) { s = { inflows: Array(12).fill(0), outflows: Array(12).fill(0) }; byArea.set(areaId, s) }
+      if (!s) { s = { inflows: Array(N).fill(0), outflows: Array(N).fill(0) }; byArea.set(areaId, s) }
       return s
     }
     const process = (r: CfCell) => {
@@ -94,8 +109,9 @@ export default function TreasuryHeatmap({ scope, onSelectArea }: Props) {
       if (r.line_code.startsWith('treasury_')) return
       const canonical = scope.cfToCanonical.get(r.area)
       if (!canonical) return
+      const m = ymToIdx.get(r.year * 100 + r.month)
+      if (m === undefined) return
       const v = applyDeltaToCell(workingIndex, savedIndex, r.area, r.line_code, r.year, r.month, r.value)
-      const m = r.month - 1
       const s = ensure(canonical.area_id)
       if (line.nature === 'Receipts') s.inflows[m] += v
       else if (line.nature === 'Payments') s.outflows[m] += Math.abs(v)  // positive magnitude for stacking
@@ -119,14 +135,14 @@ export default function TreasuryHeatmap({ scope, onSelectArea }: Props) {
       colorIdx++
     }
     return out
-  }, [loading, actuals, forecasts, lineByCode, scope.cfToCanonical, scope.areas, workingIndex, savedIndex])
+  }, [loading, actuals, forecasts, lineByCode, scope.cfToCanonical, scope.areas, workingIndex, savedIndex, N, ymToIdx])
 
   /* Column totals + axis scaling */
   const monthlyTotals = useMemo(() => {
-    const inflowTot = Array(12).fill(0)
-    const outflowTot = Array(12).fill(0)
+    const inflowTot = Array(N).fill(0)
+    const outflowTot = Array(N).fill(0)
     for (const s of series) {
-      for (let m = 0; m < 12; m++) {
+      for (let m = 0; m < N; m++) {
         inflowTot[m] += s.inflows[m]
         outflowTot[m] += s.outflows[m]
       }
@@ -135,7 +151,7 @@ export default function TreasuryHeatmap({ scope, onSelectArea }: Props) {
     const maxOut = Math.max(...outflowTot, 1)
     const maxBar = Math.max(maxIn, maxOut)
     return { inflowTot, outflowTot, maxBar }
-  }, [series])
+  }, [series, N])
 
   /* Position waveform — anchor at last bank_position period, then run
    * cumulative net flow forward. */
@@ -149,19 +165,19 @@ export default function TreasuryHeatmap({ scope, onSelectArea }: Props) {
 
     let running = lastBankYM !== null ? (bankByYM.get(lastBankYM) || 0) : 0
 
-    for (let m = 1; m <= 12; m++) {
-      const ym = year * 100 + m
+    for (let i = 0; i < N; i++) {
+      const ym = months[i].ym
       if (bankByYM.has(ym)) {
         running = bankByYM.get(ym)!
       } else if (lastBankYM !== null && ym > lastBankYM) {
         /* Forecast period — add net cash flow this month */
-        const net = (monthlyTotals.inflowTot[m - 1] || 0) - (monthlyTotals.outflowTot[m - 1] || 0)
+        const net = (monthlyTotals.inflowTot[i] || 0) - (monthlyTotals.outflowTot[i] || 0)
         running = running + net
       }
       out.push({ ym, value: running })
     }
     return out
-  }, [loading, bankMonthly, monthlyTotals, year])
+  }, [loading, bankMonthly, monthlyTotals, months, N])
 
   /* Areas ↔ Treasury exchange.
    * Headline totals from Treasury's own sheet rows (treasury_recpt_areas /
@@ -214,7 +230,7 @@ export default function TreasuryHeatmap({ scope, onSelectArea }: Props) {
       <h1>Treasury</h1>
       <div className="heatmap-subtitle">
         What areas provided vs received · monthly flow stacks · cash position ·
-        {' '}{year} · {series.length} active areas
+        {' '}{periodLabel} · {series.length} active areas
       </div>
 
       {/* ── Areas ↔ Treasury exchange ───────────────────────────── */}
@@ -237,7 +253,7 @@ export default function TreasuryHeatmap({ scope, onSelectArea }: Props) {
 
       {exchange.rows.length > 0 && (
         <div className="sum-section">
-          <h3>Exchange with Treasury by area · {year}</h3>
+          <h3>Exchange with Treasury by area · {periodLabel}</h3>
           <DivergingBars
             rows={exchange.rows.map(r => ({
               key: r.areaId,
@@ -285,8 +301,8 @@ export default function TreasuryHeatmap({ scope, onSelectArea }: Props) {
 
       <div className="heatmap-grid">
         {/* Top — inflow stacks */}
-        <div className="heatmap-band heatmap-band-in">
-          {Array.from({ length: 12 }).map((_, m) => (
+        <div className="heatmap-band heatmap-band-in" style={{ gridTemplateColumns: `repeat(${N}, 1fr)` }}>
+          {months.map((_, m) => (
             <div key={`in-${m}`} className="heatmap-col">
               <StackedBar
                 segments={series.map(s => ({ color: s.color, value: s.inflows[m], name: s.areaName }))}
@@ -298,23 +314,23 @@ export default function TreasuryHeatmap({ scope, onSelectArea }: Props) {
         </div>
 
         {/* Middle — month labels + position waveform */}
-        <div className="heatmap-axis">
+        <div className="heatmap-axis" style={{ gridTemplateColumns: `repeat(${N}, 1fr)` }}>
           <div className="heatmap-axis-line" />
           {position.map((p, i) => (
             <div key={p.ym} className="heatmap-col heatmap-axis-col">
-              <div className="heatmap-month-label">{MONTH_NAMES[i]}</div>
+              <div className="heatmap-month-label">{months[i].label}</div>
               <div
                 className={`heatmap-pos-dot ${posTier(p.value, posMax)}`}
                 style={{ bottom: `${50 + (p.value / posMax) * 40}%` }}
-                title={`${MONTH_NAMES[i]} · ${fmtMoney(p.value)}`}
+                title={`${months[i].label} · ${fmtMoney(p.value)}`}
               />
             </div>
           ))}
         </div>
 
         {/* Bottom — outflow stacks (visually mirrored downward) */}
-        <div className="heatmap-band heatmap-band-out">
-          {Array.from({ length: 12 }).map((_, m) => (
+        <div className="heatmap-band heatmap-band-out" style={{ gridTemplateColumns: `repeat(${N}, 1fr)` }}>
+          {months.map((_, m) => (
             <div key={`out-${m}`} className="heatmap-col">
               <StackedBar
                 segments={series.map(s => ({ color: s.color, value: s.outflows[m], name: s.areaName }))}

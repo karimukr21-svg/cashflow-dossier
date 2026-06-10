@@ -644,7 +644,7 @@ body, html, #root {
    * being pushed wide by min-content of wide tables (which clipped the page
    * off the right edge with no scrollbar). */
   min-width: 0;
-  padding: 24px 32px;
+  padding: 24px 56px 24px 32px;
 }
 
 /* Wrapper for wide month-column tables — scrolls locally instead of making

@@ -25,7 +25,20 @@ const ACCUM_LOANS = 'accum_loans'
 const ACCUM_OD = 'accum_od'
 
 export default function DebtPosition({ scope }: Props) {
-  const year = scope.toYear
+  /* Window months from the period selector (capped at 24 columns) */
+  const months = useMemo(() => {
+    const out: { y: number; m: number; ym: number; label: string }[] = []
+    const spansYears = scope.fromYear !== scope.toYear
+    let y = scope.fromYear, m = scope.fromMonth
+    while (y * 100 + m <= scope.toYear * 100 + scope.toMonth && out.length < 24) {
+      out.push({ y, m, ym: y * 100 + m, label: spansYears ? `${MONTH_NAMES[m - 1]} '${String(y).slice(2)}` : MONTH_NAMES[m - 1] })
+      m++; if (m > 12) { m = 1; y++ }
+    }
+    return out
+  }, [scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth])
+  const ymToIdx = useMemo(() => new Map(months.map((mo, i) => [mo.ym, i])), [months])
+  const N = months.length
+
   const [actuals, setActuals] = useState<CfCell[]>([])
   const [forecasts, setForecasts] = useState<CfCell[]>([])
   const [loading, setLoading] = useState(true)
@@ -34,8 +47,8 @@ export default function DebtPosition({ scope }: Props) {
     let cancel = false
     setLoading(true)
     Promise.all([
-      fetchActuals({ fromYear: year, fromMonth: 1, toYear: year, toMonth: 12 }),
-      fetchForecasts({ version: scope.primaryVersion, fromYear: year, fromMonth: 1, toYear: year, toMonth: 12 }),
+      fetchActuals({ fromYear: scope.fromYear, fromMonth: scope.fromMonth, toYear: scope.toYear, toMonth: scope.toMonth }),
+      fetchForecasts({ version: scope.primaryVersion, fromYear: scope.fromYear, fromMonth: scope.fromMonth, toYear: scope.toYear, toMonth: scope.toMonth }),
     ])
       .then(([a, f]) => {
         if (cancel) return
@@ -44,27 +57,28 @@ export default function DebtPosition({ scope }: Props) {
       })
       .finally(() => { if (!cancel) setLoading(false) })
     return () => { cancel = true }
-  }, [year, scope.primaryVersion])
+  }, [scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth, scope.primaryVersion])
 
   const model = useMemo(() => {
     if (loading) return null
-    const loansByM = Array(12).fill(0)
-    const odByM = Array(12).fill(0)
-    const hasStockByM = Array(12).fill(false)
+    const loansByM = Array(N).fill(0)
+    const odByM = Array(N).fill(0)
+    const hasStockByM = Array(N).fill(false)
     const mov = {
-      loanDrawn: Array(12).fill(0), loanSettled: Array(12).fill(0),
-      odDrawn: Array(12).fill(0), odSettled: Array(12).fill(0),
+      loanDrawn: Array(N).fill(0), loanSettled: Array(N).fill(0),
+      odDrawn: Array(N).fill(0), odSettled: Array(N).fill(0),
     }
     const perArea = new Map<string, { loans: number; od: number; ym: number }>()
-    let lastActualM = 0
+    let lastActualIdx = -1
 
     const process = (r: CfCell, isActual: boolean) => {
-      const m = r.month - 1
+      const m = ymToIdx.get(r.year * 100 + r.month)
+      if (m === undefined) return
       if (r.line_code === ACCUM_LOANS || r.line_code === ACCUM_OD) {
         if (r.line_code === ACCUM_LOANS) loansByM[m] += Math.abs(r.value)
         else odByM[m] += Math.abs(r.value)
         hasStockByM[m] = true
-        if (isActual && r.month > lastActualM) lastActualM = r.month
+        if (isActual && m > lastActualIdx) lastActualIdx = m
 
         /* per-area ranking uses the latest ACTUAL balance (matches the
          * "current" KPI month, not the December forecast) */
@@ -91,13 +105,13 @@ export default function DebtPosition({ scope }: Props) {
     for (const r of forecasts) process(r, false)
 
     /* months that actually carry stock data drive the chart */
-    const monthIdx = hasStockByM.map((has, i) => has ? i : -1).filter(i => i >= 0)
-    const labels = monthIdx.map(i => MONTH_NAMES[i])
-    const loanVals = monthIdx.map(i => loansByM[i])
-    const odVals = monthIdx.map(i => odByM[i])
-    const seamIndex = lastActualM > 0 ? monthIdx.indexOf(lastActualM - 1) : null
+    const monthIdx = hasStockByM.map((has: boolean, i: number) => has ? i : -1).filter((i: number) => i >= 0)
+    const labels = monthIdx.map((i: number) => months[i].label)
+    const loanVals = monthIdx.map((i: number) => loansByM[i])
+    const odVals = monthIdx.map((i: number) => odByM[i])
+    const seamIndex = lastActualIdx >= 0 ? monthIdx.indexOf(lastActualIdx) : null
 
-    const currentM = lastActualM > 0 ? lastActualM - 1 : (monthIdx[0] ?? 0)
+    const currentM = lastActualIdx >= 0 ? lastActualIdx : (monthIdx[0] ?? 0)
     const lastM = monthIdx.length ? monthIdx[monthIdx.length - 1] : 0
 
     const ranked = scope.areas
@@ -117,42 +131,44 @@ export default function DebtPosition({ scope }: Props) {
       yearEnd: { loans: loansByM[lastM], od: odByM[lastM], month: lastM },
       ranked,
     }
-  }, [loading, actuals, forecasts, scope.areas, scope.cfToCanonical])
+  }, [loading, actuals, forecasts, scope.areas, scope.cfToCanonical, N, ymToIdx, months])
 
   if (loading || !model) return <div className="placeholder-box">Loading…</div>
 
+  const currentLabel = months[model.current.month]?.label ?? ''
+  const endLabel = months[model.yearEnd.month]?.label ?? ''
   const sum = (a: number[]) => a.reduce((s, v) => s + v, 0)
-  const netByM = model.monthIdx.map(i =>
+  const netByM = model.monthIdx.map((i: number) =>
     model.mov.loanDrawn[i] + model.mov.loanSettled[i] + model.mov.odDrawn[i] + model.mov.odSettled[i])
 
   return (
     <div className="heatmap-page">
       <h1>Debt Position</h1>
       <div className="heatmap-subtitle">
-        Loan + overdraft balances and movements · {year} · actuals through {MONTH_NAMES[model.current.month]}
+        Loan + overdraft balances and movements · {months[0]?.label} – {months[N - 1]?.label} · actuals through {currentLabel}
       </div>
 
       <div className="heatmap-kpis">
         <div className="heatmap-kpi">
-          <div className="heatmap-kpi-label">Loans · {MONTH_NAMES[model.current.month]}</div>
+          <div className="heatmap-kpi-label">Loans · {currentLabel}</div>
           <div className="heatmap-kpi-value neg">{fmt(model.current.loans)}</div>
         </div>
         <div className="heatmap-kpi">
-          <div className="heatmap-kpi-label">Overdrafts · {MONTH_NAMES[model.current.month]}</div>
+          <div className="heatmap-kpi-label">Overdrafts · {currentLabel}</div>
           <div className="heatmap-kpi-value neg">{fmt(model.current.od)}</div>
         </div>
         <div className="heatmap-kpi">
-          <div className="heatmap-kpi-label">Total debt · {MONTH_NAMES[model.current.month]}</div>
+          <div className="heatmap-kpi-label">Total debt · {currentLabel}</div>
           <div className="heatmap-kpi-value neg">{fmt(model.current.loans + model.current.od)}</div>
         </div>
         <div className="heatmap-kpi">
-          <div className="heatmap-kpi-label">Year-end forecast debt</div>
+          <div className="heatmap-kpi-label">Forecast debt · {endLabel}</div>
           <div className="heatmap-kpi-value neg">{fmt(model.yearEnd.loans + model.yearEnd.od)}</div>
         </div>
       </div>
 
       <div className="sum-section">
-        <h3>Debt balances over the year</h3>
+        <h3>Debt balances over the period</h3>
         <StackedArea
           labels={model.labels}
           series={[
@@ -170,16 +186,16 @@ export default function DebtPosition({ scope }: Props) {
           <thead>
             <tr>
               <th style={{ textAlign: 'left' }}>Movement</th>
-              {model.monthIdx.map(i => <th key={i}>{MONTH_NAMES[i]}</th>)}
+              {model.monthIdx.map((i: number) => <th key={i}>{months[i].label}</th>)}
               <th>Total</th>
             </tr>
           </thead>
           <tbody>
             {([
-              ['Loans drawn', model.monthIdx.map(i => model.mov.loanDrawn[i])],
-              ['Loans settled', model.monthIdx.map(i => model.mov.loanSettled[i])],
-              ['Overdrafts drawn', model.monthIdx.map(i => model.mov.odDrawn[i])],
-              ['Overdrafts settled', model.monthIdx.map(i => model.mov.odSettled[i])],
+              ['Loans drawn', model.monthIdx.map((i: number) => model.mov.loanDrawn[i])],
+              ['Loans settled', model.monthIdx.map((i: number) => model.mov.loanSettled[i])],
+              ['Overdrafts drawn', model.monthIdx.map((i: number) => model.mov.odDrawn[i])],
+              ['Overdrafts settled', model.monthIdx.map((i: number) => model.mov.odSettled[i])],
             ] as [string, number[]][]).map(([label, vals]) => (
               <tr key={label}>
                 <td style={{ textAlign: 'left' }}>{label}</td>
