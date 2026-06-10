@@ -165,6 +165,7 @@ export default function DebtPosition({ scope }: Props) {
 
       <div className="sum-section">
         <h3>Movements · drawn vs settled</h3>
+        <div className="table-scroll">
         <table className="cf-table" style={{ maxWidth: 980 }}>
           <thead>
             <tr>
@@ -193,6 +194,7 @@ export default function DebtPosition({ scope }: Props) {
             </tr>
           </tbody>
         </table>
+        </div>
       </div>
 
       <div className="sum-section">
