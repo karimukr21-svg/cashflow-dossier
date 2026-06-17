@@ -2,6 +2,7 @@ import { Navigate, useLocation } from 'react-router-dom'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useAuth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
+import { RoleContext } from '@/lib/role'
 
 const APP_SLUG = 'cashflow-dossier'
 const SUPPORT_EMAIL = 'karim.ukr.21@gmail.com'
@@ -79,5 +80,6 @@ export function RequireAuth({ children }: { children: ReactNode }) {
       </div>
     )
   }
-  return <>{children}</>
+  const role = access.status === 'granted' ? access.role : 'viewer'
+  return <RoleContext.Provider value={role}>{children}</RoleContext.Provider>
 }

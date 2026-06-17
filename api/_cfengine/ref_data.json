@@ -1,0 +1,1657 @@
+{
+ "_source": "Supabase twinoncujgwlvanpsnle (LIVE via REST): cf_lines + cf_line_aliases + gacc.projects",
+ "lines": [
+  {
+   "line_code": "opening_balance",
+   "nature": "Balance",
+   "category": "Opening Balance",
+   "description": "Opening Balance",
+   "sign": "signed",
+   "is_active": true
+  },
+  {
+   "line_code": "oper_recpt_progress",
+   "nature": "Receipts",
+   "category": "Operation",
+   "description": "Progress Billings",
+   "sign": "positive",
+   "is_active": true
+  },
+  {
+   "line_code": "oper_recpt_advance",
+   "nature": "Receipts",
+   "category": "Operation",
+   "description": "Advance",
+   "sign": "positive",
+   "is_active": true
+  },
+  {
+   "line_code": "oper_recpt_retention",
+   "nature": "Receipts",
+   "category": "Operation",
+   "description": "Retention",
+   "sign": "positive",
+   "is_active": true
+  },
+  {
+   "line_code": "oper_recpt_jv",
+   "nature": "Receipts",
+   "category": "Operation",
+   "description": "JV",
+   "sign": "positive",
+   "is_active": true
+  },
+  {
+   "line_code": "claims_recpt",
+   "nature": "Receipts",
+   "category": "Claims",
+   "description": "Claims",
+   "sign": "positive",
+   "is_active": true
+  },
+  {
+   "line_code": "oper_recpt_others",
+   "nature": "Receipts",
+   "category": "Operation",
+   "description": "Others",
+   "sign": "positive",
+   "is_active": true
+  },
+  {
+   "line_code": "oper_recpt_vat",
+   "nature": "Receipts",
+   "category": "Operation",
+   "description": "VAT",
+   "sign": "positive",
+   "is_active": true
+  },
+  {
+   "line_code": "oper_pay_salaries",
+   "nature": "Payments",
+   "category": "Operation",
+   "description": "Salaries",
+   "sign": "negative",
+   "is_active": true
+  },
+  {
+   "line_code": "oper_pay_wages",
+   "nature": "Payments",
+   "category": "Operation",
+   "description": "Wages",
+   "sign": "negative",
+   "is_active": true
+  },
+  {
+   "line_code": "oper_pay_suppliers_for",
+   "nature": "Payments",
+   "category": "Operation",
+   "description": "Suppliers Foreign",
+   "sign": "negative",
+   "is_active": true
+  },
+  {
+   "line_code": "oper_pay_suppliers_loc",
+   "nature": "Payments",
+   "category": "Operation",
+   "description": "Suppliers Local",
+   "sign": "negative",
+   "is_active": true
+  },
+  {
+   "line_code": "oper_pay_subcontract",
+   "nature": "Payments",
+   "category": "Operation",
+   "description": "Sub-Contract",
+   "sign": "negative",
+   "is_active": true
+  },
+  {
+   "line_code": "oper_pay_pmv",
+   "nature": "Payments",
+   "category": "Operation",
+   "description": "PMV 3rd Party",
+   "sign": "negative",
+   "is_active": true
+  },
+  {
+   "line_code": "oper_pay_overheads",
+   "nature": "Payments",
+   "category": "Operation",
+   "description": "Overheads",
+   "sign": "negative",
+   "is_active": true
+  },
+  {
+   "line_code": "oper_pay_jv",
+   "nature": "Payments",
+   "category": "Operation",
+   "description": "JV",
+   "sign": "negative",
+   "is_active": true
+  },
+  {
+   "line_code": "oper_pay_others",
+   "nature": "Payments",
+   "category": "Operation",
+   "description": "Others",
+   "sign": "negative",
+   "is_active": true
+  },
+  {
+   "line_code": "oper_pay_capex",
+   "nature": "Payments",
+   "category": "Operation",
+   "description": "Capital Expenditure",
+   "sign": "negative",
+   "is_active": true
+  },
+  {
+   "line_code": "oper_pay_vat",
+   "nature": "Payments",
+   "category": "Operation",
+   "description": "VAT",
+   "sign": "negative",
+   "is_active": true
+  },
+  {
+   "line_code": "newsales_recpt_advance",
+   "nature": "Receipts",
+   "category": "New Sales",
+   "description": "Advance",
+   "sign": "positive",
+   "is_active": true
+  },
+  {
+   "line_code": "newsales_recpt_main",
+   "nature": "Receipts",
+   "category": "New Sales",
+   "description": "Receipts",
+   "sign": "positive",
+   "is_active": true
+  },
+  {
+   "line_code": "newsales_pay_main",
+   "nature": "Payments",
+   "category": "New Sales",
+   "description": "Payments",
+   "sign": "negative",
+   "is_active": true
+  },
+  {
+   "line_code": "newsales_recpt_other",
+   "nature": "Receipts",
+   "category": "New Sales",
+   "description": "Other",
+   "sign": "positive",
+   "is_active": true
+  },
+  {
+   "line_code": "newsales_recpt_interest",
+   "nature": "Receipts",
+   "category": "New Sales",
+   "description": "Interest",
+   "sign": "positive",
+   "is_active": true
+  },
+  {
+   "line_code": "newsales_recpt_loans",
+   "nature": "Receipts",
+   "category": "New Sales",
+   "description": "Loans",
+   "sign": "positive",
+   "is_active": true
+  },
+  {
+   "line_code": "interest_recpt",
+   "nature": "Receipts",
+   "category": "Interest",
+   "description": "Interest Receipts",
+   "sign": "positive",
+   "is_active": true
+  },
+  {
+   "line_code": "interest_pay",
+   "nature": "Payments",
+   "category": "Interest",
+   "description": "Interest Payments",
+   "sign": "negative",
+   "is_active": true
+  },
+  {
+   "line_code": "nonop_recpt",
+   "nature": "Receipts",
+   "category": "Non Operational",
+   "description": "Non-Op Receipts",
+   "sign": "positive",
+   "is_active": true
+  },
+  {
+   "line_code": "nonop_pay",
+   "nature": "Payments",
+   "category": "Non Operational",
+   "description": "Non-Op Payments",
+   "sign": "negative",
+   "is_active": true
+  },
+  {
+   "line_code": "wg_recpt_within_area",
+   "nature": "Receipts",
+   "category": "Within Group",
+   "description": "Within Area",
+   "sign": "positive",
+   "is_active": true
+  },
+  {
+   "line_code": "wg_pay_within_area",
+   "nature": "Payments",
+   "category": "Within Group",
+   "description": "Within Area",
+   "sign": "negative",
+   "is_active": true
+  },
+  {
+   "line_code": "wg_recpt_outside_area",
+   "nature": "Receipts",
+   "category": "Within Group",
+   "description": "Outside Area",
+   "sign": "positive",
+   "is_active": true
+  },
+  {
+   "line_code": "wg_pay_outside_area",
+   "nature": "Payments",
+   "category": "Within Group",
+   "description": "Outside Area",
+   "sign": "negative",
+   "is_active": true
+  },
+  {
+   "line_code": "wg_recpt_treasury",
+   "nature": "Receipts",
+   "category": "Within Group",
+   "description": "Treasury",
+   "sign": "positive",
+   "is_active": true
+  },
+  {
+   "line_code": "wg_pay_treasury",
+   "nature": "Payments",
+   "category": "Within Group",
+   "description": "Treasury",
+   "sign": "negative",
+   "is_active": true
+  },
+  {
+   "line_code": "bf_recpt_loans",
+   "nature": "Receipts",
+   "category": "Bank Financing",
+   "description": "Loans",
+   "sign": "positive",
+   "is_active": true
+  },
+  {
+   "line_code": "bf_recpt_discounted",
+   "nature": "Receipts",
+   "category": "Bank Financing",
+   "description": "Discounted Invoices",
+   "sign": "positive",
+   "is_active": true
+  },
+  {
+   "line_code": "bf_pay_loans",
+   "nature": "Payments",
+   "category": "Bank Financing",
+   "description": "Loans",
+   "sign": "negative",
+   "is_active": true
+  },
+  {
+   "line_code": "bf_pay_discounted",
+   "nature": "Payments",
+   "category": "Bank Financing",
+   "description": "Discounted Invoices",
+   "sign": "negative",
+   "is_active": true
+  },
+  {
+   "line_code": "bf_recpt_od",
+   "nature": "Receipts",
+   "category": "Bank Financing",
+   "description": "Overdrafts",
+   "sign": "positive",
+   "is_active": true
+  },
+  {
+   "line_code": "bf_pay_od",
+   "nature": "Payments",
+   "category": "Bank Financing",
+   "description": "Overdrafts",
+   "sign": "negative",
+   "is_active": true
+  },
+  {
+   "line_code": "ending_balance",
+   "nature": "Balance",
+   "category": "Ending Balance",
+   "description": "Ending Balance",
+   "sign": "signed",
+   "is_active": true
+  },
+  {
+   "line_code": "accum_loans",
+   "nature": "Balance",
+   "category": "Accumulated Loans",
+   "description": "Loans",
+   "sign": "signed",
+   "is_active": true
+  },
+  {
+   "line_code": "accum_od",
+   "nature": "Balance",
+   "category": "Overdrafts",
+   "description": "Overdrafts",
+   "sign": "signed",
+   "is_active": true
+  },
+  {
+   "line_code": "treasury_recpt_areas",
+   "nature": "Receipts",
+   "category": "Within Group",
+   "description": "From Areas",
+   "sign": "positive",
+   "is_active": true
+  },
+  {
+   "line_code": "treasury_pay_areas",
+   "nature": "Payments",
+   "category": "Within Group",
+   "description": "To Areas",
+   "sign": "negative",
+   "is_active": true
+  },
+  {
+   "line_code": "oper_pay_cit",
+   "nature": "Payments",
+   "category": "Operation",
+   "description": "Corporate Income Tax",
+   "sign": "negative",
+   "is_active": true
+  },
+  {
+   "line_code": "wg_recpt_moa",
+   "nature": "Receipts",
+   "category": "Within Group",
+   "description": "Managing Office Athens",
+   "sign": "positive",
+   "is_active": true
+  },
+  {
+   "line_code": "wg_pay_moa",
+   "nature": "Payments",
+   "category": "Within Group",
+   "description": "Managing Office Athens",
+   "sign": "negative",
+   "is_active": true
+  }
+ ],
+ "aliases": [
+  {
+   "alias": "Treasury Loans",
+   "nature": "Receipts",
+   "category": "Bank Financing",
+   "line_code": "bf_recpt_loans"
+  },
+  {
+   "alias": "Treasury Loans",
+   "nature": "Payments",
+   "category": "Bank Financing",
+   "line_code": "bf_pay_loans"
+  },
+  {
+   "alias": "Treasury Loans",
+   "nature": "Balance",
+   "category": "Accumulated Loans",
+   "line_code": "accum_loans"
+  },
+  {
+   "alias": "Operations Advance",
+   "nature": "Receipts",
+   "category": "Operation",
+   "line_code": "oper_recpt_advance"
+  },
+  {
+   "alias": "Outside Area",
+   "nature": "Receipts",
+   "category": "Non Operational",
+   "line_code": "wg_recpt_outside_area"
+  },
+  {
+   "alias": "Outside Area",
+   "nature": "Payments",
+   "category": "Non Operational",
+   "line_code": "wg_pay_outside_area"
+  },
+  {
+   "alias": "Treasury",
+   "nature": "Receipts",
+   "category": "Non Operational",
+   "line_code": "wg_recpt_treasury"
+  },
+  {
+   "alias": "Treasury",
+   "nature": "Payments",
+   "category": "Non Operational",
+   "line_code": "wg_pay_treasury"
+  },
+  {
+   "alias": "Within Area",
+   "nature": "Receipts",
+   "category": "Non Operational",
+   "line_code": "wg_recpt_within_area"
+  },
+  {
+   "alias": "Within Area",
+   "nature": "Payments",
+   "category": "Non Operational",
+   "line_code": "wg_pay_within_area"
+  },
+  {
+   "alias": "LTR",
+   "nature": "Receipts",
+   "category": "Bank Financing",
+   "line_code": "bf_recpt_discounted"
+  },
+  {
+   "alias": "LTR",
+   "nature": "Payments",
+   "category": "Bank Financing",
+   "line_code": "bf_pay_discounted"
+  },
+  {
+   "alias": "BILLINGS",
+   "nature": "Receipts",
+   "category": "Operation",
+   "line_code": "oper_recpt_progress"
+  },
+  {
+   "alias": "CREDITORS",
+   "nature": "Payments",
+   "category": "Operation",
+   "line_code": "oper_pay_suppliers_loc"
+  },
+  {
+   "alias": "PLANT HIRE",
+   "nature": "Payments",
+   "category": "Operation",
+   "line_code": "oper_pay_pmv"
+  },
+  {
+   "alias": "PMV-3ED PARTY",
+   "nature": "Payments",
+   "category": "Operation",
+   "line_code": "oper_pay_pmv"
+  },
+  {
+   "alias": "TOTAL LAONS OUT",
+   "nature": "Payments",
+   "category": "Bank Financing",
+   "line_code": "bf_pay_loans"
+  }
+ ],
+ "gacc_index": {
+  "3GPMEI": {
+   "abbreviation": "3GP MEI",
+   "area": "CIS",
+   "via": "abbreviation"
+  },
+  "4SEASONSMADINATY": {
+   "abbreviation": "4 SEASONS MADINATY",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "ACCOMPLETED": {
+   "abbreviation": "A&C COMPLETED",
+   "area": "Africa & Caribbean",
+   "via": "abbreviation"
+  },
+  "ABNAASINAIHQ": {
+   "abbreviation": "ABNAA SINAI HQ",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "ABOBOHOSPITAL": {
+   "abbreviation": "ABOBO HOSPITAL",
+   "area": "Africa & Caribbean",
+   "via": "abbreviation"
+  },
+  "ABUDHABIPLAZA": {
+   "abbreviation": "ABU DHABI PLAZA",
+   "area": "CIS",
+   "via": "abbreviation"
+  },
+  "ADP": {
+   "abbreviation": "ABU DHABI PLAZA",
+   "area": "CIS",
+   "via": "paren:ADP"
+  },
+  "ABUHALIFASUBSTATION": {
+   "abbreviation": "ABU HALIFA SUBSTATION",
+   "area": "Kuwait",
+   "via": "abbreviation"
+  },
+  "ACCS": {
+   "abbreviation": "ACCS",
+   "area": "KSA",
+   "via": "abbreviation"
+  },
+  "ACWAPOWERHQ": {
+   "abbreviation": "ACWA POWER  HQ",
+   "area": "KSA",
+   "via": "abbreviation"
+  },
+  "APHQ": {
+   "abbreviation": "ACWA POWER  HQ",
+   "area": "KSA",
+   "via": "paren:APHQ"
+  },
+  "AGRICULTURALCAMEROON": {
+   "abbreviation": "AGRICULTURAL - CAMEROON",
+   "area": "Africa & Caribbean",
+   "via": "abbreviation"
+  },
+  "ALBATINAH": {
+   "abbreviation": "AL BATINAH",
+   "area": "Oman",
+   "via": "abbreviation"
+  },
+  "ALNAHDAEXIT15": {
+   "abbreviation": "AL NAHDA EXIT 15",
+   "area": "KSA",
+   "via": "abbreviation"
+  },
+  "NAHDA": {
+   "abbreviation": "AL NAHDA EXIT 15",
+   "area": "KSA",
+   "via": "paren:NAHDA"
+  },
+  "ALNASR2FIELDPOWERGENERATION": {
+   "abbreviation": "AL NASR 2 FIELD POWER GENERATION",
+   "area": "UAE",
+   "via": "abbreviation"
+  },
+  "ALBUSTANSTREET": {
+   "abbreviation": "AL-BUSTAN STREET",
+   "area": "Qatar",
+   "via": "abbreviation"
+  },
+  "BSNP": {
+   "abbreviation": "AL-BUSTAN STREET",
+   "area": "Qatar",
+   "via": "paren:BSNP"
+  },
+  "ALAMEINACADEMYMEP": {
+   "abbreviation": "ALAMEIN ACADEMY MEP",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "ALAMEINDOWNTOWN": {
+   "abbreviation": "ALAMEIN DOWNTOWN",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "ALAMEINHISTORICAL": {
+   "abbreviation": "ALAMEIN HISTORICAL",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "ALAMEINHISTORICALMEP": {
+   "abbreviation": "ALAMEIN HISTORICAL MEP",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "ALAMEINMARINATOWER": {
+   "abbreviation": "ALAMEIN MARINA TOWER",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "ALAMEINTOWERSMEP": {
+   "abbreviation": "ALAMEIN TOWERS MEP",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "ALBAIDASTP": {
+   "abbreviation": "ALBAIDA STP",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "ALULARCUHQ": {
+   "abbreviation": "ALULA RCU HQ",
+   "area": "KSA",
+   "via": "abbreviation"
+  },
+  "RCUH": {
+   "abbreviation": "ALULA RCU HQ",
+   "area": "KSA",
+   "via": "paren:RCUH"
+  },
+  "ANANDARKOLNGMOZAMBIQUE": {
+   "abbreviation": "ANANDARKO LNG - MOZAMBIQUE",
+   "area": "Africa & Caribbean",
+   "via": "abbreviation"
+  },
+  "ARKANPHI": {
+   "abbreviation": "ARKAN PH I",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "ARKANPHII": {
+   "abbreviation": "ARKAN PH II",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "AUTOMATEDPEOPLEMOVERS": {
+   "abbreviation": "AUTOMATED PEOPLE MOVERS",
+   "area": "UAE",
+   "via": "abbreviation"
+  },
+  "APM": {
+   "abbreviation": "AUTOMATED PEOPLE MOVERS",
+   "area": "UAE",
+   "via": "paren:APM"
+  },
+  "BADYAPROJECT": {
+   "abbreviation": "BADYA PROJECT",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "BANIHAJER": {
+   "abbreviation": "BANI HAJER",
+   "area": "Qatar",
+   "via": "abbreviation"
+  },
+  "BHP": {
+   "abbreviation": "BANI HAJER",
+   "area": "Qatar",
+   "via": "paren:BHP"
+  },
+  "BENGHAZICORNICHE": {
+   "abbreviation": "BENGHAZI CORNICHE",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "BRIDGE9DERNACITY": {
+   "abbreviation": "BRIDGE 9 DERNA CITY",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "BUGESERAAIRPORT": {
+   "abbreviation": "BUGESERA AIRPORT",
+   "area": "Africa & Caribbean",
+   "via": "abbreviation"
+  },
+  "CCUECONSOLIDATED": {
+   "abbreviation": "CCUE CONSOLIDATED",
+   "area": "CC (UE)",
+   "via": "abbreviation"
+  },
+  "CCUEJOBSONHAND": {
+   "abbreviation": "CCUE JOBS ON HAND",
+   "area": "CC (UE)",
+   "via": "abbreviation"
+  },
+  "CENTRALCCMISR": {
+   "abbreviation": "CENTRAL CC MISR",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "CENTRALEGYPT": {
+   "abbreviation": "CENTRAL EGYPT",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "CITYGATEMEPCCCE": {
+   "abbreviation": "CITY GATE - MEP (CCCE)",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "CITYGATE2C": {
+   "abbreviation": "CITY GATE 2C",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "CITYGATE2CMEP": {
+   "abbreviation": "CITY GATE 2C MEP",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "CITYGATE2D": {
+   "abbreviation": "CITY GATE 2D",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "CITYGATE2DMEP": {
+   "abbreviation": "CITY GATE 2D MEP",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "CITYGATE3D72D7": {
+   "abbreviation": "CITY GATE 3D7-2D7",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "CITYGATE3D72D7MEP": {
+   "abbreviation": "CITY GATE 3D7-2D7 MEP",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "CITYGATEPHASEIII": {
+   "abbreviation": "CITYGATE - PHASE I&II",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "CIVILPROJECT2026": {
+   "abbreviation": "CIVIL PROJECT - 2026",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "CIVILPROJECT2027": {
+   "abbreviation": "CIVIL PROJECT 2027",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "CIVILPROJECT2028": {
+   "abbreviation": "CIVIL PROJECT 2028",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "CIVILPROJECTSMAURITANIA2026": {
+   "abbreviation": "CIVIL PROJECTS MAURITANIA 2026",
+   "area": "Africa & Caribbean",
+   "via": "abbreviation"
+  },
+  "CLEANFUELSPROJECT": {
+   "abbreviation": "CLEAN FUELS PROJECT",
+   "area": "Kuwait",
+   "via": "abbreviation"
+  },
+  "MAB": {
+   "abbreviation": "CLEAN FUELS PROJECT",
+   "area": "Kuwait",
+   "via": "paren:MAB"
+  },
+  "CMKSATBS2026": {
+   "abbreviation": "CM - KSA - TBS 2026",
+   "area": "CM - UAE & KSA",
+   "via": "abbreviation"
+  },
+  "CMKSATBS2027": {
+   "abbreviation": "CM - KSA - TBS 2027",
+   "area": "CM - UAE & KSA",
+   "via": "abbreviation"
+  },
+  "CMKSATBS2028": {
+   "abbreviation": "CM - KSA - TBS 2028",
+   "area": "CM - UAE & KSA",
+   "via": "abbreviation"
+  },
+  "CMUAEFM": {
+   "abbreviation": "CM - UAE FM",
+   "area": "CM - UAE & KSA",
+   "via": "abbreviation"
+  },
+  "UAE": {
+   "abbreviation": "CM - UAE FM",
+   "area": "CM - UAE & KSA",
+   "via": "paren:UAE"
+  },
+  "CMUAEFMTBS2026": {
+   "abbreviation": "CM - UAE FM - TBS 2026",
+   "area": "CM - UAE & KSA",
+   "via": "abbreviation"
+  },
+  "CMUAEPMJVTBS2026": {
+   "abbreviation": "CM - UAE PM JV - TBS 2026",
+   "area": "CM - UAE & KSA",
+   "via": "abbreviation"
+  },
+  "CMUAEKSADARBASIL": {
+   "abbreviation": "CM (UAE) - KSA - DAR BASIL",
+   "area": "CM - UAE & KSA",
+   "via": "abbreviation"
+  },
+  "KSA": {
+   "abbreviation": "CM (UAE) - KSA - DAR BASIL",
+   "area": "CM - UAE & KSA",
+   "via": "paren:KSA"
+  },
+  "CMUAEPM": {
+   "abbreviation": "CM (UAE) - PM",
+   "area": "CM - UAE & KSA",
+   "via": "abbreviation"
+  },
+  "CMUAEFMTBS2027": {
+   "abbreviation": "CM UAE FM TBS 2027",
+   "area": "CM - UAE & KSA",
+   "via": "abbreviation"
+  },
+  "CMUAEFMTBS2028": {
+   "abbreviation": "CM UAE FM TBS 2028",
+   "area": "CM - UAE & KSA",
+   "via": "abbreviation"
+  },
+  "COASTALROAD06KMDERNA": {
+   "abbreviation": "COASTAL ROAD 0.6KM DERNA",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "COMPLETEDPROJECTS": {
+   "abbreviation": "COMPLETED PROJECTS",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "CONSOLIDATEDCCCUETBS2026": {
+   "abbreviation": "CONSOLIDATED - CCCUE - TBS 2026",
+   "area": "CC (UE)",
+   "via": "abbreviation"
+  },
+  "CONSOLIDATEDCCCUETBS2027": {
+   "abbreviation": "CONSOLIDATED - CCCUE - TBS 2027",
+   "area": "CC (UE)",
+   "via": "abbreviation"
+  },
+  "CONSOLIDATEDCCCUETBS2028": {
+   "abbreviation": "CONSOLIDATED - CCCUE - TBS 2028",
+   "area": "CC (UE)",
+   "via": "abbreviation"
+  },
+  "DERNABRIDGESNO4": {
+   "abbreviation": "DERNA BRIDGES No4",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "DERNASEWAGE": {
+   "abbreviation": "DERNA SEWAGE",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "DERNASEWAGECCE": {
+   "abbreviation": "DERNA SEWAGE CCE",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "DIAREFURBISHMENT": {
+   "abbreviation": "DIA REFURBISHMENT",
+   "area": "Qatar",
+   "via": "abbreviation"
+  },
+  "PFW": {
+   "abbreviation": "DIA REFURBISHMENT",
+   "area": "Qatar",
+   "via": "paren:PFW"
+  },
+  "DIRIYAHOTHERMEDIUMSIZEPACKAGES2027": {
+   "abbreviation": "DIRIYAH (OTHER MEDIUM SIZE PACKAGES) - 2027",
+   "area": "KSA",
+   "via": "abbreviation"
+  },
+  "DUNGAOPERATING": {
+   "abbreviation": "DUNGA OPERATING",
+   "area": "CIS",
+   "via": "abbreviation"
+  },
+  "EASTNECSQ1": {
+   "abbreviation": "EAST NEC SQ1",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "ELNAKARETAININGWALLS": {
+   "abbreviation": "EL-NAKA RETAINING WALLS",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "EPICFORHAMADINTLAIRPORT": {
+   "abbreviation": "EPIC FOR HAMAD INT'L AIRPORT",
+   "area": "Qatar",
+   "via": "abbreviation"
+  },
+  "JSPP": {
+   "abbreviation": "EPIC FOR HAMAD INT'L AIRPORT",
+   "area": "Qatar",
+   "via": "paren:JSPP"
+  },
+  "ESWFORNFEONSHORE": {
+   "abbreviation": "ESW FOR NFE ONSHORE",
+   "area": "Qatar",
+   "via": "abbreviation"
+  },
+  "NFEESW": {
+   "abbreviation": "ESW FOR NFE ONSHORE",
+   "area": "Qatar",
+   "via": "paren:NFE/ESW"
+  },
+  "FADHILIGAS": {
+   "abbreviation": "FADHILI GAS",
+   "area": "KSA",
+   "via": "abbreviation"
+  },
+  "FGI4": {
+   "abbreviation": "FADHILI GAS",
+   "area": "KSA",
+   "via": "paren:FGI4"
+  },
+  "FEDDANTOWERS": {
+   "abbreviation": "FEDDAN TOWERS",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "FOURSEASONSINFRACP08": {
+   "abbreviation": "FOUR SEASONS  INFRA. CP08",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "GHAZALARESORT": {
+   "abbreviation": "GHAZALA RESORT",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "GSUPROJECT": {
+   "abbreviation": "GSU PROJECT",
+   "area": "CIS",
+   "via": "abbreviation"
+  },
+  "GSU": {
+   "abbreviation": "GSU PROJECT",
+   "area": "CIS",
+   "via": "paren:GSU"
+  },
+  "GUESTROOMS19TO24": {
+   "abbreviation": "GUEST ROOMS (19 TO 24)",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "HEAVYCIVIL2026": {
+   "abbreviation": "HEAVY CIVIL 2026",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "HEAVYCIVIL2027": {
+   "abbreviation": "HEAVY CIVIL 2027",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "HEAVYCIVIL2028": {
+   "abbreviation": "HEAVY CIVIL 2028",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "HIAEP0124": {
+   "abbreviation": "HIAEP-0124",
+   "area": "Qatar",
+   "via": "abbreviation"
+  },
+  "HORIZONI": {
+   "abbreviation": "HORIZON-I",
+   "area": "KSA",
+   "via": "abbreviation"
+  },
+  "INTERLACEFINANCIALCENTER": {
+   "abbreviation": "INTERLACE FINANCIAL CENTER",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "KINGSALMANINTERNATIONALSTADIUM": {
+   "abbreviation": "KING SALMAN INTERNATIONAL STADIUM",
+   "area": "KSA",
+   "via": "abbreviation"
+  },
+  "KINGSALMANPARK": {
+   "abbreviation": "KING SALMAN PARK",
+   "area": "KSA",
+   "via": "abbreviation"
+  },
+  "KIPICALZOURPETROCHEMICALPLANT": {
+   "abbreviation": "KIPIC AL ZOUR PETROCHEMICAL PLANT",
+   "area": "Kuwait",
+   "via": "abbreviation"
+  },
+  "KPICPETROCHEMICALCOMPLEX": {
+   "abbreviation": "KPIC PETROCHEMICAL COMPLEX",
+   "area": "CIS",
+   "via": "abbreviation"
+  },
+  "KSIABUILDINGJV50": {
+   "abbreviation": "KSIA - BUILDING (JV 50%)",
+   "area": "KSA",
+   "via": "abbreviation"
+  },
+  "KSIAINFRASTRUCTURE": {
+   "abbreviation": "KSIA - INFRASTRUCTURE",
+   "area": "KSA",
+   "via": "abbreviation"
+  },
+  "LOWERSFARS": {
+   "abbreviation": "LOWERS FARS",
+   "area": "Kuwait",
+   "via": "abbreviation"
+  },
+  "LUSAILCOMMERCIALBOULEVARD": {
+   "abbreviation": "LUSAIL COMMERCIAL BOULEVARD",
+   "area": "Qatar",
+   "via": "abbreviation"
+  },
+  "LCB": {
+   "abbreviation": "LUSAIL COMMERCIAL BOULEVARD",
+   "area": "Qatar",
+   "via": "paren:LCB"
+  },
+  "LUXOR": {
+   "abbreviation": "LUXOR",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "MADINATY4SCP5": {
+   "abbreviation": "MADINATY 4S CP5",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "MADINATY4SCP5CCE": {
+   "abbreviation": "MADINATY 4S CP5 CCE",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "MARASSIMEP": {
+   "abbreviation": "MARASSI MEP",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "MARASSIVILLA": {
+   "abbreviation": "MARASSI VILLA",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "MECHCIS2027": {
+   "abbreviation": "MECH CIS 2027",
+   "area": "CIS",
+   "via": "abbreviation"
+  },
+  "MEGARESERVOIRS": {
+   "abbreviation": "MEGA RESERVOIRS",
+   "area": "Qatar",
+   "via": "abbreviation"
+  },
+  "WMR": {
+   "abbreviation": "MEGA RESERVOIRS",
+   "area": "Qatar",
+   "via": "paren:WMR"
+  },
+  "MESAIMERROAD": {
+   "abbreviation": "MESAIMER ROAD",
+   "area": "Qatar",
+   "via": "abbreviation"
+  },
+  "UMRP": {
+   "abbreviation": "MESAIMER ROAD",
+   "area": "Qatar",
+   "via": "paren:UMRP"
+  },
+  "METROCLAIM": {
+   "abbreviation": "METRO CLAIM",
+   "area": "KSA",
+   "via": "abbreviation"
+  },
+  "MOUNTAINVIEW": {
+   "abbreviation": "MOUNTAIN VIEW",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "MOUNTAINVIEWMEP": {
+   "abbreviation": "MOUNTAIN VIEW MEP",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "MSHEIREBDOWNTOWNPH4": {
+   "abbreviation": "MSHEIREB DOWNTOWN, PH4",
+   "area": "Qatar",
+   "via": "abbreviation"
+  },
+  "MDP4": {
+   "abbreviation": "MSHEIREB DOWNTOWN, PH4",
+   "area": "Qatar",
+   "via": "paren:MDP4"
+  },
+  "MULTIPURPOSECOMPLEX": {
+   "abbreviation": "MULTIPURPOSE COMPLEX",
+   "area": "North Africa",
+   "via": "abbreviation"
+  },
+  "MVNETWORKTOBRUK": {
+   "abbreviation": "MV NETWORK TOBRUK",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "NEOMHYDROGEN": {
+   "abbreviation": "NEOM HYDROGEN",
+   "area": "KSA",
+   "via": "abbreviation"
+  },
+  "NEOM": {
+   "abbreviation": "NEOM HYDROGEN",
+   "area": "KSA",
+   "via": "paren:NEOM"
+  },
+  "NFE": {
+   "abbreviation": "NFE",
+   "area": "Qatar",
+   "via": "abbreviation"
+  },
+  "NFE1228": {
+   "abbreviation": "NFE",
+   "area": "Qatar",
+   "via": "paren:NFE1228"
+  },
+  "NFSPROJECTFACILITIESCAMP": {
+   "abbreviation": "NFS PROJECT & FACILITIES & CAMP",
+   "area": "Qatar",
+   "via": "abbreviation"
+  },
+  "NFS1248": {
+   "abbreviation": "NFS PROJECT & FACILITIES & CAMP",
+   "area": "Qatar",
+   "via": "paren:NFS1248"
+  },
+  "NFWLNG": {
+   "abbreviation": "NFW LNG",
+   "area": "Qatar",
+   "via": "abbreviation"
+  },
+  "NGL5QATAR": {
+   "abbreviation": "NGL-5 QATAR",
+   "area": "Qatar",
+   "via": "abbreviation"
+  },
+  "EPIC": {
+   "abbreviation": "NGL-5 QATAR",
+   "area": "Qatar",
+   "via": "paren:EPIC"
+  },
+  "OMANCOMPLETED": {
+   "abbreviation": "OMAN COMPLETED",
+   "area": "Oman",
+   "via": "abbreviation"
+  },
+  "OMANLNGT4": {
+   "abbreviation": "OMAN LNG T4",
+   "area": "Oman",
+   "via": "abbreviation"
+  },
+  "OPERAGRANDTOWERPROJECT": {
+   "abbreviation": "OPERA GRAND TOWER PROJECT",
+   "area": "UAE",
+   "via": "abbreviation"
+  },
+  "OGTP": {
+   "abbreviation": "OPERA GRAND TOWER PROJECT",
+   "area": "UAE",
+   "via": "paren:OGTP"
+  },
+  "OPERATIONSMAINTENANCECOASSAMRA": {
+   "abbreviation": "OPERATIONS&MAINTENANCE CO.-AS SAMRA",
+   "area": "Jordan",
+   "via": "abbreviation"
+  },
+  "OTHERAFRICA2028": {
+   "abbreviation": "OTHER - AFRICA 2028",
+   "area": "Africa & Caribbean",
+   "via": "abbreviation"
+  },
+  "OTHERMECHKSA2026": {
+   "abbreviation": "OTHER MECH KSA 2026",
+   "area": "KSA",
+   "via": "abbreviation"
+  },
+  "OTHERMECHQATAR2026": {
+   "abbreviation": "OTHER MECH QATAR 2026",
+   "area": "Qatar",
+   "via": "abbreviation"
+  },
+  "OTHERSVP2026": {
+   "abbreviation": "OTHERS VP 2026",
+   "area": "Others",
+   "via": "abbreviation"
+  },
+  "OTHERSVP2027": {
+   "abbreviation": "OTHERS VP 2027",
+   "area": "Others",
+   "via": "abbreviation"
+  },
+  "PETROCHEMICALCOMPLEXEW": {
+   "abbreviation": "PETROCHEMICAL COMPLEX EW",
+   "area": "Qatar",
+   "via": "abbreviation"
+  },
+  "RLPP": {
+   "abbreviation": "PETROCHEMICAL COMPLEX EW",
+   "area": "Qatar",
+   "via": "paren:RLPP"
+  },
+  "PIONEERCAMP": {
+   "abbreviation": "PIONEER CAMP",
+   "area": "Qatar",
+   "via": "abbreviation"
+  },
+  "NFXPC": {
+   "abbreviation": "PIONEER CAMP",
+   "area": "Qatar",
+   "via": "paren:NFXPC"
+  },
+  "PRWHIAEP0099": {
+   "abbreviation": "PRW, HIAEP-0099",
+   "area": "Qatar",
+   "via": "abbreviation"
+  },
+  "DIAP": {
+   "abbreviation": "PRW, HIAEP-0099",
+   "area": "Qatar",
+   "via": "paren:DIAP"
+  },
+  "QAFCO7": {
+   "abbreviation": "QAFCO 7",
+   "area": "Qatar",
+   "via": "abbreviation"
+  },
+  "QAFCO8": {
+   "abbreviation": "QAFCO 8",
+   "area": "Qatar",
+   "via": "abbreviation"
+  },
+  "QATARCOMPLETED": {
+   "abbreviation": "QATAR COMPLETED",
+   "area": "Qatar",
+   "via": "abbreviation"
+  },
+  "QETAIFANISLAND": {
+   "abbreviation": "QETAIFAN ISLAND",
+   "area": "Qatar",
+   "via": "abbreviation"
+  },
+  "QIN4": {
+   "abbreviation": "QETAIFAN ISLAND",
+   "area": "Qatar",
+   "via": "paren:QIN4"
+  },
+  "QIDDIYAOTHERMEDIUMSIZEPACKAGES2027": {
+   "abbreviation": "QIDDIYA (OTHER MEDIUM SIZE PACKAGES) - 2027",
+   "area": "KSA",
+   "via": "abbreviation"
+  },
+  "QUARRYOPERATIONS": {
+   "abbreviation": "QUARRY OPERATIONS",
+   "area": "Africa & Caribbean",
+   "via": "abbreviation"
+  },
+  "RASELHEKMA1A": {
+   "abbreviation": "RAS EL HEKMA 1A",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "RIYADHMETRO": {
+   "abbreviation": "RIYADH METRO",
+   "area": "KSA",
+   "via": "abbreviation"
+  },
+  "RMP": {
+   "abbreviation": "RIYADH METRO",
+   "area": "KSA",
+   "via": "paren:RMP"
+  },
+  "ROVUMALNGMOZAMBIQUE": {
+   "abbreviation": "ROVUMA LNG - MOZAMBIQUE",
+   "area": "Africa & Caribbean",
+   "via": "abbreviation"
+  },
+  "RUWAISLNGBUILDINGSSPO9": {
+   "abbreviation": "RUWAIS LNG BUILDINGS SPO9",
+   "area": "UAE",
+   "via": "abbreviation"
+  },
+  "SAFANIYAHPKG1": {
+   "abbreviation": "SAFANIYAH PKG 1",
+   "area": "KSA",
+   "via": "abbreviation"
+  },
+  "SAFANIYAHPKG2": {
+   "abbreviation": "SAFANIYAH PKG 2",
+   "area": "KSA",
+   "via": "abbreviation"
+  },
+  "SASREFETHANECRACKERCOMPLEX": {
+   "abbreviation": "SASREF ETHANE CRACKER COMPLEX",
+   "area": "KSA",
+   "via": "abbreviation"
+  },
+  "SHEPHEARDHOTEL": {
+   "abbreviation": "SHEPHEARD HOTEL",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "SHEPHEARDHOTELMEP": {
+   "abbreviation": "SHEPHEARD HOTEL MEP",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "SQ1MEPCCE": {
+   "abbreviation": "SQ1 MEP CCE",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "TAYARAROAD": {
+   "abbreviation": "TAYARA ROAD",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "TELECOMPH2BLD": {
+   "abbreviation": "TELECOM PH2 BLD",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "BLD": {
+   "abbreviation": "TELECOM PH2 BLD",
+   "area": "Egypt",
+   "via": "paren:BLD"
+  },
+  "TELECOMPH2MEP": {
+   "abbreviation": "TELECOM PH2 MEP",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "THEARK": {
+   "abbreviation": "THE ARK",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "THEARKTYPEL": {
+   "abbreviation": "THE ARK (TYPE L)",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "THEARK2A2B": {
+   "abbreviation": "THE ARK 2A & 2B",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "THEARK3A3B3C": {
+   "abbreviation": "THE ARK 3A, 3B & 3C",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "TOBRUKEMSAED": {
+   "abbreviation": "TOBRUK - EMSAED",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "TOKRABENGHAZI": {
+   "abbreviation": "TOKRA BENGHAZI",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "UAECOMPLETED": {
+   "abbreviation": "UAE COMPLETED",
+   "area": "UAE",
+   "via": "abbreviation"
+  },
+  "UTILITYNETWORK": {
+   "abbreviation": "UTILITY NETWORK",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "WADIDERNA": {
+   "abbreviation": "WADI DERNA",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "WESTERNMIDFIELDFUELFARM": {
+   "abbreviation": "WESTERN & MIDFIELD FUEL FARM",
+   "area": "Qatar",
+   "via": "abbreviation"
+  },
+  "WMFF": {
+   "abbreviation": "WESTERN & MIDFIELD FUEL FARM",
+   "area": "Qatar",
+   "via": "paren:WMFF"
+  },
+  "ZAFARANA": {
+   "abbreviation": "ZAFARANA",
+   "area": "Egypt",
+   "via": "abbreviation"
+  },
+  "ZAHYACITYCENTER": {
+   "abbreviation": "ZAHYA CITY CENTER",
+   "area": "UAE",
+   "via": "abbreviation"
+  },
+  "ZALLAFREFINERYFEED": {
+   "abbreviation": "ZALLAF REFINERY (Feed)",
+   "area": "Libya",
+   "via": "abbreviation"
+  },
+  "ZIRKUENHANCED": {
+   "abbreviation": "ZIRKU ENHANCED",
+   "area": "UAE",
+   "via": "abbreviation"
+  },
+  "ZIRKUJV": {
+   "abbreviation": "ZIRKU JV",
+   "area": "UAE",
+   "via": "abbreviation"
+  },
+  "ZIRKUTRAIN6": {
+   "abbreviation": "ZIRKU TRAIN 6",
+   "area": "UAE",
+   "via": "abbreviation"
+  },
+  "ZULUFPROCESS": {
+   "abbreviation": "ZULUF PROCESS",
+   "area": "KSA",
+   "via": "abbreviation"
+  },
+  "ZULUF": {
+   "abbreviation": "ZULUF PROCESS",
+   "area": "KSA",
+   "via": "paren:ZULUF"
+  }
+ },
+ "gacc_id_index": {
+  "3GPMEI": "83ad102b-3766-4cfb-ac11-e31d837386a9",
+  "4SEASONSMADINATY": "5696831b-32e6-4121-9816-be15b51a66dc",
+  "ACCOMPLETED": "534f0ff8-8676-4645-9c27-bb104f548ffc",
+  "ABNAASINAIHQ": "0bfd280e-d58b-4731-9bd9-d2388a096e1a",
+  "ABOBOHOSPITAL": "de0e0fdb-c81a-45e0-95b6-db267e0043d6",
+  "ABUDHABIPLAZA": "ac0c5bb6-a6ff-4fdb-ab22-adcdeb3a55a3",
+  "ADP": "ac0c5bb6-a6ff-4fdb-ab22-adcdeb3a55a3",
+  "ABUHALIFASUBSTATION": "5c40b0a4-6fa1-4701-bd38-616281f1117d",
+  "ACCS": "a64bb8dd-519f-4c54-bfd5-afc52594d800",
+  "ACWAPOWERHQ": "e6fe5ff8-755b-414c-82c8-701118dfbd88",
+  "APHQ": "e6fe5ff8-755b-414c-82c8-701118dfbd88",
+  "AGRICULTURALCAMEROON": "09d72c3e-cf6a-4ed3-b9bf-f935870a0e83",
+  "ALBATINAH": "bff93c22-ff4f-423a-a00b-e6b9fd0782dd",
+  "ALNAHDAEXIT15": "b41b1f3b-2ea5-4380-9a3c-1acf0673f0c1",
+  "NAHDA": "b41b1f3b-2ea5-4380-9a3c-1acf0673f0c1",
+  "ALNASR2FIELDPOWERGENERATION": "02f86b95-b9fe-4d1f-a4ca-fd51ec19dfef",
+  "ALBUSTANSTREET": "d12ff921-767b-401d-9092-d778f74b2ef1",
+  "BSNP": "d12ff921-767b-401d-9092-d778f74b2ef1",
+  "ALAMEINACADEMYMEP": "0ce46692-748f-4851-a3cf-a609581fd5f3",
+  "ALAMEINDOWNTOWN": "a758d801-cfcd-490f-8f50-39cd0ecf46af",
+  "ALAMEINHISTORICAL": "b77714e9-6548-4e36-b594-2394e0f74961",
+  "ALAMEINHISTORICALMEP": "b7e699e3-0f24-4f31-b416-d1e425e44618",
+  "ALAMEINMARINATOWER": "f86d0ce9-2f38-4750-9e6d-8e5c8b5e2c02",
+  "ALAMEINTOWERSMEP": "b95a6393-6a3f-4c66-af9c-07e112a758ea",
+  "ALBAIDASTP": "88e2cc13-654d-4751-bab0-f4662690cf9b",
+  "ALULARCUHQ": "7967001d-8614-4352-8f14-965243b35796",
+  "RCUH": "7967001d-8614-4352-8f14-965243b35796",
+  "ANANDARKOLNGMOZAMBIQUE": "b29df724-5b0f-4df4-bbb1-a6bc6d51ea2a",
+  "ARKANPHI": "1249b779-29a3-482b-8df1-abb0b9dce40e",
+  "ARKANPHII": "db78b638-3d6b-412d-b3eb-45c5830aec2d",
+  "AUTOMATEDPEOPLEMOVERS": "fc92b29a-02c4-4ee2-a9df-94c1c4e540af",
+  "APM": "fc92b29a-02c4-4ee2-a9df-94c1c4e540af",
+  "BADYAPROJECT": "b5a2454b-49b5-4b2e-8d82-15c37cff6cc5",
+  "BANIHAJER": "c51fdcd6-6a88-44be-a430-1fca3c72ee65",
+  "BHP": "c51fdcd6-6a88-44be-a430-1fca3c72ee65",
+  "BENGHAZICORNICHE": "65f2cf61-7633-4a4f-88ac-2d57d8fa510b",
+  "BRIDGE9DERNACITY": "29cf83a6-abfe-472a-991a-021bedef2c3f",
+  "BUGESERAAIRPORT": "5ddeb017-c636-4dc1-8264-47bbaa454c9f",
+  "CCUECONSOLIDATED": "1697ae4e-e949-4749-9d09-974f6a5b154b",
+  "CCUEJOBSONHAND": "11111111-c5e0-4001-0000-000000000001",
+  "CENTRALCCMISR": "56db5024-bf75-4117-9e6c-ed662f4d5896",
+  "CENTRALEGYPT": "a418864c-76d3-40d9-9e66-03a9c3f7784d",
+  "CITYGATEMEPCCCE": "22000000-0000-0000-0000-000000000001",
+  "CITYGATE2C": "8be7918a-97d6-459c-9beb-255752de3965",
+  "CITYGATE2CMEP": "7bb88080-40d9-4781-89c6-0901e5f0e390",
+  "CITYGATE2D": "dff3d781-f72c-4ee7-ba15-a1ef623ffd50",
+  "CITYGATE2DMEP": "a24adc84-ffa7-4087-8923-4aa720b61c5b",
+  "CITYGATE3D72D7": "4635903b-b570-4441-89a9-b8715dd2f1e8",
+  "CITYGATE3D72D7MEP": "cbb72b09-5177-4bd2-9082-ea1019213ceb",
+  "CITYGATEPHASEIII": "161acc54-1e64-4f92-bc32-6b7ed67bb3c2",
+  "CIVILPROJECT2026": "22000000-0000-0000-0000-000000000005",
+  "CIVILPROJECT2027": "22000000-0000-0000-0000-000000000006",
+  "CIVILPROJECT2028": "22000000-0000-0000-0000-000000000007",
+  "CIVILPROJECTSMAURITANIA2026": "b6ad596f-4597-46fd-95d2-6379540d0ce6",
+  "CLEANFUELSPROJECT": "6e0140fb-16bf-41d8-896e-bb83f692527a",
+  "MAB": "6e0140fb-16bf-41d8-896e-bb83f692527a",
+  "CMKSATBS2026": "ad39bed9-8c30-48eb-a632-b00c0c6cb0d2",
+  "CMKSATBS2027": "b7788101-aa87-4deb-962a-f74cbb225826",
+  "CMKSATBS2028": "417e4eab-ab57-478b-88bd-73f0364e5bc7",
+  "CMUAEFM": "16ff0720-8c11-49c4-b7ca-caf7fb469c72",
+  "UAE": "16ff0720-8c11-49c4-b7ca-caf7fb469c72",
+  "CMUAEFMTBS2026": "f651176d-e736-4965-8104-83ffdfacf029",
+  "CMUAEPMJVTBS2026": "db23dd6d-7498-456e-b312-27cc607b8711",
+  "CMUAEKSADARBASIL": "5be268fe-6f63-4df5-a0e7-7cfdeb8af679",
+  "KSA": "5be268fe-6f63-4df5-a0e7-7cfdeb8af679",
+  "CMUAEPM": "28d649d7-7896-4270-a1b2-50c21eac7ecb",
+  "CMUAEFMTBS2027": "0e38e03e-a0b4-4a95-94fa-17d92828324a",
+  "CMUAEFMTBS2028": "e3126d4f-0ea4-403e-a0c8-9787f2c0bbbf",
+  "COASTALROAD06KMDERNA": "a73a086d-d050-45dd-9f6a-d098ddf5c5da",
+  "COMPLETEDPROJECTS": "b4dbc289-f3f2-4712-8940-7e76850d5232",
+  "CONSOLIDATEDCCCUETBS2026": "11111111-c5e0-4001-0000-000000000002",
+  "CONSOLIDATEDCCCUETBS2027": "11111111-c5e0-4001-0000-000000000003",
+  "CONSOLIDATEDCCCUETBS2028": "11111111-c5e0-4001-0000-000000000004",
+  "DERNABRIDGESNO4": "47709870-5433-48b1-8daf-4f3819c9094e",
+  "DERNASEWAGE": "66e6840a-ab18-493a-b2b3-7bbf558f3f7e",
+  "DERNASEWAGECCE": "12e16295-be14-495e-af0f-0fbddc691167",
+  "DIAREFURBISHMENT": "76870d83-8a4f-4d3a-afee-48671bca2889",
+  "PFW": "76870d83-8a4f-4d3a-afee-48671bca2889",
+  "DIRIYAHOTHERMEDIUMSIZEPACKAGES2027": "4594ae1c-09d0-4e1f-887a-4579b60cef69",
+  "DUNGAOPERATING": "5e9c642f-9faf-4f39-a6bf-ee29f20ec29e",
+  "EASTNECSQ1": "4021d0e2-b1ae-481f-adb7-40b710c6df92",
+  "ELNAKARETAININGWALLS": "92ddab28-dab1-4c50-8096-28496f1b62a7",
+  "EPICFORHAMADINTLAIRPORT": "717bb0a2-b6db-4f27-b600-202d0dcec76a",
+  "JSPP": "717bb0a2-b6db-4f27-b600-202d0dcec76a",
+  "ESWFORNFEONSHORE": "73657e93-cbb5-41bf-9852-b976405023b0",
+  "NFEESW": "73657e93-cbb5-41bf-9852-b976405023b0",
+  "FADHILIGAS": "bdebe101-56fc-4819-a21c-f071d662de95",
+  "FGI4": "bdebe101-56fc-4819-a21c-f071d662de95",
+  "FEDDANTOWERS": "32bdd50a-5f5d-4ebb-a379-1e1da40946a2",
+  "FOURSEASONSINFRACP08": "eeb1d8ec-1935-4c9c-a601-7f14257a15bb",
+  "GHAZALARESORT": "aec5f18e-9905-49d9-ba21-2bb8e7467910",
+  "GSUPROJECT": "3e18a117-9318-431d-ae2b-160cacc5b701",
+  "GSU": "3e18a117-9318-431d-ae2b-160cacc5b701",
+  "GUESTROOMS19TO24": "220dc388-89ce-4f6f-82a8-131af58f1537",
+  "HEAVYCIVIL2026": "22000000-0000-0000-0000-000000000002",
+  "HEAVYCIVIL2027": "22000000-0000-0000-0000-000000000003",
+  "HEAVYCIVIL2028": "22000000-0000-0000-0000-000000000004",
+  "HIAEP0124": "f5777289-228c-4fe9-954c-e432ce9a49de",
+  "HORIZONI": "888ebc51-9287-4072-ae00-42b7da1a8a31",
+  "INTERLACEFINANCIALCENTER": "8b544d47-c7b3-4e76-b511-8b971bffdd26",
+  "KINGSALMANINTERNATIONALSTADIUM": "e015f78e-54ea-40e2-bf46-990c7773c523",
+  "KINGSALMANPARK": "dbaadf62-bb40-446e-b338-16637a7739ab",
+  "KIPICALZOURPETROCHEMICALPLANT": "8af84e76-caef-40fb-a547-198f105c9f3c",
+  "KPICPETROCHEMICALCOMPLEX": "79fde846-3f94-419a-b92e-b2b99766fa99",
+  "KSIABUILDINGJV50": "01974984-9b82-426d-9c94-be2265543507",
+  "KSIAINFRASTRUCTURE": "96ba16dd-6138-443f-9a55-262b632b6cd9",
+  "LOWERSFARS": "8cc99635-794e-4407-8d43-54f46eace938",
+  "LUSAILCOMMERCIALBOULEVARD": "b729ca44-0ba4-4421-9acd-13415eb1ac1f",
+  "LCB": "b729ca44-0ba4-4421-9acd-13415eb1ac1f",
+  "LUXOR": "9d98cdeb-02e7-4880-86f8-58b023eaea31",
+  "MADINATY4SCP5": "6329e53b-a11f-4a3d-accf-3ad0970fc437",
+  "MADINATY4SCP5CCE": "9ca47c7f-57f3-48aa-9552-88e2e419eb32",
+  "MARASSIMEP": "edd7d85a-66e7-4ca7-abab-d535dbcc7f2c",
+  "MARASSIVILLA": "f62eeece-8e55-4310-9a65-d43dd8f9d1f2",
+  "MECHCIS2027": "a651596e-1fa4-4cbb-81c4-c38995be8794",
+  "MEGARESERVOIRS": "778792cf-ee1e-448f-add2-93b083648000",
+  "WMR": "778792cf-ee1e-448f-add2-93b083648000",
+  "MESAIMERROAD": "fe2a2b9b-fb27-4524-bb8f-f71aa6a8a2b9",
+  "UMRP": "fe2a2b9b-fb27-4524-bb8f-f71aa6a8a2b9",
+  "METROCLAIM": "2c972bfc-5115-4abb-82dd-bd14cb06e2ce",
+  "MOUNTAINVIEW": "425dff21-0524-4054-8159-ceab04367cd6",
+  "MOUNTAINVIEWMEP": "1cdce6de-5370-4056-978c-e93ddfdca4eb",
+  "MSHEIREBDOWNTOWNPH4": "0362924c-2f5e-46b8-925e-c46097e2ddf7",
+  "MDP4": "0362924c-2f5e-46b8-925e-c46097e2ddf7",
+  "MULTIPURPOSECOMPLEX": "e1bda776-5cf7-460f-90c5-f7328e93e3ad",
+  "MVNETWORKTOBRUK": "c18aa0ea-3028-4a4a-9a8c-ca7346945cd9",
+  "NEOMHYDROGEN": "08e908e9-d905-449b-b182-5a1c0da11554",
+  "NEOM": "08e908e9-d905-449b-b182-5a1c0da11554",
+  "NFE": "ab430391-7304-4499-9941-4f3a0b7c4b09",
+  "NFE1228": "ab430391-7304-4499-9941-4f3a0b7c4b09",
+  "NFSPROJECTFACILITIESCAMP": "c9881f14-81e6-46c4-a44f-4c083b865c1a",
+  "NFS1248": "c9881f14-81e6-46c4-a44f-4c083b865c1a",
+  "NFWLNG": "83b5abfb-e27f-4b80-adfa-da91cbddd8be",
+  "NGL5QATAR": "fca8773e-6d5e-4eee-9115-0ed3ef94e9d2",
+  "EPIC": "fca8773e-6d5e-4eee-9115-0ed3ef94e9d2",
+  "OMANCOMPLETED": "6569109f-de2e-4799-995b-156f1306eece",
+  "OMANLNGT4": "2ad5b022-4590-45f8-8503-101bbb2592d5",
+  "OPERAGRANDTOWERPROJECT": "15693076-1bd2-48c9-b895-b1952bb5eb81",
+  "OGTP": "15693076-1bd2-48c9-b895-b1952bb5eb81",
+  "OPERATIONSMAINTENANCECOASSAMRA": "fd1b8d64-8113-4359-bbf5-034fedc3a3a7",
+  "OTHERAFRICA2028": "3a94a9c0-9168-4404-9a0b-e9923eedc946",
+  "OTHERMECHKSA2026": "c821aede-0e06-4850-87d3-8bc58a5a5324",
+  "OTHERMECHQATAR2026": "30e35738-0a6d-4720-86f3-aae4f4a547b0",
+  "OTHERSVP2026": "22222222-0000-0000-0000-000000000001",
+  "OTHERSVP2027": "22222222-0000-0000-0000-000000000002",
+  "PETROCHEMICALCOMPLEXEW": "01e67aa5-b0f4-4ecf-9acd-f264edaa6103",
+  "RLPP": "01e67aa5-b0f4-4ecf-9acd-f264edaa6103",
+  "PIONEERCAMP": "13499609-1c6c-4dbb-87d9-fe945572cd49",
+  "NFXPC": "13499609-1c6c-4dbb-87d9-fe945572cd49",
+  "PRWHIAEP0099": "e56bf492-0475-45a4-a3ed-74e862f814d7",
+  "DIAP": "e56bf492-0475-45a4-a3ed-74e862f814d7",
+  "QAFCO7": "bbaebf01-5059-4a60-b02a-5bd4108f4157",
+  "QAFCO8": "4e3a93ac-92fb-4e6b-aa73-3b4c30ad96da",
+  "QATARCOMPLETED": "e5ba84ec-13b5-4bb4-9914-df53251653dd",
+  "QETAIFANISLAND": "88e70cab-7936-4b8d-b583-484fa8042b2e",
+  "QIN4": "88e70cab-7936-4b8d-b583-484fa8042b2e",
+  "QIDDIYAOTHERMEDIUMSIZEPACKAGES2027": "fa12360a-9edf-40b4-adbf-3dfba22aa2cc",
+  "QUARRYOPERATIONS": "3cfdc1e8-0b08-4119-b936-3ba727e2d403",
+  "RASELHEKMA1A": "623fbb0b-3aa6-4891-8d47-f6386e51f0f8",
+  "RIYADHMETRO": "a287428c-a328-42a3-ac8a-f453fecf870c",
+  "RMP": "a287428c-a328-42a3-ac8a-f453fecf870c",
+  "ROVUMALNGMOZAMBIQUE": "1b914f64-b203-4252-963f-ea3ffadcc4fc",
+  "RUWAISLNGBUILDINGSSPO9": "a7b01b31-3f56-4a27-bafb-647dcd17278b",
+  "SAFANIYAHPKG1": "dc9c81d5-4b92-40b6-9fee-9c3d64463b7e",
+  "SAFANIYAHPKG2": "c0f5cd43-cc88-41da-b6d1-8dd31426764d",
+  "SASREFETHANECRACKERCOMPLEX": "a98ed958-0489-4f3d-b07f-54cb52b38085",
+  "SHEPHEARDHOTEL": "b02d5622-a451-4251-923b-875ad4a3a62d",
+  "SHEPHEARDHOTELMEP": "99a25453-8801-4e9f-a926-ab815b5a6c7b",
+  "SQ1MEPCCE": "f58f0bfd-86b3-4750-a244-129c4e018052",
+  "TAYARAROAD": "6fa8008a-ce70-405e-9021-b1d5ac957c2d",
+  "TELECOMPH2BLD": "6880e681-df90-4e66-8269-0a1e966c4728",
+  "BLD": "6880e681-df90-4e66-8269-0a1e966c4728",
+  "TELECOMPH2MEP": "afd047da-763f-4a76-87bb-7fe661f76565",
+  "THEARK": "a93a3244-fd2f-4f98-989e-a9f0e23c1f6e",
+  "THEARKTYPEL": "413666ea-0c6d-4493-ad2f-0206cdaf2197",
+  "THEARK2A2B": "9e96d7f6-a91f-4aa1-a69b-f6bd433802b6",
+  "THEARK3A3B3C": "0229f2e7-104d-48e9-b32e-a012ea9e478d",
+  "TOBRUKEMSAED": "c729aaef-a479-4aa6-a78e-352ff38f1ea2",
+  "TOKRABENGHAZI": "1672cdad-7208-45b5-8bf8-e31a55a90eda",
+  "UAECOMPLETED": "db2a1aa3-d3fd-464c-9f7a-6de54e0c5bb9",
+  "UTILITYNETWORK": "00f45f87-2f30-4311-b7e6-e2e0a155db53",
+  "WADIDERNA": "d0e496c9-ff23-4426-b092-aa145f1b33bf",
+  "WESTERNMIDFIELDFUELFARM": "44a5b55a-159d-440b-93aa-c3ee280fab8d",
+  "WMFF": "44a5b55a-159d-440b-93aa-c3ee280fab8d",
+  "ZAFARANA": "b748f0c0-f8a1-48f4-bcfe-d6249dfc0d09",
+  "ZAHYACITYCENTER": "5a602407-8458-4a46-95c4-939f225c8067",
+  "ZALLAFREFINERYFEED": "5ef10a8d-443e-4713-ac6d-677daf456985",
+  "ZIRKUENHANCED": "b7151a86-f9b5-4f2c-8fd2-83397b925722",
+  "ZIRKUJV": "5c231984-141c-4487-8c9a-23d23b89cfb8",
+  "ZIRKUTRAIN6": "6e2c85ca-1442-49bb-9e86-c57b070d566d",
+  "ZULUFPROCESS": "1a37ccb6-9e47-476b-a1bd-dbd57f92aab7",
+  "ZULUF": "1a37ccb6-9e47-476b-a1bd-dbd57f92aab7"
+ }
+}

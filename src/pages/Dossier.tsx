@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useMemo, useState, type ComponentProps } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/lib/auth'
+import { useRole, canManageCashFlow } from '@/lib/role'
+import CashFlowManagePanel from './manage/CashFlowManagePanel'
 import {
   fetchCanonicalAreas, fetchVersions, fetchLines, fetchActuals,
   type CfVersion, type CfLine, type CanonicalArea, type AreaGroup,
@@ -37,10 +39,12 @@ function parseOrd(raw: string | null): GrainOrd {
 type View =
   | { kind: 'summary'; lens: 'overall' | 'funders' | 'heatmap' | 'changed' | 'loans' | 'allareas' }
   | { kind: 'area'; area: string }
+  | { kind: 'manage' }
 
 function parseView(sp: URLSearchParams): View {
   const view = sp.get('view') || 'summary'
   const sub = sp.get('sub') || ''
+  if (view === 'manage') return { kind: 'manage' }
   if (view === 'area' && sp.get('area')) return { kind: 'area', area: sp.get('area')! }
   const lens = (['overall', 'funders', 'heatmap', 'changed', 'loans', 'allareas'].includes(sub) ? sub : 'overall') as any
   return { kind: 'summary', lens }
@@ -92,6 +96,8 @@ const ALL_MONTHS = (() => {
 
 export default function Dossier() {
   const { user, signOut } = useAuth()
+  const role = useRole()
+  const canManage = canManageCashFlow(role)
   const [sp, setSp] = useSearchParams()
   const view = parseView(sp)
 
@@ -216,6 +222,7 @@ export default function Dossier() {
   /* SUMMARY = the presentation set: one page per CFO question, in the order
    * a CFO conversation runs. EXPLORE = analyst tools. */
   const navItems: NavItem[] = [
+    ...(canManage ? [{ group: 'MANAGE', label: 'Manage Cash Flow', view: { kind: 'manage' as const } }] : []),
     { group: 'SUMMARY', label: 'Cash Runway',          view: { kind: 'summary', lens: 'overall' } },
     { group: 'SUMMARY', label: 'Funders vs Consumers', view: { kind: 'summary', lens: 'funders' } },
     { group: 'SUMMARY', label: 'Treasury',             view: { kind: 'summary', lens: 'heatmap' } },
@@ -230,6 +237,7 @@ export default function Dossier() {
     })),
   ]
   const navGroupOrder: string[] = [
+    ...(canManage ? ['MANAGE'] : []),
     'SUMMARY', 'EXPLORE',
     ...areaNavGroups.map(g => g.label),
   ]
@@ -237,7 +245,7 @@ export default function Dossier() {
   const goto = (v: View) => {
     if (v.kind === 'summary') setUrl({ view: 'summary', sub: v.lens, area: null })
     else if (v.kind === 'area') setUrl({ view: 'area', area: v.area, sub: null })
-    else setUrl({ view: 'audit', sub: null, area: null })
+    else if (v.kind === 'manage') setUrl({ view: 'manage', sub: null, area: null })
   }
 
   const isActive = (item: View) => JSON.stringify(item) === JSON.stringify(view)
@@ -266,6 +274,11 @@ export default function Dossier() {
   const ORD_LABEL: Record<string, string> = { A: 'Area', N: 'Nature', C: 'Category' }
 
   const renderContent = () => {
+    if (view.kind === 'manage') {
+      return canManage
+        ? <CashFlowManagePanel />
+        : <div className="placeholder-box">Manage mode requires the Treasury role.</div>
+    }
     if (loadingCatalog) return <div className="placeholder-box">Loading…</div>
     if (!primaryVersion) return <div className="placeholder-box">No version available.</div>
 
@@ -441,7 +454,7 @@ export default function Dossier() {
           {navGroupOrder.map(group => {
             const items = navItems.filter(n => n.group === group)
             const hasActive = items.some(n => isActive(n.view))
-            const alwaysOpen = group === 'SUMMARY' || group === 'BANK POSITION'
+            const alwaysOpen = group === 'SUMMARY' || group === 'BANK POSITION' || group === 'MANAGE'
             const collapsed = !alwaysOpen && !hasActive && navCollapsed.has(group)
             return (
               <div key={group}>
@@ -472,17 +485,23 @@ export default function Dossier() {
       </div>
 
       <div className="content">
-        <ScenarioBanner latestVersionCode={versions[0]?.version_code || ''} />
-        <ScenarioTileBar lines={lines} primaryVersionCode={primaryVersion} currentYear={ty} />
+        {view.kind !== 'manage' && (
+          <>
+            <ScenarioBanner latestVersionCode={versions[0]?.version_code || ''} />
+            <ScenarioTileBar lines={lines} primaryVersionCode={primaryVersion} currentYear={ty} />
+          </>
+        )}
         {renderContent()}
       </div>
-      <BulkOpsPanelMount
-        areas={areas}
-        lines={lines}
-        primaryVersionCode={primaryVersion}
-        fromYear={fy} fromMonth={fm} toYear={ty} toMonth={tm}
-        latestActualYM={latestActualYM}
-      />
+      {view.kind !== 'manage' && (
+        <BulkOpsPanelMount
+          areas={areas}
+          lines={lines}
+          primaryVersionCode={primaryVersion}
+          fromYear={fy} fromMonth={fm} toYear={ty} toMonth={tm}
+          latestActualYM={latestActualYM}
+        />
+      )}
     </div>
   )
 }

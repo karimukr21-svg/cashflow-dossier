@@ -1,5 +1,8 @@
 {
+  "functions": {
+    "api/cf-stage.py": { "includeFiles": "api/_cfengine/**" }
+  },
   "rewrites": [
-    { "source": "/((?!favicon\\.svg|favicon\\.ico|assets/.*|app-icons/.*).*)", "destination": "/index.html" }
+    { "source": "/((?!favicon\\.svg|favicon\\.ico|assets/.*|app-icons/.*|api/.*).*)", "destination": "/index.html" }
   ]
 }
