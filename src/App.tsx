@@ -3,6 +3,7 @@ import { RequireAuth } from './components/RequireAuth'
 import { ScenarioProvider } from './lib/ScenarioContext'
 import SignIn from './pages/SignIn'
 import Dossier from './pages/Dossier'
+import AnalyzeShell from './pages/analyze/AnalyzeShell'
 
 export default function App() {
   return (
@@ -15,6 +16,14 @@ export default function App() {
             <ScenarioProvider>
               <Dossier />
             </ScenarioProvider>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/analyze"
+        element={
+          <RequireAuth>
+            <AnalyzeShell />
           </RequireAuth>
         }
       />

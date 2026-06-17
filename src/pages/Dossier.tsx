@@ -465,6 +465,7 @@ export default function Dossier() {
           })}
         </div>
         <div className="leftnav-footer">
+          <a className="analyze-link" href="/analyze">Project Analyze →</a>
           <div className="user-email">{user?.email}</div>
           <button className="signout" onClick={signOut}>Sign out</button>
         </div>

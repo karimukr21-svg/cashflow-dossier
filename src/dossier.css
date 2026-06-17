@@ -1718,3 +1718,87 @@ body.bulk-panel-collapsed .content { padding-right: 52px !important; }
   font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--mute); margin: 0 0 8px; font-weight: 600;
 }
+
+/* ─── Analyze mode (project grain) ──────────────────────────────────────── */
+.analyze-badge {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 500;
+  border: 1px solid var(--crimson);
+  background: #fff5f6;
+  color: var(--crimson);
+}
+.back-to-dossier {
+  font-size: 12px;
+  color: var(--mute);
+  text-decoration: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.back-to-dossier:hover { background: var(--surface-alt); color: var(--charcoal); }
+.analyze-link {
+  display: block;
+  font-size: 12.5px;
+  color: var(--crimson);
+  text-decoration: none;
+  font-weight: 500;
+  margin-bottom: 10px;
+}
+.analyze-link:hover { text-decoration: underline; }
+.analyze-nav-note {
+  margin: 16px 16px 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--mute);
+  line-height: 1.5;
+}
+
+/* Per-area meta caption in the drill summary */
+.drill-area-meta {
+  margin-left: 8px;
+  font-size: 10.5px;
+  color: var(--mute);
+  font-weight: 400;
+}
+.drill-back {
+  display: inline-block;
+  font-size: 12px;
+  color: var(--mute);
+  cursor: pointer;
+  margin-bottom: 6px;
+}
+.drill-back:hover { color: var(--crimson); }
+
+/* Project tags (JV / area item) */
+.drill-tag {
+  margin-left: 8px;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+.drill-tag.tag-jv { background: #eef2ff; color: #4338ca; }
+.drill-tag.tag-area { background: var(--surface-alt); color: var(--mute); }
+
+/* Line rows inside an expanded project */
+.cf-table tr.drill-line-row td { font-size: 12px; }
+.cf-table tr.drill-line-row td.label { color: var(--charcoal); }
+
+/* Forecast accuracy / drift window caption */
+.accuracy-window {
+  font-size: 12px;
+  color: var(--charcoal);
+  margin: 4px 0 14px;
+  font-weight: 500;
+}
+.accuracy-window-note { color: var(--mute); font-weight: 400; margin-left: 6px; }
