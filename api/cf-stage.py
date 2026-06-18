@@ -68,7 +68,7 @@ class handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers",
-                         "authorization, content-type, x-filename, x-as-of")
+                         "authorization, content-type, x-filename, x-as-of, x-cycle-year, x-cycle-month")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -91,6 +91,8 @@ class handler(BaseHTTPRequestHandler):
 
             fn = urllib.parse.unquote(self.headers.get("X-Filename", "upload.xlsx"))
             as_of_h = self.headers.get("X-As-Of")
+            cy_h = self.headers.get("X-Cycle-Year")
+            cm_h = self.headers.get("X-Cycle-Month")
 
             import parse_cashflow as pc
             import reconcile_stage as rs
@@ -101,8 +103,14 @@ class handler(BaseHTTPRequestHandler):
             resolver = pc.Resolver(ref)
             res = rs.reconcile_workbook_bytes(body, fn, resolver, as_of)
 
-            # cycle/version this upload proposes (derived from the cutover)
-            cy, cm = _proposed_cycle(as_of)
+            # Cycle/version the user chose for this upload (sent by the UI). The
+            # as_of above is the chosen cycle's cutover, so the actual/forecast
+            # split honors the cycle, not the file. Fall back to deriving from the
+            # cutover only if the headers are absent (legacy/direct callers).
+            if cy_h and cm_h:
+                cy, cm = int(cy_h), int(cm_h)
+            else:
+                cy, cm = _proposed_cycle(as_of)
             rs.PROPOSED_CYCLE = (cy, cm)
             rs.PROPOSED_VERSION = f"{cy}-{cm:02d}-PROJ"
 

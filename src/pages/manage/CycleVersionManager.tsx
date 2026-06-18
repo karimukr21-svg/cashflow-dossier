@@ -17,6 +17,7 @@ function fmtNum(v: any) {
 
 export default function CycleVersionManager({ canManage }: { canManage: boolean }) {
   const [versions, setVersions] = useState<any[]>([])
+  const [cycles, setCycles] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
   const [showInactive, setShowInactive] = useState(() => {
@@ -25,21 +26,64 @@ export default function CycleVersionManager({ canManage }: { canManage: boolean 
   const [compareMode, setCompareMode] = useState(false)
   const [picked, setPicked] = useState<string[]>([])      // up to 2 version_codes
   const [compare, setCompare] = useState<any>(null)        // { a, b, rows, loading }
+  const [showNewCycle, setShowNewCycle] = useState(false)
+  const [nc, setNc] = useState<any>({ year: '', month: '', as_of: '', name: '' })
+  const [ncBusy, setNcBusy] = useState(false)
 
   const fetchVersions = useCallback(async () => {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('cf_versions')
-      .select('*')
-      .order('cycle_year', { ascending: false })
-      .order('cycle_month', { ascending: false })
-      .order('version_no', { ascending: true })
+    const [{ data: vs, error }, { data: cs }] = await Promise.all([
+      supabase.from('cf_versions').select('*')
+        .order('cycle_year', { ascending: false })
+        .order('cycle_month', { ascending: false })
+        .order('version_no', { ascending: true }),
+      supabase.from('cf_cycles').select('*')
+        .order('cycle_year', { ascending: false }).order('cycle_month', { ascending: false }),
+    ])
     if (error) console.error('cf_versions', error)
-    else setVersions(data || [])
+    else setVersions(vs || [])
+    setCycles(cs || [])
     setLoading(false)
   }, [])
 
   useEffect(() => { fetchVersions() }, [fetchVersions])
+
+  const handleCreateCycle = async () => {
+    const y = parseInt(nc.year, 10), m = parseInt(nc.month, 10)
+    if (!y || !m || m < 1 || m > 12 || !nc.as_of) { alert('Enter a valid year, month (1-12) and as-of date.'); return }
+    setNcBusy(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    const name = nc.name?.trim() || new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+    const { error } = await supabase.from('cf_cycles').insert({
+      cycle_year: y, cycle_month: m, as_of_date: nc.as_of, name, created_by: user?.email || 'treasury',
+    })
+    setNcBusy(false)
+    if (error) { alert('Create cycle failed: ' + error.message); return }
+    setShowNewCycle(false); setNc({ year: '', month: '', as_of: '', name: '' })
+    await fetchVersions()
+  }
+
+  const handleDeleteCycle = async (cyc: any) => {
+    if (!canManage) return
+    const vCount = versions.filter(v => v.cycle_year === cyc.cycle_year && v.cycle_month === cyc.cycle_month).length
+    const warn = cyc.is_legacy
+      ? `\n\n⚠ This is a LEGACY cycle that feeds the live area dossier. Deleting it removes its actuals/forecasts and can change the dossier numbers. This cannot be undone from here.`
+      : ''
+    const ok = window.confirm(
+      `Delete cycle "${cyc.name}" (${cyc.cycle_year}-${String(cyc.cycle_month).padStart(2, '0')})?\n\n` +
+      `Removes its ${vCount} version(s), all staged runs, forecasts, and reverses any publish ` +
+      `(restoring the area numbers it replaced).${warn}`
+    )
+    if (!ok) return
+    setBusy(`cycle:${cyc.cycle_year}-${cyc.cycle_month}`)
+    const { data, error } = await supabase.rpc('cf_delete_cycle', { p_year: cyc.cycle_year, p_month: cyc.cycle_month })
+    setBusy(null)
+    if (error) { alert('Delete failed: ' + error.message); return }
+    const r: any = data
+    alert(`Deleted cycle ${r?.cycle}. ${r?.versions_deleted} version(s), ${r?.forecasts_deleted} forecast(s), ` +
+          `${r?.actuals_deleted} actual(s) removed${r?.actuals_restored ? `, ${r.actuals_restored} restored` : ''}.`)
+    await fetchVersions()
+  }
 
   const toggleShowInactive = () => {
     setShowInactive(v => {
@@ -52,17 +96,13 @@ export default function CycleVersionManager({ canManage }: { canManage: boolean 
   const visible = showInactive ? versions : versions.filter(v => v.is_active)
   const inactiveCount = versions.filter(v => !v.is_active).length
 
-  const groups = (() => {
-    const m = new Map<string, any[]>()
-    for (const v of visible) {
-      const k = cycleKey(v)
-      if (!m.has(k)) m.set(k, [])
-      m.get(k)!.push(v)
-    }
-    return Array.from(m.entries())
-      .sort((a, b) => b[0].localeCompare(a[0]))
-      .map(([k, rows]) => ({ key: k, label: cycleLabel(rows[0]), rows }))
-  })()
+  // Group from cf_cycles (so user-created cycles show even before any version exists)
+  const groups = cycles.map(c => ({
+    key: `${c.cycle_year}-${String(c.cycle_month).padStart(2, '0')}`,
+    cycle: c,
+    label: c.name || cycleLabel(c),
+    rows: visible.filter(v => v.cycle_year === c.cycle_year && v.cycle_month === c.cycle_month),
+  }))
 
   const handleSetCurrent = async (v: any) => {
     if (!canManage || v.is_current) return
@@ -152,6 +192,11 @@ export default function CycleVersionManager({ canManage }: { canManage: boolean 
   return (
     <div className="cfm-versions">
       <div className="cfm-runs-bar">
+        {canManage && (
+          <button className={`cfm-chip ${showNewCycle ? 'is-active' : ''}`} onClick={() => setShowNewCycle(v => !v)}>
+            {showNewCycle ? '× Cancel' : '＋ New cycle'}
+          </button>
+        )}
         <button
           className={`cfm-chip ${compareMode ? 'is-active' : ''}`}
           onClick={() => { setCompareMode(m => !m); setPicked([]); setCompare(null) }}
@@ -172,6 +217,25 @@ export default function CycleVersionManager({ canManage }: { canManage: boolean 
           {inactiveCount > 0 && <span className="cfm-chip-count">({inactiveCount})</span>}
         </button>
       </div>
+
+      {showNewCycle && (
+        <div className="cfm-newcycle">
+          <label className="cfm-field cfm-field-inline"><span>Year</span>
+            <input type="number" value={nc.year} placeholder="2026" style={{ width: 80 }}
+              onChange={e => setNc({ ...nc, year: e.target.value })} /></label>
+          <label className="cfm-field cfm-field-inline"><span>Month</span>
+            <input type="number" value={nc.month} placeholder="1-12" min={1} max={12} style={{ width: 70 }}
+              onChange={e => setNc({ ...nc, month: e.target.value })} /></label>
+          <label className="cfm-field cfm-field-inline"><span>As-of (cutover)</span>
+            <input type="date" value={nc.as_of} onChange={e => setNc({ ...nc, as_of: e.target.value })} /></label>
+          <label className="cfm-field cfm-field-inline cfm-field-grow"><span>Name</span>
+            <input type="text" value={nc.name} placeholder="(auto from month/year)"
+              onChange={e => setNc({ ...nc, name: e.target.value })} /></label>
+          <button className="cfm-btn cfm-btn-primary cfm-btn-sm" onClick={handleCreateCycle} disabled={ncBusy}>
+            {ncBusy ? 'Creating…' : 'Create cycle'}
+          </button>
+        </div>
+      )}
 
       {compare && (
         <div className="cfm-compare">
@@ -214,9 +278,28 @@ export default function CycleVersionManager({ canManage }: { canManage: boolean 
               <tr className="cfm-ver-grouphead">
                 <th colSpan={compareMode ? 11 : 10}>
                   <span className="cfm-ver-cyclebadge">{group.label}</span>
-                  <span className="cfm-ver-cyclecount">{group.rows.length} version{group.rows.length > 1 ? 's' : ''}</span>
+                  {group.cycle?.is_legacy && <span className="cfm-flag cfm-flag-new" style={{ marginLeft: 8 }}>legacy</span>}
+                  <span className="cfm-ver-cyclecount">
+                    as-of {group.cycle?.as_of_date} · {group.rows.length} version{group.rows.length === 1 ? '' : 's'}
+                  </span>
+                  {canManage && (
+                    <button
+                      className="cfm-btn cfm-btn-ghost cfm-btn-sm"
+                      style={{ float: 'right' }}
+                      disabled={busy === `cycle:${group.cycle.cycle_year}-${group.cycle.cycle_month}`}
+                      onClick={() => handleDeleteCycle(group.cycle)}
+                      title="Delete this cycle and everything in it"
+                    >
+                      {busy === `cycle:${group.cycle.cycle_year}-${group.cycle.cycle_month}` ? 'Deleting…' : 'Delete cycle'}
+                    </button>
+                  )}
                 </th>
               </tr>
+              {group.rows.length === 0 && (
+                <tr><td colSpan={compareMode ? 11 : 10} className="cfm-empty-sm" style={{ paddingLeft: 12 }}>
+                  No versions yet — upload a file into this cycle in the Import runs tab.
+                </td></tr>
+              )}
               {group.rows.map((v: any) => (
                 <tr key={v.version_code} className={!v.is_active ? 'inactive' : ''}>
                   {compareMode && (
