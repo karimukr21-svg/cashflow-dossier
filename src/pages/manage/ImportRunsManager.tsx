@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
 const STATUS_LABEL: Record<string, string> = {
-  open: 'Open', pushed: 'Pushed', published: 'Published', discarded: 'Discarded',
+  open: 'Unassigned', pushed: 'Pushed', published: 'Published', discarded: 'Discarded',
 }
 const VERDICT_LABEL: Record<string, string> = {
   tie: 'Ties ✓', break: 'Breaks', no_total: 'No area total',
@@ -19,23 +19,26 @@ function fmtDate(d: any) {
   try { return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }) }
   catch { return '-' }
 }
+function cycleKeyOf(year: any, month: any) {
+  return `${year}-${String(month).padStart(2, '0')}`
+}
 
 export default function ImportRunsManager({ canManage }: { canManage: boolean }) {
   const [runs, setRuns] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [statusFilter, setStatusFilter] = useState('active') // active = open+pushed
+  const [filter, setFilter] = useState('unassigned')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [detail, setDetail] = useState<Record<string, any>>({})  // run_id -> { breaks, loading }
   const [busy, setBusy] = useState<string | null>(null)          // run_id currently pushing/discarding
   const [upload, setUpload] = useState<any>({ name: '', state: 'idle', msg: '' }) // idle|busy|ok|err
   const fileRef = useRef<HTMLInputElement | null>(null)
 
-  // Cycle the upload targets (chosen by the user; not derived from the file).
-  // Cycles are created in Cycles & versions — here we only pick one.
+  // Cycles + versions feed the push cascade. Uploads are cycle-agnostic now —
+  // the cycle + version are chosen at push time.
   const [cycles, setCycles] = useState<any[]>([])
-  const [cycleKey, setCycleKey] = useState('')             // "YYYY-MM"
-  const [versions, setVersions] = useState<any[]>([])      // all cf_versions (for push-target picker)
-  const [pushTarget, setPushTarget] = useState<Record<string, string>>({}) // run_id -> version_code | '' (auto) | '__new__'
+  const [versions, setVersions] = useState<any[]>([])      // all cf_versions
+  // Per-run push cascade choices: run_id -> { cycle?: "YYYY-MM", version?: version_code | '__new__' }
+  const [pushPick, setPushPick] = useState<Record<string, { cycle?: string; version?: string }>>({})
 
   const fetchRuns = useCallback(async () => {
     setLoading(true)
@@ -56,22 +59,37 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
 
   const fetchVersions = useCallback(async () => {
     const { data } = await supabase.from('cf_versions')
-      .select('version_code, label, cycle_year, cycle_month, version_no, is_current')
+      .select('version_code, label, cycle_year, cycle_month, version_no, is_current, as_of_date')
       .order('version_no', { ascending: true })
     setVersions(data || [])
   }, [])
 
   useEffect(() => { fetchRuns(); fetchCycles(); fetchVersions() }, [fetchRuns, fetchCycles, fetchVersions])
 
-  const versionsForRun = (run: any) =>
-    versions.filter(v => v.cycle_year === run.cycle_year && v.cycle_month === run.cycle_month)
+  const versionsForCycle = (year: any, month: any) =>
+    versions.filter(v => v.cycle_year === year && v.cycle_month === month)
 
-  const selectedCycle = cycles.find(c => `${c.cycle_year}-${String(c.cycle_month).padStart(2, '0')}` === cycleKey) || null
+  const cycleByKey = (key: string) =>
+    cycles.find(c => cycleKeyOf(c.cycle_year, c.cycle_month) === key) || null
+
+  // Distinct stamped cycles among runs, for the filter pills.
+  const stampedCycleKeys = Array.from(new Set(
+    runs
+      .filter(r => r.cycle_year != null && r.cycle_month != null)
+      .map(r => cycleKeyOf(r.cycle_year, r.cycle_month))
+  )).sort().reverse()
+
+  const cycleLabel = (key: string) => {
+    const c = cycleByKey(key)
+    return c?.name || key
+  }
 
   const visible = runs.filter(r => {
-    if (statusFilter === 'all') return true
-    if (statusFilter === 'active') return r.status === 'open' || r.status === 'pushed'
-    return r.status === statusFilter
+    if (filter === 'all') return r.status !== 'discarded'
+    if (filter === 'unassigned') return r.status === 'open'
+    // a cycle pill: "YYYY-MM"
+    return r.cycle_year != null && r.cycle_month != null &&
+      cycleKeyOf(r.cycle_year, r.cycle_month) === filter
   })
 
   const loadDetail = async (run: any) => {
@@ -94,52 +112,74 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
     if (next) loadDetail(run)
   }
 
+  const handleEditArea = async (run: any) => {
+    if (!canManage) return
+    const next = prompt('Area for this run:', run.area || '')
+    if (next === null) return
+    const trimmed = next.trim()
+    if (!trimmed || trimmed === run.area) return
+    setBusy(run.run_id)
+    const { error } = await supabase.rpc('cf_set_run_area', { p_run_id: run.run_id, p_area: trimmed })
+    setBusy(null)
+    if (error) { alert('Set area failed: ' + error.message); return }
+    await fetchRuns()
+  }
+
   const handlePush = async (run: any) => {
     if (!canManage) return
-    const choice = pushTarget[run.run_id] ?? ''
+    const pick = pushPick[run.run_id] || {}
+    const cycleKey = pick.cycle
+    const versionChoice = pick.version
+    if (!cycleKey || !versionChoice) return
+    const cycle = cycleByKey(cycleKey)
+    if (!cycle) { alert('Pick a cycle.'); return }
+
     const { data: { user } } = await supabase.auth.getUser()
     const actor = user?.email || 'dossier'
 
-    // Resolve the target version: '' = auto (cycle version), '__new__' = create
-    // a fresh labelled version first, otherwise an existing version_code.
-    let targetCode: string | null = null
-    let targetLabel = `a new cycle version (${run.proposed_version})`
-    if (choice === '__new__') {
-      const label = prompt(
-        `Create a new version in this cycle and import ${run.area} into it.\nLabel (e.g. "Base", "Qatar refresh"):`,
-        ''
-      )
-      if (label === null) return
-      setBusy(run.run_id)
+    setBusy(run.run_id)
+
+    // 1. Resolve the target version code (create a new labelled one if asked).
+    let targetCode: string
+    if (versionChoice === '__new__') {
+      const label = prompt('Label for the new version (e.g. "Base", "Qatar refresh"):', '')
+      if (label === null) { setBusy(null); return }
       const { data: cv, error: cvErr } = await supabase.rpc('cf_create_version', {
-        p_year: run.cycle_year, p_month: run.cycle_month,
+        p_year: cycle.cycle_year, p_month: cycle.cycle_month,
         p_label: label.trim() || null, p_actor: actor,
       })
       if (cvErr) { setBusy(null); alert('Create version failed: ' + cvErr.message); return }
-      targetCode = (cv as any)?.version_code
-      targetLabel = `the new version ${targetCode}${label.trim() ? ` (${label.trim()})` : ''}`
-    } else if (choice !== '') {
-      targetCode = choice
-      const v = versions.find(x => x.version_code === choice)
-      targetLabel = `version ${choice}${v?.label ? ` (${v.label})` : ''}`
+      const cvRow = Array.isArray(cv) ? cv[0] : cv
+      targetCode = (cvRow as any)?.version_code
+      await fetchVersions()
+    } else {
+      targetCode = versionChoice
     }
 
-    const ok = window.confirm(
-      `Push ${run.area} (${run.source_file}) into ${targetLabel}?\n\n` +
-      `Loads ${(run.n_actual_rows + run.n_forecast_rows).toLocaleString()} staged rows, replacing only ` +
-      `${run.area}'s lines in that version's forecast. This does NOT change actuals yet — Publish does that.`
-    )
-    if (!ok) { setBusy(null); await fetchVersions(); return }  // a just-created empty version stays
+    // 2. Area-already-in-version check.
+    const { count } = await supabase
+      .from('cf_forecasts')
+      .select('id', { count: 'exact', head: true })
+      .eq('version', targetCode)
+      .eq('area', run.area)
+      .eq('scenario_code', 'Forecast')
+    if ((count || 0) > 0) {
+      const ok = window.confirm(
+        `${run.area} already exists in ${targetCode}. Replace just ${run.area}'s lines in that version?`
+      )
+      if (!ok) { setBusy(null); return }
+    }
 
-    setBusy(run.run_id)
+    // 3. Push.
     const { data, error } = await supabase.rpc('cf_push_run', {
       p_run_id: run.run_id, p_actor: actor, p_target_version: targetCode,
     })
     setBusy(null)
-    if (error) { alert('Push failed: ' + error.message); await fetchVersions(); return }
+    if (error) { alert('Push failed: ' + error.message); return }
     const v = Array.isArray(data) ? data[0] : data
-    alert(`Pushed into ${v?.version_code}. ${fmtNum(v?.rows_loaded)} rows loaded ` +
+    alert(`Pushed ${v?.area} into ${v?.version_code}. ${fmtNum(v?.rows_loaded)} rows loaded ` +
           `(${fmtNum(v?.elapsed_period_rows)} elapsed periods ready to publish).`)
+    setPushPick(p => { const next = { ...p }; delete next[run.run_id]; return next })
     await fetchRuns(); await fetchVersions()
   }
 
@@ -158,8 +198,7 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
     const file = e.target.files?.[0]
     if (fileRef.current) fileRef.current.value = ''
     if (!file) return
-    if (!selectedCycle) { setUpload({ name: file.name, state: 'err', msg: 'Choose a cycle first.' }); return }
-    setUpload({ name: file.name, state: 'busy', msg: `Parsing + reconciling into ${selectedCycle.name}…` })
+    setUpload({ name: file.name, state: 'busy', msg: 'Parsing + reconciling…' })
     try {
       const buf = await file.arrayBuffer()
       const { data: { session } } = await supabase.auth.getSession()
@@ -168,9 +207,6 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
         headers: {
           'Content-Type': 'application/octet-stream',
           'X-Filename': encodeURIComponent(file.name),
-          'X-Cycle-Year': String(selectedCycle.cycle_year),
-          'X-Cycle-Month': String(selectedCycle.cycle_month),
-          'X-As-Of': selectedCycle.as_of_date,
           Authorization: `Bearer ${session?.access_token || ''}`,
         },
         body: buf,
@@ -180,7 +216,7 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
       setUpload({
         name: file.name, state: 'ok',
         msg: `Staged ${json.area}: ${VERDICT_LABEL[json.recon_status] || json.recon_status} · ` +
-             `${fmtNum(json.n_actual_rows + json.n_forecast_rows)} rows · ` +
+             `${fmtNum(json.n_rows)} rows · ` +
              `${fmtNum(json.recon_n_breaks)} breaks · ${fmtNum(json.n_unmatched_labels)} unmatched`,
       })
       await fetchRuns()
@@ -193,35 +229,16 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
     <div className="cfm-runs">
       {canManage && (
         <div className={`cfm-upload cfm-upload-${upload.state}`}>
-          <div className="cfm-cyclepick">
-            <label className="cfm-field cfm-field-inline">
-              <span>Upload into cycle</span>
-              <select value={cycleKey} onChange={e => setCycleKey(e.target.value)}>
-                <option value="">Choose a cycle…</option>
-                {cycles.map(c => {
-                  const k = `${c.cycle_year}-${String(c.cycle_month).padStart(2, '0')}`
-                  return <option key={k} value={k}>{c.name} · as-of {c.as_of_date}{c.is_legacy ? ' · legacy' : ''}</option>
-                })}
-              </select>
-            </label>
-            {cycles.length === 0 && (
-              <span className="cfm-upload-hint">No cycles yet — create one in Cycles &amp; versions first.</span>
-            )}
-          </div>
-
           <div className="cfm-upload-main">
             <button
               className="cfm-upload-btn"
               onClick={() => fileRef.current?.click()}
-              disabled={upload.state === 'busy' || !selectedCycle}
-              title={!selectedCycle ? 'Choose a cycle first' : ''}
+              disabled={upload.state === 'busy'}
             >
               {upload.state === 'busy' ? 'Staging…' : 'Upload area file'}
             </button>
             <span className="cfm-upload-hint">
-              {selectedCycle
-                ? `.xlsx — staged into ${selectedCycle.name} (as-of ${selectedCycle.as_of_date}), reconciled to AREA TOTAL, for review.`
-                : 'Pick the cycle this file belongs to, then upload.'}
+              .xlsx — parsed, reconciled to the area total, and staged unassigned for review. You choose the cycle + version when you push it.
             </span>
             <input
               ref={fileRef} type="file" accept=".xlsx,.xls"
@@ -238,15 +255,27 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
 
       <div className="cfm-runs-bar">
         <div className="cfm-filter">
-          {['active', 'open', 'pushed', 'published', 'all'].map(s => (
+          <button
+            className={`cfm-chip ${filter === 'unassigned' ? 'is-active' : ''}`}
+            onClick={() => setFilter('unassigned')}
+          >
+            Unassigned
+          </button>
+          {stampedCycleKeys.map(k => (
             <button
-              key={s}
-              className={`cfm-chip ${statusFilter === s ? 'is-active' : ''}`}
-              onClick={() => setStatusFilter(s)}
+              key={k}
+              className={`cfm-chip ${filter === k ? 'is-active' : ''}`}
+              onClick={() => setFilter(k)}
             >
-              {s === 'active' ? 'Active' : (STATUS_LABEL[s] || 'All')}
+              {cycleLabel(k)}
             </button>
           ))}
+          <button
+            className={`cfm-chip ${filter === 'all' ? 'is-active' : ''}`}
+            onClick={() => setFilter('all')}
+          >
+            All
+          </button>
         </div>
         <button className="cfm-refresh" onClick={fetchRuns} title="Refresh">↻</button>
       </div>
@@ -261,12 +290,19 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
           const isOpen = expanded === run.run_id
           const d = detail[run.run_id]
           const total = (run.n_actual_rows || 0) + (run.n_forecast_rows || 0)
+          const pick = pushPick[run.run_id] || {}
+          const cycleVersions = pick.cycle
+            ? (() => { const c = cycleByKey(pick.cycle); return c ? versionsForCycle(c.cycle_year, c.cycle_month) : [] })()
+            : []
+          const stampedCycle = (run.cycle_year != null && run.cycle_month != null)
+            ? cycleByKey(cycleKeyOf(run.cycle_year, run.cycle_month))
+            : null
           return (
             <div key={run.run_id} className={`cfm-run ${isOpen ? 'is-open' : ''}`}>
               <div className="cfm-run-row" onClick={() => toggle(run)}>
                 <span className="cfm-run-caret">{isOpen ? '▾' : '▸'}</span>
                 <span className="cfm-run-area">{run.area}</span>
-                <span className={`cfm-status cfm-status-${run.status}`}>{STATUS_LABEL[run.status]}</span>
+                <span className={`cfm-status cfm-status-${run.status}`}>{STATUS_LABEL[run.status] || run.status}</span>
                 <span className={`cfm-verdict cfm-verdict-${run.recon_status}`}>
                   {VERDICT_LABEL[run.recon_status] || run.recon_status}
                 </span>
@@ -296,9 +332,13 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
               {isOpen && (
                 <div className="cfm-run-detail">
                   <div className="cfm-detail-grid">
-                    <div><span className="cfm-dl">Cycle</span>{run.cycle_year}-{String(run.cycle_month).padStart(2, '0')} → {run.proposed_version}</div>
-                    <div><span className="cfm-dl">As of</span>{fmtDate(run.as_of_date)}</div>
-                    <div><span className="cfm-dl">Actual / Forecast</span>{fmtNum(run.n_actual_rows)} / {fmtNum(run.n_forecast_rows)}</div>
+                    <div>
+                      <span className="cfm-dl">Assignment</span>
+                      {run.status === 'open'
+                        ? 'Unassigned — pick a cycle + version below to push.'
+                        : `In ${run.pushed_version_code || '—'} · ${stampedCycle?.name || cycleKeyOf(run.cycle_year, run.cycle_month)}`}
+                    </div>
+                    <div><span className="cfm-dl">Rows</span>{fmtNum(total)}</div>
                     <div><span className="cfm-dl">Target sheet</span>{run.recon_target_sheet || '—'}</div>
                     <div><span className="cfm-dl">Max |Δ|</span>{fmtNum(run.recon_max_abs_diff)}</div>
                     <div><span className="cfm-dl">Staged</span>{fmtDate(run.created_at)}</div>
@@ -334,16 +374,56 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
                     )}
                   </div>
 
-                  {canManage && run.status !== 'published' && run.status !== 'discarded' && (
-                    <div className="cfm-run-actions">
-                      <label className="cfm-field cfm-field-inline cfm-push-target">
-                        <span>Push into</span>
+                  <div className="cfm-run-area-edit" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+                    <span><span className="cfm-dl">Area:</span> <strong>{run.area}</strong></span>
+                    {canManage && (
+                      <button
+                        className="cfm-btn cfm-btn-ghost"
+                        disabled={busy === run.run_id}
+                        onClick={() => handleEditArea(run)}
+                      >
+                        Edit
+                      </button>
+                    )}
+                  </div>
+                  <div className="cfm-muted" style={{ fontSize: '0.8em', opacity: 0.7, marginTop: 2 }}>
+                    Detected from the filename — correct it here if wrong before pushing.
+                  </div>
+
+                  {canManage && (run.status === 'open' || run.status === 'pushed') && (
+                    <div className="cfm-run-actions" style={{ display: 'flex', alignItems: 'flex-end', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+                      <label className="cfm-field cfm-field-inline">
+                        <span>Cycle</span>
                         <select
-                          value={pushTarget[run.run_id] ?? ''}
-                          onChange={e => setPushTarget(t => ({ ...t, [run.run_id]: e.target.value }))}
+                          value={pick.cycle ?? ''}
+                          onChange={e => {
+                            const v = e.target.value
+                            setPushPick(p => ({ ...p, [run.run_id]: { cycle: v || undefined, version: undefined } }))
+                          }}
                         >
-                          <option value="">Auto — new cycle version ({run.proposed_version})</option>
-                          {versionsForRun(run).map(v => (
+                          <option value="">Choose a cycle…</option>
+                          {cycles.map(c => {
+                            const k = cycleKeyOf(c.cycle_year, c.cycle_month)
+                            return (
+                              <option key={k} value={k}>
+                                {c.name} · as-of {c.as_of_date}{c.is_legacy ? ' · legacy' : ''}
+                              </option>
+                            )
+                          })}
+                        </select>
+                      </label>
+                      <label className="cfm-field cfm-field-inline cfm-push-target">
+                        <span>Version</span>
+                        <select
+                          value={pick.version ?? ''}
+                          disabled={!pick.cycle}
+                          onChange={e => {
+                            const v = e.target.value
+                            setPushPick(p => ({ ...p, [run.run_id]: { ...(p[run.run_id] || {}), version: v || undefined } }))
+                          }}
+                        >
+                          <option value="">Choose a version…</option>
+                          {cycleVersions.map(v => (
                             <option key={v.version_code} value={v.version_code}>
                               {v.version_code}{v.label ? ` — ${v.label}` : ''}{v.is_current ? ' ●' : ''}
                             </option>
@@ -353,7 +433,7 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
                       </label>
                       <button
                         className="cfm-btn cfm-btn-primary"
-                        disabled={busy === run.run_id}
+                        disabled={busy === run.run_id || !pick.cycle || !pick.version}
                         onClick={() => handlePush(run)}
                       >
                         {busy === run.run_id ? 'Pushing…' : (run.status === 'pushed' ? 'Re-push' : 'Push')}

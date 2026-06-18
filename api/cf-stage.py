@@ -90,31 +90,21 @@ class handler(BaseHTTPRequestHandler):
                 return self._send(400, {"error": "empty body — expected .xlsx bytes"})
 
             fn = urllib.parse.unquote(self.headers.get("X-Filename", "upload.xlsx"))
-            as_of_h = self.headers.get("X-As-Of")
-            cy_h = self.headers.get("X-Cycle-Year")
-            cm_h = self.headers.get("X-Cycle-Month")
 
             import parse_cashflow as pc
             import reconcile_stage as rs
             import db
 
-            as_of = dt.date.fromisoformat(as_of_h) if as_of_h else pc.DEFAULT_AS_OF
+            # Runs stage UNASSIGNED — no cycle is chosen at upload. The engine
+            # still needs an as_of to parse; the default cutover only drives the
+            # parse/recon (the per-period reconciliation is as_of-independent).
+            # The real actuals/forecast cutover is applied at PUSH, from the
+            # chosen version's cycle.
             ref = pc.load_ref()
             resolver = pc.Resolver(ref)
-            res = rs.reconcile_workbook_bytes(body, fn, resolver, as_of)
+            res = rs.reconcile_workbook_bytes(body, fn, resolver, pc.DEFAULT_AS_OF)
 
-            # Cycle/version the user chose for this upload (sent by the UI). The
-            # as_of above is the chosen cycle's cutover, so the actual/forecast
-            # split honors the cycle, not the file. Fall back to deriving from the
-            # cutover only if the headers are absent (legacy/direct callers).
-            if cy_h and cm_h:
-                cy, cm = int(cy_h), int(cm_h)
-            else:
-                cy, cm = _proposed_cycle(as_of)
-            rs.PROPOSED_CYCLE = (cy, cm)
-            rs.PROPOSED_VERSION = f"{cy}-{cm:02d}-PROJ"
-
-            # idempotent re-upload: clear this area's prior OPEN runs (cascade)
+            # idempotent re-upload: clear this area's prior OPEN (unassigned) runs
             db.delete("cf_import_runs",
                       {"area": f"eq.{res['area']}", "status": "eq.open"})
 
@@ -126,11 +116,9 @@ class handler(BaseHTTPRequestHandler):
                 "currency": res["currency"],
                 "recon_status": res["recon_status"],
                 "recon_n_breaks": res["n_real_breaks"],
-                "n_actual_rows": res["n_actual"],
-                "n_forecast_rows": res["n_forecast"],
+                "n_rows": res["n_actual"] + res["n_forecast"],
                 "n_projects": res["n_projects"],
                 "n_unmatched_labels": len(res["unmatched_labels"]),
-                "proposed_version": rs.PROPOSED_VERSION,
             })
         except Exception as e:
             import traceback
