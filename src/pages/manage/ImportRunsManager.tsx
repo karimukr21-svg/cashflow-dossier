@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import StagingReview from './StagingReview'
 
 const STATUS_LABEL: Record<string, string> = {
   open: 'Unassigned', pushed: 'Pushed', published: 'Published', discarded: 'Discarded',
@@ -339,40 +340,12 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
                         : `In ${run.pushed_version_code || '—'} · ${stampedCycle?.name || cycleKeyOf(run.cycle_year, run.cycle_month)}`}
                     </div>
                     <div><span className="cfm-dl">Rows</span>{fmtNum(total)}</div>
-                    <div><span className="cfm-dl">Target sheet</span>{run.recon_target_sheet || '—'}</div>
-                    <div><span className="cfm-dl">Max |Δ|</span>{fmtNum(run.recon_max_abs_diff)}</div>
                     <div><span className="cfm-dl">Staged</span>{fmtDate(run.created_at)}</div>
                   </div>
 
-                  <UnmatchedLabels summary={run.recon_summary} />
+                  <StagingReview runId={run.run_id} currency={run.currency} />
 
-                  <div className="cfm-breaks">
-                    <div className="cfm-breaks-head">Reconciliation breaks — Σ projects vs {run.recon_target_sheet || 'area total'} ({run.currency})</div>
-                    {d?.loading && <div className="cfm-empty-sm">Loading breaks…</div>}
-                    {d && !d.loading && d.breaks.length === 0 && (
-                      <div className="cfm-empty-sm">No material flow breaks — projects tie to the area total.</div>
-                    )}
-                    {d && !d.loading && d.breaks.length > 0 && (
-                      <table className="cfm-breaks-table">
-                        <thead>
-                          <tr><th>Line</th><th>Period</th><th>Nature</th><th className="num">Σ projects</th><th className="num">Area total</th><th className="num">Δ</th><th>Class</th></tr>
-                        </thead>
-                        <tbody>
-                          {d.breaks.map((b: any, i: number) => (
-                            <tr key={i}>
-                              <td className="mono">{b.line_code}</td>
-                              <td>{b.year}-{String(b.month).padStart(2, '0')}</td>
-                              <td>{b.nature || '-'}</td>
-                              <td className="num">{fmtNum(b.sum_projects)}</td>
-                              <td className="num">{fmtNum(b.area_total)}</td>
-                              <td className={`num ${b.diff < 0 ? 'neg' : 'pos'}`}>{fmtNum(b.diff)}</td>
-                              <td><span className={`cfm-cls cfm-cls-${b.classification}`}>{b.classification.replace(/_/g, ' ')}</span></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
+                  <UnmatchedLabels summary={run.recon_summary} />
 
                   <div className="cfm-run-area-edit" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
                     <span><span className="cfm-dl">Area:</span> <strong>{run.area}</strong></span>
@@ -452,6 +425,36 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
                       )}
                     </div>
                   )}
+
+                  <details className="cfm-recon-drill">
+                    <summary>Reconciliation — Σ projects vs area total ({run.currency})</summary>
+                    <div className="cfm-breaks">
+                      {d?.loading && <div className="cfm-empty-sm">Loading breaks…</div>}
+                      {d && !d.loading && d.breaks.length === 0 && (
+                        <div className="cfm-empty-sm">No material flow breaks — projects tie to the area total.</div>
+                      )}
+                      {d && !d.loading && d.breaks.length > 0 && (
+                        <table className="cfm-breaks-table">
+                          <thead>
+                            <tr><th>Line</th><th>Period</th><th>Nature</th><th className="num">Σ projects</th><th className="num">Area total</th><th className="num">Δ</th><th>Class</th></tr>
+                          </thead>
+                          <tbody>
+                            {d.breaks.map((b: any, i: number) => (
+                              <tr key={i}>
+                                <td className="mono">{b.line_code}</td>
+                                <td>{b.year}-{String(b.month).padStart(2, '0')}</td>
+                                <td>{b.nature || '-'}</td>
+                                <td className="num">{fmtNum(b.sum_projects)}</td>
+                                <td className="num">{fmtNum(b.area_total)}</td>
+                                <td className={`num ${b.diff < 0 ? 'neg' : 'pos'}`}>{fmtNum(b.diff)}</td>
+                                <td><span className={`cfm-cls cfm-cls-${b.classification}`}>{b.classification.replace(/_/g, ' ')}</span></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </details>
                 </div>
               )}
             </div>
@@ -468,7 +471,7 @@ function UnmatchedLabels({ summary }: { summary: any }) {
   const entries = Object.entries(labels).sort((a: any, b: any) => b[1] - a[1])
   return (
     <div className="cfm-unmatched">
-      <span className="cfm-unmatched-head">Unmatched labels (not staged):</span>
+      <span className="cfm-unmatched-head">Lines in the file that didn't map onto our chart (dropped):</span>
       {entries.map(([lab, n]: any) => (
         <span key={lab} className="cfm-unmatched-pill" title={`${n}×`}>{lab}{n > 1 ? ` ×${n}` : ''}</span>
       ))}
