@@ -30,12 +30,10 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
   const [upload, setUpload] = useState<any>({ name: '', state: 'idle', msg: '' }) // idle|busy|ok|err
   const fileRef = useRef<HTMLInputElement | null>(null)
 
-  // Cycle the upload targets (chosen by the user; not derived from the file)
+  // Cycle the upload targets (chosen by the user; not derived from the file).
+  // Cycles are created in Cycles & versions — here we only pick one.
   const [cycles, setCycles] = useState<any[]>([])
   const [cycleKey, setCycleKey] = useState('')             // "YYYY-MM"
-  const [showNewCycle, setShowNewCycle] = useState(false)
-  const [nc, setNc] = useState<any>({ year: '', month: '', as_of: '', name: '' })
-  const [ncBusy, setNcBusy] = useState(false)
   const [versions, setVersions] = useState<any[]>([])      // all cf_versions (for push-target picker)
   const [pushTarget, setPushTarget] = useState<Record<string, string>>({}) // run_id -> version_code | '' (auto) | '__new__'
 
@@ -69,24 +67,6 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
     versions.filter(v => v.cycle_year === run.cycle_year && v.cycle_month === run.cycle_month)
 
   const selectedCycle = cycles.find(c => `${c.cycle_year}-${String(c.cycle_month).padStart(2, '0')}` === cycleKey) || null
-
-  const handleCreateCycle = async () => {
-    const y = parseInt(nc.year, 10), m = parseInt(nc.month, 10)
-    if (!y || !m || m < 1 || m > 12 || !nc.as_of) { alert('Enter a valid year, month (1-12) and as-of date.'); return }
-    setNcBusy(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    const name = nc.name?.trim() ||
-      new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
-    const { error } = await supabase.from('cf_cycles').insert({
-      cycle_year: y, cycle_month: m, as_of_date: nc.as_of, name, created_by: user?.email || 'treasury',
-    })
-    setNcBusy(false)
-    if (error) { alert('Create cycle failed: ' + error.message); return }
-    await fetchCycles()
-    setCycleKey(`${y}-${String(m).padStart(2, '0')}`)
-    setShowNewCycle(false)
-    setNc({ year: '', month: '', as_of: '', name: '' })
-  }
 
   const visible = runs.filter(r => {
     if (statusFilter === 'all') return true
@@ -224,30 +204,10 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
                 })}
               </select>
             </label>
-            <button className="cfm-chip" onClick={() => setShowNewCycle(v => !v)}>
-              {showNewCycle ? '× Cancel' : '＋ New cycle'}
-            </button>
+            {cycles.length === 0 && (
+              <span className="cfm-upload-hint">No cycles yet — create one in Cycles &amp; versions first.</span>
+            )}
           </div>
-
-          {showNewCycle && (
-            <div className="cfm-newcycle">
-              <label className="cfm-field cfm-field-inline"><span>Year</span>
-                <input type="number" value={nc.year} placeholder="2026" style={{ width: 80 }}
-                  onChange={e => setNc({ ...nc, year: e.target.value })} /></label>
-              <label className="cfm-field cfm-field-inline"><span>Month</span>
-                <input type="number" value={nc.month} placeholder="1-12" min={1} max={12} style={{ width: 70 }}
-                  onChange={e => setNc({ ...nc, month: e.target.value })} /></label>
-              <label className="cfm-field cfm-field-inline"><span>As-of (actuals cutover)</span>
-                <input type="date" value={nc.as_of}
-                  onChange={e => setNc({ ...nc, as_of: e.target.value })} /></label>
-              <label className="cfm-field cfm-field-inline cfm-field-grow"><span>Name</span>
-                <input type="text" value={nc.name} placeholder="(auto from month/year)"
-                  onChange={e => setNc({ ...nc, name: e.target.value })} /></label>
-              <button className="cfm-btn cfm-btn-primary cfm-btn-sm" onClick={handleCreateCycle} disabled={ncBusy}>
-                {ncBusy ? 'Creating…' : 'Create cycle'}
-              </button>
-            </div>
-          )}
 
           <div className="cfm-upload-main">
             <button
