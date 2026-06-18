@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type ComponentProps } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/lib/auth'
 import { useRole, canManageCashFlow } from '@/lib/role'
@@ -16,11 +16,6 @@ import AreasFunders from './AreasFunders'
 import TreasuryHeatmap from './TreasuryHeatmap'
 import CustomPeriodPopover from '@/components/CustomPeriodPopover'
 import AreaFilterPopover from '@/components/AreaFilterPopover'
-import { ScenarioPill } from '@/components/ScenarioPill'
-import { BulkOpsPanel } from '@/components/BulkOpsPanel'
-import { ScenarioTileBar } from '@/components/ScenarioTileBar'
-import { ScenarioBanner } from '@/components/ScenarioBanner'
-import { useScenario } from '@/lib/ScenarioContext'
 
 export type Grain = 'monthly' | 'quarterly' | 'yearly'
 export type GroupBy = 'category' | 'nature'
@@ -331,7 +326,6 @@ export default function Dossier() {
                   title="Change period">
             Period · {periodLabel}
           </button>
-          <ScenarioPill primaryVersionCode={primaryVersion} />
           {showAreaFilterChip && (
             <button
               className={`areas-pill ${excludedAreas.size > 0 ? 'filtered' : ''}`}
@@ -484,34 +478,9 @@ export default function Dossier() {
         </div>
       </div>
 
-      <div className="content">
-        {view.kind !== 'manage' && (
-          <>
-            <ScenarioBanner latestVersionCode={versions[0]?.version_code || ''} />
-            <ScenarioTileBar lines={lines} primaryVersionCode={primaryVersion} currentYear={ty} />
-          </>
-        )}
-        {renderContent()}
-      </div>
-      {view.kind !== 'manage' && (
-        <BulkOpsPanelMount
-          areas={areas}
-          lines={lines}
-          primaryVersionCode={primaryVersion}
-          fromYear={fy} fromMonth={fm} toYear={ty} toMonth={tm}
-          latestActualYM={latestActualYM}
-        />
-      )}
+      <div className="content">{renderContent()}</div>
     </div>
   )
-}
-
-/* Only mount the panel when a scenario is active. Avoids the baseline-fetch
- * useEffect inside BulkOpsPanel from firing pointlessly. */
-function BulkOpsPanelMount(props: ComponentProps<typeof BulkOpsPanel>) {
-  const { activeId } = useScenario()
-  if (activeId === 'baseline') return null
-  return <BulkOpsPanel {...props} />
 }
 
 export type Scope = {

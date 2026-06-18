@@ -1,6 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { RequireAuth } from './components/RequireAuth'
-import { ScenarioProvider } from './lib/ScenarioContext'
 import SignIn from './pages/SignIn'
 import Dossier from './pages/Dossier'
 import AnalyzeShell from './pages/analyze/AnalyzeShell'
@@ -13,9 +12,7 @@ export default function App() {
         path="/"
         element={
           <RequireAuth>
-            <ScenarioProvider>
-              <Dossier />
-            </ScenarioProvider>
+            <Dossier />
           </RequireAuth>
         }
       />

@@ -1,8 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { fetchActuals, fetchForecasts, type CfCell, type CfLine } from '@/lib/queries'
 import { fmt, classNum } from '@/lib/format'
-import { applyDeltaToCell } from '@/lib/scenario'
-import { useScenario } from '@/lib/ScenarioContext'
 import { EditableCell } from '@/components/EditableCell'
 import { computeDerivedBalances, getColumnYMEndpoints } from '@/lib/derivedBalances'
 import type { Scope, Grain, GroupBy } from './Dossier'
@@ -165,7 +163,6 @@ export function AreaCategoryCards({
   cfArea?: string;
 }) {
   const { expanded, toggle } = useExpandedSections()
-  const { workingIndex, savedIndex } = useScenario()
 
   const activeLines = useMemo(() =>
     lines.filter(l => l.is_active).sort((a, b) => a.sort_order - b.sort_order),
@@ -188,18 +185,18 @@ export function AreaCategoryCards({
     const cells: CfCell[] = []
     for (const c of actuals) {
       cells.push({ area: c.area, line_code: c.line_code, year: c.year, month: c.month,
-        value: applyDeltaToCell(workingIndex, savedIndex, c.area, c.line_code, c.year, c.month, c.value) })
+        value: c.value })
     }
     for (const c of forecasts) {
       cells.push({ area: c.area, line_code: c.line_code, year: c.year, month: c.month,
-        value: applyDeltaToCell(workingIndex, savedIndex, c.area, c.line_code, c.year, c.month, c.value) })
+        value: c.value })
     }
     return computeDerivedBalances({
       cells, lines,
       fromYear: scope.fromYear, fromMonth: scope.fromMonth,
       toYear: scope.toYear, toMonth: scope.toMonth,
     })
-  }, [actuals, forecasts, lines, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth, workingIndex, savedIndex])
+  }, [actuals, forecasts, lines, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth])
 
   // Indexed sums for fast per-cell lookup. Applies scenario delta on top of
   // baseline so the drill stays in sync with bulk-ops + cell edits. For
@@ -217,14 +214,12 @@ export function AreaCategoryCards({
     for (const c of actuals) {
       if (c.line_code !== lineCode) continue
       if (!matches(c.year, c.month)) continue
-      const v = applyDeltaToCell(workingIndex, savedIndex, c.area, c.line_code, c.year, c.month, c.value)
-      sum = (sum ?? 0) + v
+      sum = (sum ?? 0) + c.value
     }
     for (const c of forecasts) {
       if (c.line_code !== lineCode) continue
       if (!matches(c.year, c.month)) continue
-      const v = applyDeltaToCell(workingIndex, savedIndex, c.area, c.line_code, c.year, c.month, c.value)
-      sum = (sum ?? 0) + v
+      sum = (sum ?? 0) + c.value
     }
     return sum
   }

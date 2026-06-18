@@ -3,8 +3,6 @@ import {
   fetchActuals, fetchBankPositionMonthly, fetchForecasts,
   type CfCell,
 } from '@/lib/queries'
-import { applyDeltaToCell } from '@/lib/scenario'
-import { useScenario } from '@/lib/ScenarioContext'
 import DivergingBars from '@/charts/DivergingBars'
 import type { Scope } from './Dossier'
 
@@ -46,8 +44,6 @@ const PALETTE = [
 ]
 
 export default function TreasuryHeatmap({ scope, onSelectArea }: Props) {
-  const { workingIndex, savedIndex } = useScenario()
-
   /* Window months from the period selector (capped at 24 columns) */
   const months = useMemo(() => {
     const out: { y: number; m: number; ym: number; label: string }[] = []
@@ -111,7 +107,7 @@ export default function TreasuryHeatmap({ scope, onSelectArea }: Props) {
       if (!canonical) return
       const m = ymToIdx.get(r.year * 100 + r.month)
       if (m === undefined) return
-      const v = applyDeltaToCell(workingIndex, savedIndex, r.area, r.line_code, r.year, r.month, r.value)
+      const v = r.value
       const s = ensure(canonical.area_id)
       if (line.nature === 'Receipts') s.inflows[m] += v
       else if (line.nature === 'Payments') s.outflows[m] += Math.abs(v)  // positive magnitude for stacking
@@ -135,7 +131,7 @@ export default function TreasuryHeatmap({ scope, onSelectArea }: Props) {
       colorIdx++
     }
     return out
-  }, [loading, actuals, forecasts, lineByCode, scope.cfToCanonical, scope.areas, workingIndex, savedIndex, N, ymToIdx])
+  }, [loading, actuals, forecasts, lineByCode, scope.cfToCanonical, scope.areas, N, ymToIdx])
 
   /* Column totals + axis scaling */
   const monthlyTotals = useMemo(() => {
@@ -188,7 +184,7 @@ export default function TreasuryHeatmap({ scope, onSelectArea }: Props) {
     let toAreas = 0     // Treasury paid to areas (magnitude)
     const perArea = new Map<string, { provided: number; received: number }>()
     const process = (r: CfCell) => {
-      const v = applyDeltaToCell(workingIndex, savedIndex, r.area, r.line_code, r.year, r.month, r.value)
+      const v = r.value
       if (r.line_code === 'treasury_recpt_areas') fromAreas += v
       else if (r.line_code === 'treasury_pay_areas') toAreas += Math.abs(v)
       else if (r.line_code === 'wg_pay_treasury' || r.line_code === 'wg_recpt_treasury') {
@@ -210,7 +206,7 @@ export default function TreasuryHeatmap({ scope, onSelectArea }: Props) {
       })
       .sort((x, y) => Math.abs(y.net) - Math.abs(x.net))
     return { fromAreas, toAreas, rows }
-  }, [actuals, forecasts, scope.areas, scope.cfToCanonical, workingIndex, savedIndex])
+  }, [actuals, forecasts, scope.areas, scope.cfToCanonical])
 
   const posMax = useMemo(() => Math.max(...position.map(p => Math.abs(p.value)), 1), [position])
 

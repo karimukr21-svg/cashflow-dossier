@@ -1,7 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { fetchActuals, fetchForecasts, type CfCell, type CanonicalArea } from '@/lib/queries'
-import { applyDeltaToCell } from '@/lib/scenario'
-import { useScenario } from '@/lib/ScenarioContext'
 import type { Scope } from './Dossier'
 
 /* Areas — Funders vs Consumers
@@ -55,7 +53,6 @@ export default function AreasFunders({ scope, onSelectArea }: { scope: Scope; on
   const [actuals, setActuals] = useState<(CfCell & { source_version: string })[]>([])
   const [forecasts, setForecasts] = useState<(CfCell & { version: string })[]>([])
   const [loading, setLoading] = useState(true)
-  const { workingIndex, savedIndex } = useScenario()
 
   useEffect(() => {
     let cancel = false
@@ -107,7 +104,7 @@ export default function AreasFunders({ scope, onSelectArea }: { scope: Scope; on
       if (!cashLineCodes.has(r.line_code)) return
       const canonical = scope.cfToCanonical.get(r.area)
       if (!canonical) return  // orphan area, skip per house rule
-      const v = applyDeltaToCell(workingIndex, savedIndex, r.area, r.line_code, r.year, r.month, r.value)
+      const v = r.value
       bump(canonical.area_id, r.year * 100 + r.month, v)
     }
     for (const r of actuals) process(r)
@@ -123,7 +120,7 @@ export default function AreasFunders({ scope, onSelectArea }: { scope: Scope; on
       return { area, monthly, net }
     })
     return out.sort((a, b) => Math.abs(b.net) - Math.abs(a.net))
-  }, [loading, actuals, forecasts, cashLineCodes, scope.cfToCanonical, scope.selectedAreas, months, workingIndex, savedIndex])
+  }, [loading, actuals, forecasts, cashLineCodes, scope.cfToCanonical, scope.selectedAreas, months])
 
   /* Bar scaling — single global max(abs) across every monthly cell so bars
    * are comparable across areas and months. Net column uses its own scale

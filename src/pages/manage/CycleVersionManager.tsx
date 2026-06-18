@@ -141,6 +141,85 @@ export default function CycleVersionManager({ canManage }: { canManage: boolean 
     await fetchVersions()
   }
 
+  const handleEditLabel = async (v: any) => {
+    if (!canManage) return
+    const next = prompt(
+      'Label for this version (helps identify it — e.g. "Base", "Qatar refresh", "Board cut").\nLeave empty to clear.',
+      v.label || ''
+    )
+    if (next === null) return
+    const value = next.trim()
+    const { error } = await supabase.from('cf_versions')
+      .update({ label: value === '' ? null : value }).eq('version_code', v.version_code)
+    if (error) alert('Error: ' + error.message)
+    await fetchVersions()
+  }
+
+  const handleCreateVersion = async (cyc: any) => {
+    if (!canManage) return
+    const label = prompt(
+      `New empty version in ${cyc.name || cycleLabel(cyc)}.\n` +
+      `Give it a label to identify it (e.g. "Base", "Working draft").\n` +
+      `You'll fill it by uploading an area file into this version.`,
+      ''
+    )
+    if (label === null) return
+    setBusy(`newver:${cyc.cycle_year}-${cyc.cycle_month}`)
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data, error } = await supabase.rpc('cf_create_version', {
+      p_year: cyc.cycle_year, p_month: cyc.cycle_month,
+      p_label: label.trim() || null, p_actor: user?.email || 'treasury',
+    })
+    setBusy(null)
+    if (error) { alert('Create version failed: ' + error.message); return }
+    alert(`Created ${(data as any)?.version_code}. Empty version — upload an area file into it from Import runs.`)
+    await fetchVersions()
+  }
+
+  const handleDuplicate = async (v: any) => {
+    if (!canManage) return
+    const label = prompt(
+      `Duplicate ${v.version_code}${v.label ? ` (${v.label})` : ''} into a new version.\n` +
+      `It copies all of this version's forecasts; the original stays untouched.\n` +
+      `A label is required (e.g. "Qatar refresh", "Scenario B"):`,
+      ''
+    )
+    if (label === null) return
+    if (!label.trim()) { alert('A label is required to duplicate.'); return }
+    setBusy(v.version_code)
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data, error } = await supabase.rpc('cf_duplicate_version', {
+      p_source_version: v.version_code, p_label: label.trim(), p_actor: user?.email || 'treasury',
+    })
+    setBusy(null)
+    if (error) { alert('Duplicate failed: ' + error.message); return }
+    const r: any = data
+    alert(`Created ${r?.new_version} — ${fmtNum(r?.forecast_rows_cloned)} forecast rows copied from ${v.version_code}.`)
+    await fetchVersions()
+  }
+
+  const handleDeleteVersion = async (v: any) => {
+    if (!canManage) return
+    const ok = window.confirm(
+      `Delete version "${v.version_code}"${v.label ? ` (${v.label})` : ''}?\n\n` +
+      `Removes its forecasts and history${v.published_at ? ', reverses its publish (restoring the area numbers it replaced),' : ''} ` +
+      `and reopens any import run that pushed into it. The cycle and its other versions stay.`
+    )
+    if (!ok) return
+    setBusy(v.version_code)
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data, error } = await supabase.rpc('cf_delete_version', {
+      p_version_code: v.version_code, p_actor: user?.email || 'treasury',
+    })
+    setBusy(null)
+    if (error) { alert('Delete failed: ' + error.message); return }
+    const r: any = data
+    alert(`Deleted ${v.version_code}. ${fmtNum(r?.forecasts_deleted)} forecast(s) removed` +
+          `${r?.actuals_restored ? `, ${fmtNum(r.actuals_restored)} actuals restored` : ''}` +
+          `${r?.runs_reopened ? `, ${r.runs_reopened} run(s) reopened` : ''}.`)
+    await fetchVersions()
+  }
+
   const handlePublish = async (v: any) => {
     if (!canManage) return
     const ok = window.confirm(
@@ -226,7 +305,7 @@ export default function CycleVersionManager({ canManage }: { canManage: boolean 
           <label className="cfm-field cfm-field-inline"><span>Month</span>
             <input type="number" value={nc.month} placeholder="1-12" min={1} max={12} style={{ width: 70 }}
               onChange={e => setNc({ ...nc, month: e.target.value })} /></label>
-          <label className="cfm-field cfm-field-inline"><span>As-of (cutover)</span>
+          <label className="cfm-field cfm-field-inline"><span>As-of (actuals cutover)</span>
             <input type="date" value={nc.as_of} onChange={e => setNc({ ...nc, as_of: e.target.value })} /></label>
           <label className="cfm-field cfm-field-inline cfm-field-grow"><span>Name</span>
             <input type="text" value={nc.name} placeholder="(auto from month/year)"
@@ -283,15 +362,24 @@ export default function CycleVersionManager({ canManage }: { canManage: boolean 
                     as-of {group.cycle?.as_of_date} · {group.rows.length} version{group.rows.length === 1 ? '' : 's'}
                   </span>
                   {canManage && (
-                    <button
-                      className="cfm-btn cfm-btn-ghost cfm-btn-sm"
-                      style={{ float: 'right' }}
-                      disabled={busy === `cycle:${group.cycle.cycle_year}-${group.cycle.cycle_month}`}
-                      onClick={() => handleDeleteCycle(group.cycle)}
-                      title="Delete this cycle and everything in it"
-                    >
-                      {busy === `cycle:${group.cycle.cycle_year}-${group.cycle.cycle_month}` ? 'Deleting…' : 'Delete cycle'}
-                    </button>
+                    <span style={{ float: 'right', display: 'inline-flex', gap: 6 }}>
+                      <button
+                        className="cfm-btn cfm-btn-primary cfm-btn-sm"
+                        disabled={busy === `newver:${group.cycle.cycle_year}-${group.cycle.cycle_month}`}
+                        onClick={() => handleCreateVersion(group.cycle)}
+                        title="Create a new empty version in this cycle (fill it from Import runs)"
+                      >
+                        {busy === `newver:${group.cycle.cycle_year}-${group.cycle.cycle_month}` ? 'Creating…' : '＋ New version'}
+                      </button>
+                      <button
+                        className="cfm-btn cfm-btn-ghost cfm-btn-sm"
+                        disabled={busy === `cycle:${group.cycle.cycle_year}-${group.cycle.cycle_month}`}
+                        onClick={() => handleDeleteCycle(group.cycle)}
+                        title="Delete this cycle and everything in it"
+                      >
+                        {busy === `cycle:${group.cycle.cycle_year}-${group.cycle.cycle_month}` ? 'Deleting…' : 'Delete cycle'}
+                      </button>
+                    </span>
                   )}
                 </th>
               </tr>
@@ -307,7 +395,12 @@ export default function CycleVersionManager({ canManage }: { canManage: boolean 
                       <input type="checkbox" checked={picked.includes(v.version_code)} onChange={() => togglePick(v.version_code)} />
                     </td>
                   )}
-                  <td className="mono" title={v.version_code}>{v.version_code}</td>
+                  <td title={v.version_code}>
+                    <span className="mono cfm-ver-code">{v.version_code}</span>
+                    {v.label
+                      ? <button className="cfm-ver-label" disabled={!canManage} onClick={() => handleEditLabel(v)} title="Edit label">{v.label}</button>
+                      : <button className="cfm-ver-label cfm-ver-label-add" disabled={!canManage} onClick={() => handleEditLabel(v)} title="Add a label">+ label</button>}
+                  </td>
                   <td>{v.version_no}</td>
                   <td>{fmtDate(v.as_of_date)}</td>
                   <td className="cfm-ver-src" title={v.source_file || ''}>{v.source_file || '-'}</td>
@@ -339,16 +432,34 @@ export default function CycleVersionManager({ canManage }: { canManage: boolean 
                       ? <span className="cfm-pub-yes" title={`by ${v.published_by || '-'}`}>{fmtDate(v.published_at)}</span>
                       : <span className="cfm-pub-no">—</span>}
                   </td>
-                  <td>
+                  <td className="cfm-ver-actions">
                     {canManage && (
-                      <button
-                        className="cfm-btn cfm-btn-publish cfm-btn-sm"
-                        disabled={busy === v.version_code}
-                        onClick={() => handlePublish(v)}
-                        title="Promote elapsed periods into the actuals series"
-                      >
-                        {busy === v.version_code ? '…' : (v.published_at ? 'Re-publish' : 'Publish')}
-                      </button>
+                      <span style={{ display: 'inline-flex', gap: 6, justifyContent: 'flex-end' }}>
+                        <button
+                          className="cfm-btn cfm-btn-publish cfm-btn-sm"
+                          disabled={busy === v.version_code}
+                          onClick={() => handlePublish(v)}
+                          title="Promote elapsed periods into the actuals series"
+                        >
+                          {busy === v.version_code ? '…' : (v.published_at ? 'Re-publish' : 'Publish')}
+                        </button>
+                        <button
+                          className="cfm-btn cfm-btn-ghost cfm-btn-sm"
+                          disabled={busy === v.version_code}
+                          onClick={() => handleDuplicate(v)}
+                          title="Duplicate this version (copies its forecasts into a new labelled version)"
+                        >
+                          Duplicate
+                        </button>
+                        <button
+                          className="cfm-btn cfm-btn-ghost cfm-btn-sm"
+                          disabled={busy === v.version_code}
+                          onClick={() => handleDeleteVersion(v)}
+                          title="Delete just this version"
+                        >
+                          Delete
+                        </button>
+                      </span>
                     )}
                   </td>
                 </tr>
