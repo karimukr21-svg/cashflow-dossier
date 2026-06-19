@@ -61,7 +61,33 @@ AREA_BY_FILE = {
 # ---- reference data ---------------------------------------------------------
 def load_ref():
     with open(os.path.join(HERE, 'ref_data.json')) as f:
-        return json.load(f)
+        ref = json.load(f)
+    # Live-merge the canonical line catalog + aliases from the DB so edits made in
+    # the Treasury workspace (inline line-mapping in staging) take effect on the
+    # NEXT upload — no ref_data.json regen/redeploy. The DB is the source of truth;
+    # this snapshot is only the offline fallback. Any failure (e.g. local CLI with
+    # no service key) silently keeps the bundled snapshot. gacc_index is left as-is.
+    try:
+        import db
+        lines = db.select('cf_lines',
+            {'select': 'line_code,nature,category,description,is_active', 'order': 'sort_order'})
+        aliases = db.select('cf_line_aliases',
+            {'select': 'alias_description,alias_nature,alias_category,line_code'})
+        if lines:
+            ref['lines'] = [
+                {'line_code': r['line_code'], 'nature': r['nature'], 'category': r['category'],
+                 'description': r['description'], 'is_active': r.get('is_active', True)}
+                for r in lines
+            ]
+        if aliases is not None:
+            ref['aliases'] = [
+                {'alias': r['alias_description'], 'nature': r['alias_nature'],
+                 'category': r['alias_category'], 'line_code': r['line_code']}
+                for r in aliases if r.get('alias_description')
+            ]
+    except Exception:
+        pass  # bundled ref_data.json is the fallback
+    return ref
 
 def tight(s):
     return re.sub(r'[^A-Z0-9]', '', (s or '').upper())

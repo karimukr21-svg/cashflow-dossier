@@ -286,3 +286,39 @@
 .cfm-recon-drill > summary::before { content: '▸ '; color: #94a3b8; }
 .cfm-recon-drill[open] > summary::before { content: '▾ '; }
 .cfm-recon-drill .cfm-breaks { margin-top: 8px; }
+
+/* ---- staging verdict banner (the glance) ---- */
+.cfm-verdict-banner { border-radius: 10px; padding: 11px 13px; margin-bottom: 12px;
+  border: 1px solid #e2e8f0; }
+.cfm-verdict-banner.is-safe { background: #f0fdf4; border-color: #bbf7d0; }
+.cfm-verdict-banner.is-review { background: #fffbeb; border-color: #fde68a; }
+.cfm-vb-head { display: flex; align-items: center; gap: 7px; font-size: 13px;
+  font-weight: 600; color: #141414; margin-bottom: 9px; }
+.cfm-vb-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.is-safe .cfm-vb-dot { background: #16a34a; }
+.is-review .cfm-vb-dot { background: #d97706; }
+.cfm-vb-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cfm-vb-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px;
+  padding: 3px 9px; border-radius: 8px; border: 1px solid transparent; cursor: default; }
+.cfm-vb-chip-mark { font-weight: 700; font-size: 10.5px; }
+.cfm-vb-chip.tone-ok { background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
+.cfm-vb-chip.tone-warn { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+.cfm-vb-chip.tone-neutral { background: #f1f5f9; color: #64748b; border-color: #e2e8f0; }
+
+/* ---- actuals-integrity drill ---- */
+.cfm-sr-actuals { margin-top: 12px; }
+.cfm-sr-toggle.is-warn { color: #b45309; font-weight: 600; }
+.cfm-sr-actuals-body { margin-top: 6px; }
+
+/* ---- unmatched labels, now mappable ---- */
+.cfm-unmatched { display: block; margin-bottom: 12px; }
+.cfm-unmatched-list { display: flex; flex-direction: column; gap: 5px; margin-top: 7px; }
+.cfm-unmatched-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  padding: 4px 8px; border-radius: 7px; background: #fffbeb; border: 1px solid #fde68a; }
+.cfm-unmatched-row.is-mapped { background: #f0fdf4; border-color: #bbf7d0; }
+.cfm-unmatched-label { font-size: 12px; color: #92400e; font-weight: 500; min-width: 160px; }
+.is-mapped .cfm-unmatched-label { color: #15803d; }
+.cfm-unmatched-mapped { font-size: 11.5px; color: #15803d; font-weight: 600; }
+.cfm-unmatched-map { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.cfm-unmatched-map select { font-size: 12px; padding: 4px 7px; border: 1px solid #e2e8f0;
+  border-radius: 6px; background: #fff; color: #374151; max-width: 280px; }

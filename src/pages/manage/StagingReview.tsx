@@ -36,6 +36,22 @@ type Project = {
   net: number | null
   n_rows: number
 }
+type ActualsChange = {
+  line_code: string; category: string | null; nature: string | null
+  year: number; month: number
+  old_value: number | null; new_value: number | null; diff: number | null
+  source_version: string | null
+}
+type ActualsDiffData = {
+  area: string; currency: string
+  n_changed: number; n_staged_actual_keys: number; n_existing_actual_keys: number
+  changes: ActualsChange[]
+}
+// Subset of the cf_import_runs row the verdict banner reads.
+type RunSummary = {
+  recon_status?: string; recon_n_breaks?: number
+  n_unmatched_labels?: number; n_projects?: number; n_projects_new?: number
+}
 
 function unwrap<T>(x: any): T {
   return (Array.isArray(x) ? x[0] : x) as T
@@ -60,9 +76,12 @@ function ymShort(key: string) {
   return `${names[Number(mo)] || mo} ${y.slice(2)}`
 }
 
-export default function StagingReview({ runId, currency }: { runId: string; currency: string }) {
+export default function StagingReview(
+  { runId, currency, run }: { runId: string; currency: string; run?: RunSummary }
+) {
   const [review, setReview] = useState<Review | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
+  const [actualsDiff, setActualsDiff] = useState<ActualsDiffData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -73,14 +92,16 @@ export default function StagingReview({ runId, currency }: { runId: string; curr
     Promise.all([
       supabase.rpc('cf_run_review', { p_run_id: runId }),
       supabase.rpc('cf_run_projects', { p_run_id: runId }),
+      supabase.rpc('cf_run_actuals_diff', { p_run_id: runId }),
     ])
-      .then(([rev, proj]) => {
+      .then(([rev, proj, adiff]) => {
         if (!alive) return
         if (rev.error) throw rev.error
         if (proj.error) throw proj.error
         setReview(unwrap<Review>(rev.data))
         const ps = Array.isArray(proj.data) ? proj.data : proj.data ? [proj.data] : []
         setProjects(ps as Project[])
+        if (!adiff.error) setActualsDiff(unwrap<ActualsDiffData>(adiff.data))
       })
       .catch((e: any) => { if (alive) setError(String(e?.message || e)) })
       .finally(() => { if (alive) setLoading(false) })
@@ -98,6 +119,9 @@ export default function StagingReview({ runId, currency }: { runId: string; curr
 
   return (
     <div className="cfm-sr">
+      {/* 0. Verdict — the glance: is this file safe to push? */}
+      <VerdictBanner run={run} actualsDiff={actualsDiff} cur={cur} />
+
       {/* 1. Balance tiles — the headline */}
       <div className="cfm-sr-tiles">
         <Tile label="Opening" value={b.opening} cur={cur} />
@@ -121,6 +145,9 @@ export default function StagingReview({ runId, currency }: { runId: string; curr
 
       {/* 2. Per-line movement — the core */}
       <LineMovement lines={review.lines} months={review.months} grandTotal={b.net_movement} cur={cur} />
+
+      {/* 2b. Actuals integrity — would the push restate frozen history? */}
+      <ActualsDiff data={actualsDiff} cur={cur} />
 
       {/* 3. Projects extracted — collapsible */}
       <ProjectsExtracted runId={runId} projects={projects} months={review.months} cur={cur} />
@@ -351,6 +378,127 @@ function ProjectsExtracted({
               })}
             </tbody>
           </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* The glance: four checks that decide "safe to push?" — extraction faithfulness
+   (Σ projects vs the file's own total page), actuals integrity (frozen history
+   unchanged), all lines bucketed, projects linked. Reads run-summary fields the
+   stage step already computed + the live actuals diff. */
+type Chip = { key: string; label: string; tone: 'ok' | 'warn' | 'neutral'; hint?: string }
+
+function VerdictBanner(
+  { run, actualsDiff, cur }: { run?: RunSummary; actualsDiff: ActualsDiffData | null; cur: string }
+) {
+  const chips: Chip[] = []
+
+  // 1. Extraction faithful — Σ project sheets vs the file's own total page.
+  const rs = run?.recon_status
+  const breaks = run?.recon_n_breaks ?? 0
+  if (rs === 'tie') chips.push({ key: 'extract', label: 'Extraction ties to file total', tone: 'ok' })
+  else if (rs === 'break') chips.push({ key: 'extract', label: `${breaks} reconciliation break${breaks === 1 ? '' : 's'}`, tone: 'warn', hint: "Σ project sheets ≠ the file's own total page — drill the reconciliation below" })
+  else if (rs === 'no_total' || rs === 'single_area') chips.push({ key: 'extract', label: 'No area total to check against', tone: 'neutral' })
+  else chips.push({ key: 'extract', label: 'Extraction not checked', tone: 'neutral' })
+
+  // 2. Actuals integrity — a push must not restate frozen history.
+  if (actualsDiff) {
+    const { n_changed, n_staged_actual_keys, n_existing_actual_keys } = actualsDiff
+    if (n_existing_actual_keys === 0) chips.push({ key: 'hist', label: 'No prior actuals to disturb', tone: 'ok' })
+    else if (n_changed === 0) chips.push({ key: 'hist', label: 'History preserved', tone: 'ok' })
+    else {
+      const ratio = n_staged_actual_keys ? n_changed / n_staged_actual_keys : 0
+      chips.push({
+        key: 'hist',
+        label: `${fmt(n_changed)} prior actual${n_changed === 1 ? '' : 's'} would change`,
+        tone: 'warn',
+        hint: ratio > 0.5
+          ? `Most actuals differ — usually a currency/basis mismatch with the stored actuals, not real restatements (${cur}).`
+          : 'A push should not restate frozen history — check these below.',
+      })
+    }
+  }
+
+  // 3. Lines all bucketed — unmatched labels are DROPPED from staging.
+  const unmatched = run?.n_unmatched_labels ?? 0
+  if (unmatched === 0) chips.push({ key: 'lines', label: 'All lines bucketed', tone: 'ok' })
+  else chips.push({ key: 'lines', label: `${unmatched} line${unmatched === 1 ? '' : 's'} unmapped`, tone: 'warn', hint: 'These were dropped — map them below so the parser catches them next upload' })
+
+  // 4. Projects (new ones are staged but not yet linked to the catalog).
+  const nProj = run?.n_projects ?? 0
+  const nNew = run?.n_projects_new ?? 0
+  if (nNew > 0) chips.push({ key: 'proj', label: `${nProj} project${nProj === 1 ? '' : 's'} · ${nNew} new`, tone: 'warn', hint: 'New projects are staged but not yet in the catalog' })
+  else if (nProj > 0) chips.push({ key: 'proj', label: `${nProj} project${nProj === 1 ? '' : 's'} linked`, tone: 'ok' })
+
+  // "Safe to push" = extraction not broken, history clean, no dropped lines.
+  // New projects don't block (their data is kept) — they're just informational.
+  const extractOk = rs !== 'break'
+  const histOk = !actualsDiff || actualsDiff.n_changed === 0 || actualsDiff.n_existing_actual_keys === 0
+  const linesOk = unmatched === 0
+  const safe = extractOk && histOk && linesOk
+
+  return (
+    <div className={`cfm-verdict-banner ${safe ? 'is-safe' : 'is-review'}`}>
+      <div className="cfm-vb-head">
+        <span className="cfm-vb-dot" />
+        {safe ? 'Safe to push' : 'Review before pushing'}
+      </div>
+      <div className="cfm-vb-chips">
+        {chips.map(c => (
+          <span key={c.key} className={`cfm-vb-chip tone-${c.tone}`} title={c.hint || ''}>
+            <span className="cfm-vb-chip-mark">{c.tone === 'ok' ? '✓' : c.tone === 'warn' ? '!' : '–'}</span>
+            {c.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* Actuals integrity drill — the periods this file would overwrite in cf_actuals
+   with a different value. Only renders when there's something to flag. */
+function ActualsDiff({ data, cur }: { data: ActualsDiffData | null; cur: string }) {
+  const [open, setOpen] = useState(false)
+  if (!data || data.n_changed === 0) return null
+  const shown = data.changes || []
+  const ratio = data.n_staged_actual_keys ? data.n_changed / data.n_staged_actual_keys : 0
+  return (
+    <div className="cfm-sr-actuals">
+      <button className="cfm-sr-toggle is-warn" onClick={() => setOpen(o => !o)}>
+        <span className="cfm-sr-caret">{open ? '▾' : '▸'}</span>
+        Actuals that would change ({fmt(data.n_changed)})
+      </button>
+      {open && (
+        <div className="cfm-sr-actuals-body">
+          <div className="cfm-sr-cap cfm-sr-cap-sm">
+            A push overwrites elapsed periods into actuals. These already have a stored
+            actual that differs from this file
+            {ratio > 0.5 ? ' — most lines differ, which usually means a currency/basis mismatch with the stored actuals, not real restatements' : ''}. {cur}.
+          </div>
+          <table className="cfm-sr-table">
+            <thead>
+              <tr>
+                <th>Line</th><th>Period</th>
+                <th className="num">Stored</th><th className="num">This file</th><th className="num">Δ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((c, i) => (
+                <tr key={i}>
+                  <td><span className="mono">{c.line_code}</span></td>
+                  <td>{c.year}-{String(c.month).padStart(2, '0')}</td>
+                  <td className="num">{fmt(c.old_value)}</td>
+                  <td className="num">{fmt(c.new_value)}</td>
+                  <td className={`num ${Number(c.diff) < 0 ? 'neg' : ''}`}>{fmt(c.diff)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {data.n_changed > shown.length && (
+            <div className="cfm-sr-cap cfm-sr-cap-sm">Showing the {shown.length} largest of {fmt(data.n_changed)}.</div>
+          )}
         </div>
       )}
     </div>

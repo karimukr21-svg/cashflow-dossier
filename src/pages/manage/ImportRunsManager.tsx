@@ -40,6 +40,8 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
   const [versions, setVersions] = useState<any[]>([])      // all cf_versions
   // Per-run push cascade choices: run_id -> { cycle?: "YYYY-MM", version?: version_code | '__new__' }
   const [pushPick, setPushPick] = useState<Record<string, { cycle?: string; version?: string }>>({})
+  // Canonical line catalog — feeds the inline "map an unmatched label" control.
+  const [lines, setLines] = useState<any[]>([])
 
   const fetchRuns = useCallback(async () => {
     setLoading(true)
@@ -65,7 +67,16 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
     setVersions(data || [])
   }, [])
 
-  useEffect(() => { fetchRuns(); fetchCycles(); fetchVersions() }, [fetchRuns, fetchCycles, fetchVersions])
+  const fetchLines = useCallback(async () => {
+    const { data } = await supabase.from('cf_lines')
+      .select('line_code, category, nature, description, sort_order, is_active')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true })
+    setLines(data || [])
+  }, [])
+
+  useEffect(() => { fetchRuns(); fetchCycles(); fetchVersions(); fetchLines() },
+    [fetchRuns, fetchCycles, fetchVersions, fetchLines])
 
   const versionsForCycle = (year: any, month: any) =>
     versions.filter(v => v.cycle_year === year && v.cycle_month === month)
@@ -343,9 +354,9 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
                     <div><span className="cfm-dl">Staged</span>{fmtDate(run.created_at)}</div>
                   </div>
 
-                  <StagingReview runId={run.run_id} currency={run.currency} />
+                  <StagingReview runId={run.run_id} currency={run.currency} run={run} />
 
-                  <UnmatchedLabels summary={run.recon_summary} />
+                  <UnmatchedLabels summary={run.recon_summary} lines={lines} canManage={canManage} />
 
                   <div className="cfm-run-area-edit" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
                     <span><span className="cfm-dl">Area:</span> <strong>{run.area}</strong></span>
@@ -465,16 +476,69 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
   )
 }
 
-function UnmatchedLabels({ summary }: { summary: any }) {
+function UnmatchedLabels({ summary, lines, canManage }: {
+  summary: any
+  lines: { line_code: string; category: string; nature: string; description: string }[]
+  canManage: boolean
+}) {
   const labels = summary?.unmatched_labels
+  const [picks, setPicks] = useState<Record<string, string>>({})
+  const [done, setDone] = useState<Record<string, string>>({})   // label -> line_code mapped this session
+  const [busy, setBusy] = useState<string | null>(null)
   if (!labels || Object.keys(labels).length === 0) return null
-  const entries = Object.entries(labels).sort((a: any, b: any) => b[1] - a[1])
+  const entries = Object.entries(labels).sort((a: any, b: any) => (b[1] as number) - (a[1] as number))
+
+  const mapLabel = async (label: string) => {
+    const code = picks[label]
+    if (!code) return
+    setBusy(label)
+    const { error } = await supabase.rpc('cf_map_line_alias', {
+      p_alias: label, p_line_code: code, p_notes: 'mapped in staging',
+    })
+    setBusy(null)
+    if (error) { alert('Map failed: ' + error.message); return }
+    setDone(d => ({ ...d, [label]: code }))
+  }
+
   return (
     <div className="cfm-unmatched">
-      <span className="cfm-unmatched-head">Lines in the file that didn't map onto our chart (dropped):</span>
-      {entries.map(([lab, n]: any) => (
-        <span key={lab} className="cfm-unmatched-pill" title={`${n}×`}>{lab}{n > 1 ? ` ×${n}` : ''}</span>
-      ))}
+      <span className="cfm-unmatched-head">
+        Lines in the file that didn't map onto our chart (dropped). Map them so the parser catches them next upload:
+      </span>
+      <div className="cfm-unmatched-list">
+        {entries.map(([lab, n]: any) => {
+          const mappedCode = done[lab]
+          return (
+            <div key={lab} className={`cfm-unmatched-row ${mappedCode ? 'is-mapped' : ''}`}>
+              <span className="cfm-unmatched-label" title={`${n}×`}>{lab}{n > 1 ? ` ×${n}` : ''}</span>
+              {mappedCode ? (
+                <span className="cfm-unmatched-mapped">→ {mappedCode} ✓</span>
+              ) : canManage ? (
+                <span className="cfm-unmatched-map">
+                  <select
+                    value={picks[lab] || ''}
+                    onChange={e => setPicks(p => ({ ...p, [lab]: e.target.value }))}
+                  >
+                    <option value="">Map to…</option>
+                    {lines.map(l => (
+                      <option key={l.line_code} value={l.line_code}>
+                        {l.category} · {l.nature} · {l.description}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className="cfm-btn cfm-btn-ghost cfm-btn-sm"
+                    disabled={!picks[lab] || busy === lab}
+                    onClick={() => mapLabel(lab)}
+                  >
+                    {busy === lab ? '…' : 'Map'}
+                  </button>
+                </span>
+              ) : null}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
