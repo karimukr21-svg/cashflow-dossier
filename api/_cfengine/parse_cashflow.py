@@ -24,6 +24,7 @@ Usage:
 """
 import openpyxl, glob, os, json, re, datetime, argparse, sys
 from collections import defaultdict, Counter
+from openpyxl.utils import get_column_letter
 
 SRC = '/Users/karimhakawati/Library/CloudStorage/OneDrive-CCC/GACC - 05. TREASURY/Areas April 2026 Actual/'
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -505,13 +506,13 @@ def parse_sheet(ws, area, sheet_name, resolver, as_of, verbose=False):
     project_code = project_code or sheet_name.strip()
 
     out_rows = []
-    unmatched = Counter()
+    unmatched = {}   # label -> {count, cells: ["Sheet!C12", ...]} for reviewer lookup
     direction = None
     section = None
     post_ending = False
     start = hdr['header_row'] + 1
 
-    for r in rows[start:]:
+    for i, r in enumerate(rows[start:], start=start):
         label = r[lc] if lc < len(r) and isinstance(r[lc], str) else None
         seccell = r[sc] if sc < len(r) and isinstance(r[sc], str) else None
         # update section from the section column
@@ -544,7 +545,12 @@ def parse_sheet(ws, area, sheet_name, resolver, as_of, verbose=False):
             has_val = any(isinstance(r[ci], (int, float)) and r[ci] not in (0, None)
                           for ci in periods if ci < len(r))
             if has_val or lt not in ('', 'P R O J E C T'):
-                unmatched[label.strip()] += 1
+                # rows[i] is spreadsheet row i+1; lc is 0-based -> column letter
+                cell = f"{sheet_name}!{get_column_letter(lc + 1)}{i + 1}"
+                ent = unmatched.setdefault(label.strip(), {'count': 0, 'cells': []})
+                ent['count'] += 1
+                if cell not in ent['cells'] and len(ent['cells']) < 5:
+                    ent['cells'].append(cell)
             continue
         for ci, (yy, mm, kind) in periods.items():
             if yy < MIN_YEAR or ci >= len(r):

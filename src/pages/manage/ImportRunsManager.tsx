@@ -343,99 +343,92 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
 
               {isOpen && (
                 <div className="cfm-run-detail">
-                  <div className="cfm-detail-grid">
-                    <div>
-                      <span className="cfm-dl">Assignment</span>
-                      {run.status === 'open'
-                        ? 'Unassigned — pick a cycle + version below to push.'
-                        : `In ${run.pushed_version_code || '—'} · ${stampedCycle?.name || cycleKeyOf(run.cycle_year, run.cycle_month)}`}
+                  {/* header band — destination + action up top, then evidence below */}
+                  <div className="cfm-run-head-band">
+                    <div className="cfm-rhb-area">
+                      <span className="cfm-dl">Area</span>
+                      <strong>{run.area}</strong>
+                      {canManage && (
+                        <button
+                          className="cfm-btn cfm-btn-ghost cfm-btn-sm"
+                          disabled={busy === run.run_id}
+                          onClick={() => handleEditArea(run)}
+                        >
+                          Edit
+                        </button>
+                      )}
                     </div>
-                    <div><span className="cfm-dl">Rows</span>{fmtNum(total)}</div>
-                    <div><span className="cfm-dl">Staged</span>{fmtDate(run.created_at)}</div>
+                    {canManage && (run.status === 'open' || run.status === 'pushed') && (
+                      <div className="cfm-rhb-assign">
+                        <label className="cfm-field cfm-field-inline">
+                          <span>Cycle</span>
+                          <select
+                            value={pick.cycle ?? ''}
+                            onChange={e => {
+                              const v = e.target.value
+                              setPushPick(p => ({ ...p, [run.run_id]: { cycle: v || undefined, version: undefined } }))
+                            }}
+                          >
+                            <option value="">Choose a cycle…</option>
+                            {cycles.map(c => {
+                              const k = cycleKeyOf(c.cycle_year, c.cycle_month)
+                              return (
+                                <option key={k} value={k}>
+                                  {c.name} · as-of {c.as_of_date}{c.is_legacy ? ' · legacy' : ''}
+                                </option>
+                              )
+                            })}
+                          </select>
+                        </label>
+                        <label className="cfm-field cfm-field-inline cfm-push-target">
+                          <span>Version</span>
+                          <select
+                            value={pick.version ?? ''}
+                            disabled={!pick.cycle}
+                            onChange={e => {
+                              const v = e.target.value
+                              setPushPick(p => ({ ...p, [run.run_id]: { ...(p[run.run_id] || {}), version: v || undefined } }))
+                            }}
+                          >
+                            <option value="">Choose a version…</option>
+                            {cycleVersions.map(v => (
+                              <option key={v.version_code} value={v.version_code}>
+                                {v.version_code}{v.label ? ` — ${v.label}` : ''}{v.is_current ? ' ●' : ''}
+                              </option>
+                            ))}
+                            <option value="__new__">＋ New labelled version…</option>
+                          </select>
+                        </label>
+                        <button
+                          className="cfm-btn cfm-btn-primary"
+                          disabled={busy === run.run_id || !pick.cycle || !pick.version}
+                          onClick={() => handlePush(run)}
+                        >
+                          {busy === run.run_id ? 'Pushing…' : (run.status === 'pushed' ? 'Re-push' : 'Push')}
+                        </button>
+                        <button
+                          className="cfm-btn cfm-btn-ghost"
+                          disabled={busy === run.run_id}
+                          onClick={() => handleDiscard(run)}
+                        >
+                          Discard
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="cfm-rhb-meta">
+                    {run.status === 'open'
+                      ? <span>Unassigned — pick a cycle + version, then Push. Area detected from the filename — Edit if wrong.</span>
+                      : <span>In <strong>{run.pushed_version_code || '—'}</strong> · {stampedCycle?.name || cycleKeyOf(run.cycle_year, run.cycle_month)}</span>}
+                    <span className="cfm-rhb-meta-stat">{fmtNum(total)} rows · staged {fmtDate(run.created_at)}</span>
+                    {run.status === 'pushed' && run.pushed_version_code && (
+                      <span className="cfm-pushed-note">Loaded — publish it in Cycles &amp; versions.</span>
+                    )}
                   </div>
 
                   <StagingReview runId={run.run_id} currency={run.currency} run={run} />
 
                   <UnmatchedLabels summary={run.recon_summary} lines={lines} canManage={canManage} />
-
-                  <div className="cfm-run-area-edit" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
-                    <span><span className="cfm-dl">Area:</span> <strong>{run.area}</strong></span>
-                    {canManage && (
-                      <button
-                        className="cfm-btn cfm-btn-ghost"
-                        disabled={busy === run.run_id}
-                        onClick={() => handleEditArea(run)}
-                      >
-                        Edit
-                      </button>
-                    )}
-                  </div>
-                  <div className="cfm-muted" style={{ fontSize: '0.8em', opacity: 0.7, marginTop: 2 }}>
-                    Detected from the filename — correct it here if wrong before pushing.
-                  </div>
-
-                  {canManage && (run.status === 'open' || run.status === 'pushed') && (
-                    <div className="cfm-run-actions" style={{ display: 'flex', alignItems: 'flex-end', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-                      <label className="cfm-field cfm-field-inline">
-                        <span>Cycle</span>
-                        <select
-                          value={pick.cycle ?? ''}
-                          onChange={e => {
-                            const v = e.target.value
-                            setPushPick(p => ({ ...p, [run.run_id]: { cycle: v || undefined, version: undefined } }))
-                          }}
-                        >
-                          <option value="">Choose a cycle…</option>
-                          {cycles.map(c => {
-                            const k = cycleKeyOf(c.cycle_year, c.cycle_month)
-                            return (
-                              <option key={k} value={k}>
-                                {c.name} · as-of {c.as_of_date}{c.is_legacy ? ' · legacy' : ''}
-                              </option>
-                            )
-                          })}
-                        </select>
-                      </label>
-                      <label className="cfm-field cfm-field-inline cfm-push-target">
-                        <span>Version</span>
-                        <select
-                          value={pick.version ?? ''}
-                          disabled={!pick.cycle}
-                          onChange={e => {
-                            const v = e.target.value
-                            setPushPick(p => ({ ...p, [run.run_id]: { ...(p[run.run_id] || {}), version: v || undefined } }))
-                          }}
-                        >
-                          <option value="">Choose a version…</option>
-                          {cycleVersions.map(v => (
-                            <option key={v.version_code} value={v.version_code}>
-                              {v.version_code}{v.label ? ` — ${v.label}` : ''}{v.is_current ? ' ●' : ''}
-                            </option>
-                          ))}
-                          <option value="__new__">＋ New labelled version…</option>
-                        </select>
-                      </label>
-                      <button
-                        className="cfm-btn cfm-btn-primary"
-                        disabled={busy === run.run_id || !pick.cycle || !pick.version}
-                        onClick={() => handlePush(run)}
-                      >
-                        {busy === run.run_id ? 'Pushing…' : (run.status === 'pushed' ? 'Re-push' : 'Push')}
-                      </button>
-                      <button
-                        className="cfm-btn cfm-btn-ghost"
-                        disabled={busy === run.run_id}
-                        onClick={() => handleDiscard(run)}
-                      >
-                        Discard
-                      </button>
-                      {run.status === 'pushed' && run.pushed_version_code && (
-                        <span className="cfm-pushed-note">
-                          Loaded into <strong>{run.pushed_version_code}</strong> — publish it in Cycles &amp; versions.
-                        </span>
-                      )}
-                    </div>
-                  )}
 
                   <details className="cfm-recon-drill">
                     <summary>Reconciliation — Σ projects vs area total ({run.currency})</summary>
@@ -482,11 +475,18 @@ function UnmatchedLabels({ summary, lines, canManage }: {
   canManage: boolean
 }) {
   const labels = summary?.unmatched_labels
+  const [open, setOpen] = useState(false)
   const [picks, setPicks] = useState<Record<string, string>>({})
   const [done, setDone] = useState<Record<string, string>>({})   // label -> line_code mapped this session
   const [busy, setBusy] = useState<string | null>(null)
   if (!labels || Object.keys(labels).length === 0) return null
-  const entries = Object.entries(labels).sort((a: any, b: any) => (b[1] as number) - (a[1] as number))
+  // Tolerate the old {label: count} shape and the new {label: {count, locations}}.
+  const norm = (v: any) => typeof v === 'number'
+    ? { count: v, locations: [] as string[] }
+    : { count: (v?.count ?? 0) as number, locations: (v?.locations ?? []) as string[] }
+  const entries = Object.entries(labels)
+    .map(([lab, v]) => [lab, norm(v)] as [string, { count: number; locations: string[] }])
+    .sort((a, b) => b[1].count - a[1].count)
 
   const mapLabel = async (label: string) => {
     const code = picks[label]
@@ -502,43 +502,62 @@ function UnmatchedLabels({ summary, lines, canManage }: {
 
   return (
     <div className="cfm-unmatched">
-      <span className="cfm-unmatched-head">
-        Lines in the file that didn't map onto our chart (dropped). Map them so the parser catches them next upload:
-      </span>
-      <div className="cfm-unmatched-list">
-        {entries.map(([lab, n]: any) => {
-          const mappedCode = done[lab]
-          return (
-            <div key={lab} className={`cfm-unmatched-row ${mappedCode ? 'is-mapped' : ''}`}>
-              <span className="cfm-unmatched-label" title={`${n}×`}>{lab}{n > 1 ? ` ×${n}` : ''}</span>
-              {mappedCode ? (
-                <span className="cfm-unmatched-mapped">→ {mappedCode} ✓</span>
-              ) : canManage ? (
-                <span className="cfm-unmatched-map">
-                  <select
-                    value={picks[lab] || ''}
-                    onChange={e => setPicks(p => ({ ...p, [lab]: e.target.value }))}
-                  >
-                    <option value="">Map to…</option>
-                    {lines.map(l => (
-                      <option key={l.line_code} value={l.line_code}>
-                        {l.category} · {l.nature} · {l.description}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    className="cfm-btn cfm-btn-ghost cfm-btn-sm"
-                    disabled={!picks[lab] || busy === lab}
-                    onClick={() => mapLabel(lab)}
-                  >
-                    {busy === lab ? '…' : 'Map'}
-                  </button>
-                </span>
-              ) : null}
-            </div>
-          )
-        })}
-      </div>
+      <button className="cfm-sr-toggle is-warn" onClick={() => setOpen(o => !o)}>
+        <span className="cfm-sr-caret">{open ? '▾' : '▸'}</span>
+        Lines that didn't map ({entries.length})
+      </button>
+      {open && (
+        <div className="cfm-unmatched-body">
+          <div className="cfm-sr-cap cfm-sr-cap-sm">
+            These rows were dropped from staging. Map each to a canonical line so the parser catches it next upload.
+          </div>
+          <div className="cfm-unmatched-list">
+            {entries.map(([lab, info]) => {
+              const mappedCode = done[lab]
+              return (
+                <div key={lab} className={`cfm-unmatched-row ${mappedCode ? 'is-mapped' : ''}`}>
+                  <div className="cfm-unmatched-id">
+                    <span className="cfm-unmatched-label" title={`${info.count}×`}>
+                      {lab}{info.count > 1 ? ` ×${info.count}` : ''}
+                    </span>
+                    {info.locations.length > 0 && (
+                      <span className="cfm-unmatched-locs">
+                        {info.locations.map(loc => (
+                          <span key={loc} className="cfm-loc-pill" title="Sheet ! cell in the source file">{loc}</span>
+                        ))}
+                      </span>
+                    )}
+                  </div>
+                  {mappedCode ? (
+                    <span className="cfm-unmatched-mapped">→ {mappedCode} ✓</span>
+                  ) : canManage ? (
+                    <span className="cfm-unmatched-map">
+                      <select
+                        value={picks[lab] || ''}
+                        onChange={e => setPicks(p => ({ ...p, [lab]: e.target.value }))}
+                      >
+                        <option value="">Map to…</option>
+                        {lines.map(l => (
+                          <option key={l.line_code} value={l.line_code}>
+                            {l.category} · {l.nature} · {l.description}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        className="cfm-btn cfm-btn-ghost cfm-btn-sm"
+                        disabled={!picks[lab] || busy === lab}
+                        onClick={() => mapLabel(lab)}
+                      >
+                        {busy === lab ? '…' : 'Map'}
+                      </button>
+                    </span>
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

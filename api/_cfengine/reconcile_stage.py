@@ -179,7 +179,18 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
     # parse every selected project sheet, assign project_code + flags
     proj_rows = []            # normalized rows with project_code resolved
     projects = {}             # project_code -> {sheet, is_area_item, is_jv, n}
-    unmatched_labels = Counter()
+    unmatched_labels = {}     # label -> {count, locations: ["Sheet!C12", ...]}
+
+    def _merge_unmatched(src):
+        for lab, info in (src or {}).items():
+            # tolerate the old {label: count} shape just in case
+            cnt = info['count'] if isinstance(info, dict) else info
+            cells = info.get('cells', []) if isinstance(info, dict) else []
+            agg = unmatched_labels.setdefault(lab, {'count': 0, 'locations': []})
+            agg['count'] += cnt
+            for cell in cells:
+                if cell not in agg['locations'] and len(agg['locations']) < 8:
+                    agg['locations'].append(cell)
     nat = {L['line_code']: L['nature'] for L in resolver_lines(resolver)}
     for n in sel:
         rows, meta = parse_sheet(wb[n], area, n, resolver, as_of)
@@ -199,8 +210,7 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
         p['is_area_item'] = p['is_area_item'] or area_item
         p['is_jv'] = p['is_jv'] or jv
         p['n'] += len(rows)
-        for lab, c in meta['unmatched'].items():
-            unmatched_labels[lab] += c
+        _merge_unmatched(meta['unmatched'])
 
     # single-entity areas: no per-project decomposition — stage the area's own
     # cash-flow sheet under _AREA (nothing to reconcile against).
@@ -214,8 +224,7 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
                     r = dict(r); r['project_code'] = '_AREA'; proj_rows.append(r)
                 projects['_AREA'] = {'sheets': [fb], 'is_area_item': True,
                                      'is_jv': False, 'n': len(rows)}
-                for lab, c in (meta['unmatched'] or {}).items():
-                    unmatched_labels[lab] += c
+                _merge_unmatched(meta['unmatched'])
                 single_area = True
 
     # aggregate project rows to canonical grain (sum within-run dups, e.g. _AREA)
@@ -325,7 +334,9 @@ def fmt(res, full=False):
     if ai: L.append(f"  area-items(_AREA): {', '.join(ai)}")
     if jv: L.append(f"  JV: {', '.join(jv)}")
     if res['unmatched_labels']:
-        L.append("  UNMATCHED: " + ", ".join(f"{k!r}x{c}" for k, c in res['unmatched_labels'].items()))
+        L.append("  UNMATCHED: " + ", ".join(
+            f"{k!r}x{(v['count'] if isinstance(v, dict) else v)}"
+            for k, v in res['unmatched_labels'].items()))
     rb = [b for b in res['breaks'] if b['classification'] == 'real']
     if rb:
         L.append(f"  -- real flow breaks ({len(rb)}) --")

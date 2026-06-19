@@ -322,3 +322,21 @@
 .cfm-unmatched-map { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
 .cfm-unmatched-map select { font-size: 12px; padding: 4px 7px; border: 1px solid #e2e8f0;
   border-radius: 6px; background: #fff; color: #374151; max-width: 280px; }
+
+/* unmatched: collapsible body + sheet!cell locations */
+.cfm-unmatched-body { margin-top: 6px; }
+.cfm-unmatched-id { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 180px; }
+.cfm-unmatched-label { min-width: 0; }
+.cfm-unmatched-locs { display: flex; flex-wrap: wrap; gap: 4px; }
+.cfm-loc-pill { font-size: 10.5px; font-family: ui-monospace, 'SF Mono', monospace;
+  color: #475569; background: #eef2f7; border: 1px solid #dbe3ec; border-radius: 5px; padding: 1px 6px; }
+
+/* run header band — Area(edit) + Cycle + Version + Push up top */
+.cfm-run-head-band { display: flex; align-items: flex-end; justify-content: space-between;
+  flex-wrap: wrap; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid #f1f5f9; }
+.cfm-rhb-area { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.cfm-rhb-area strong { font-size: 15px; color: #141414; }
+.cfm-rhb-assign { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px; }
+.cfm-rhb-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0 2px;
+  font-size: 11.5px; color: #6b7280; }
+.cfm-rhb-meta-stat { color: #9ca3af; }
