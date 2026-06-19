@@ -29,6 +29,18 @@ export interface ReportData {
   cashSeries: Series[]
   debtSeries: Series[]
   generatedAt: string
+  logoUrl: string
+}
+
+/* A headline card mirroring the on-screen layout. */
+function cardHtml(
+  label: string,
+  value: number | null,
+  variant: '' | 'total' | 'free' = '',
+  group: '' | 'build' | 'group' | 'free' = '',
+): string {
+  const neg = value != null && value < 0
+  return `<div class="card ${variant} ${group ? `g-${group}` : ''}"><span class="cl">${esc(label)}</span><span class="cv ${neg ? 'neg' : ''}">${fmtNum(value)}</span></div>`
 }
 
 const esc = (s: string) =>
@@ -145,6 +157,14 @@ export function buildReportHtml(d: ReportData): string {
   const jv = num(d.groupItems['JV Cash'])
   const blocked = num(d.groupItems['Blocked'])
 
+  // card components (Σ over operating areas) + cash-availability waterfall
+  const sum = (acct: string) => ops.reduce((s, a) => s + (num(d.grid[a]?.[acct]) ?? 0), 0)
+  const cashTot = sum('Cash')
+  const odTot = sum('Overdrafts')
+  const loansTot = sum('Loans')
+  const moneyControl = cashTot - (jv ?? 0)
+  const freeUsable = moneyControl - (blocked ?? 0)
+
   const hasPrior = Object.keys(d.priorNet).length > 0
   const priorOp = ops.reduce((s, a) => s + (d.priorNet[a] ?? 0), 0)
   const priorWithMtb = priorOp + (d.priorNet['MTB Overdraft'] ?? 0)
@@ -168,34 +188,59 @@ export function buildReportHtml(d: ReportData): string {
     (hasPal ? areaRow('Palestine', true) : '') +
     subRow('Total', total, priorTotal, true)
 
-  const kpi = (label: string, n: number | null, lead = false) =>
-    `<div class="kpi ${lead ? 'lead' : ''}"><div class="kl">${label}</div><div class="kv">${fig(n)}</div></div>`
+  const cards =
+    cardHtml('Cash', cashTot, '', 'build') +
+    cardHtml('Overdraft', odTot, '', 'build') +
+    cardHtml('Loans', loansTot, '', 'build') +
+    cardHtml('CC Group Total Actual', groupNet, 'total', 'build') +
+    '<span class="cdiv"></span>' +
+    cardHtml('MTB Loans', mtb, '', 'group') +
+    cardHtml('Palestine', pal, '', 'group') +
+    cardHtml('Total', total, 'total', 'group') +
+    '<span class="cdiv"></span>' +
+    cardHtml('JV Money', jv, '', 'free') +
+    cardHtml('Money under CCC control', moneyControl, 'free', 'free') +
+    cardHtml('Blocked Cash', blocked, '', 'free') +
+    cardHtml("CCC's Free Usable Cash", freeUsable, 'free', 'free')
 
   return `<!doctype html>
 <html><head><meta charset="utf-8"/>
 <title>Group Cash Position — ${esc(fmtPeriodLabel(d.period))}</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500&display=swap');
-  @page { size: A4 portrait; margin: 9mm; }
+  @page { size: A4 landscape; margin: 9mm; }
   * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body { font-family: Rubik, system-ui, sans-serif; color: #141414; margin: 0; font-size: 8.6px; line-height: 1.32; }
-  .head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #E10020; padding-bottom: 6px; margin-bottom: 10px; }
+  .head { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #E10020; padding-bottom: 6px; margin-bottom: 10px; }
+  .hleft { display: flex; align-items: center; gap: 12px; }
+  .logo { height: 30px; width: auto; }
   .head h1 { font-size: 15px; font-weight: 500; margin: 0; }
   .head .ctx { color: #E10020; font-weight: 500; font-size: 11px; }
   .head .gen { font-size: 8px; color: #6b7280; text-align: right; }
-  h2 { font-size: 9.5px; font-weight: 500; margin: 12px 0 5px; text-transform: uppercase; letter-spacing: 0.04em; color: #374151; }
-  .kpis { display: flex; gap: 7px; }
-  .kpi { flex: 1; border: 1px solid #e5e7eb; border-radius: 5px; padding: 6px 8px; }
-  .kpi.lead { border-color: #141414; }
-  .kl { font-size: 7.5px; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; }
-  .kv { font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  h2 { font-size: 9.5px; font-weight: 500; margin: 10px 0 5px; text-transform: uppercase; letter-spacing: 0.04em; color: #374151; }
+  .cards { display: flex; gap: 5px; align-items: stretch; }
+  .card { flex: 1 1 0; min-width: 0; border: 1px solid #e5e7eb; border-top: 2.5px solid #9ca3af; border-radius: 5px; padding: 5px 7px; display: flex; flex-direction: column; gap: 3px; }
+  .card .cl { font-size: 6.6px; text-transform: uppercase; letter-spacing: 0.02em; color: #6b7280; font-weight: 500; line-height: 1.2; }
+  .card .cv { font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .card .cv.neg { color: #E10020; }
+  .card.g-build { border-top-color: #141414; }
+  .card.g-group { border-top-color: #E10020; }
+  .card.g-free { border-top-color: #057a55; }
+  .card.total { background: #E10020; border-color: #E10020; border-top-color: #E10020; }
+  .card.total .cl { color: rgba(255,255,255,0.85); }
+  .card.total .cv, .card.total .cv.neg { color: #fff; }
+  .card.free { background: #ecfdf5; border-color: #6ee7b7; border-top-color: #057a55; }
+  .card.free .cl { color: #047857; }
+  .card.free .cv { color: #065f46; }
+  .card.free .cv.neg { color: #E10020; }
+  .cdiv { flex: 0 0 auto; width: 1px; align-self: stretch; background: #d1d5db; margin: 2px 2px; }
   .charts { display: flex; gap: 12px; }
   .chartbox { flex: 1; border: 1px solid #e5e7eb; border-radius: 5px; padding: 6px 8px 2px; }
   .chartbox .ct { font-size: 8.5px; font-weight: 500; color: #374151; margin-bottom: 2px; }
   .cx { font-size: 6.5px; fill: #6b7280; text-anchor: middle; }
   .cval { font-size: 7.5px; fill: #141414; font-weight: 500; text-anchor: middle; }
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-  th, td { padding: 2.6px 7px; border-bottom: 1px solid #eee; }
+  th, td { padding: 2.3px 7px; border-bottom: 1px solid #eee; }
   th { font-size: 7.2px; text-transform: uppercase; letter-spacing: 0.03em; color: #6b7280; font-weight: 500; text-align: right; }
   th.l, td.l { text-align: left; }
   td.r { text-align: right; }
@@ -205,30 +250,31 @@ export function buildReportHtml(d: ReportData): string {
   tr.sub.strong td { border-top: 2px solid #141414; background: #ededed; }
   .neg { color: #E10020; }
   .muted { color: #9ca3af; }
-  .twocol { display: flex; gap: 16px; align-items: flex-start; }
-  .twocol .tbl { flex: 1.35; }
+  .twocol { display: flex; gap: 18px; align-items: flex-start; }
+  .twocol .tbl { flex: 1.7; }
   .twocol .nar { flex: 1; }
   ul, ol { margin: 3px 0 3px 15px; padding: 0; }
   li { margin: 1.5px 0; }
   .nar p { margin: 3px 0; }
-  .grp { display: flex; gap: 22px; }
+  .grp { display: flex; gap: 22px; margin-top: 4px; }
   .grp .gi { font-size: 9px; }
   .grp .gi b { font-weight: 500; }
 </style></head>
 <body>
   <div class="head">
-    <div><h1>Group Cash Position</h1><div class="ctx">${esc(fmtPeriodLabel(d.period))}</div></div>
+    <div class="hleft">
+      <img class="logo" src="${esc(d.logoUrl)}" alt="CCC"/>
+      <div><h1>Group Cash Position</h1><div class="ctx">${esc(fmtPeriodLabel(d.period))}</div></div>
+    </div>
     <div class="gen">USD (000's)<br/>Generated ${esc(d.generatedAt)}</div>
   </div>
 
-  <div class="kpis">
-    ${kpi('CC Group total', groupNet, true)}${kpi('incl. MTB', groupWithMtb)}${kpi('Total', total)}${kpi('JV Cash', jv)}${kpi('Blocked', blocked)}
-  </div>
+  <div class="cards">${cards}</div>
 
-  <h2>Movement by month</h2>
+  <h2>Movement — last 12 months</h2>
   <div class="charts">
-    <div class="chartbox"><div class="ct">Cash</div>${chartSvg(d.cashSeries, '#141414', d.period)}</div>
-    <div class="chartbox"><div class="ct">Overdrafts &amp; Loans</div>${chartSvg(d.debtSeries, '#E10020', d.period)}</div>
+    <div class="chartbox"><div class="ct">Cash</div>${chartSvg(d.cashSeries.slice(-12), '#141414', d.period)}</div>
+    <div class="chartbox"><div class="ct">Overdrafts &amp; Loans</div>${chartSvg(d.debtSeries.slice(-12), '#E10020', d.period)}</div>
   </div>
 
   <div class="twocol">

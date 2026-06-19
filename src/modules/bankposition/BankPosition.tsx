@@ -56,6 +56,8 @@ export default function BankPosition() {
   const [dirty, setDirty] = useState(false)
   const [status, setStatus] = useState<Status>(null)
 
+  const [showNarrative, setShowNarrative] = useState(false)
+
   // new-month form
   const [showNew, setShowNew] = useState(false)
   const [newMonth, setNewMonth] = useState('')
@@ -256,6 +258,7 @@ export default function BankPosition() {
           cashSeries: cd.map(d => ({ period: d.period, val: d.cash })),
           debtSeries: cd.map(d => ({ period: d.period, val: d.debt })),
           generatedAt: new Date().toLocaleString('en-GB'),
+          logoUrl: window.location.origin + '/ccc-logo.png',
         })
         w.document.open()
         w.document.write(html)
@@ -467,14 +470,18 @@ export default function BankPosition() {
     )
   }
 
-  // headline card + operator glyph
-  const card = (label: string, value: number | null, variant: '' | 'total' | 'free' = '') => (
-    <div className={`bp-card ${variant ? `bp-card-${variant}` : ''}`}>
+  // headline card (variant = emphasis, group = colour accent)
+  const card = (
+    label: string,
+    value: number | null,
+    variant: '' | 'total' | 'free' = '',
+    group: '' | 'build' | 'group' | 'free' = '',
+  ) => (
+    <div className={`bp-card ${variant ? `bp-card-${variant}` : ''} ${group ? `bp-card-g-${group}` : ''}`}>
       <span className="bp-card-label">{label}</span>
       <span className={`bp-card-val ${value != null && value < 0 ? 'neg' : ''}`}>{fmtNum(value)}</span>
     </div>
   )
-  const op = (glyph: string) => <span className="bp-op">{glyph}</span>
 
   if (!canManage) {
     return (
@@ -490,17 +497,6 @@ export default function BankPosition() {
   return (
     <div className="bp-root">
       <header className="bp-head">
-        <div className="bp-head-controls">
-          <button className="bp-btn" onClick={openNewMonth} disabled={saving}>
-            New month
-          </button>
-          <button className="bp-btn" onClick={printReport} disabled={saving || !period}>
-            Print report
-          </button>
-          <button className="bp-btn bp-btn-primary" onClick={save} disabled={saving || !dirty}>
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
         <div className="bp-months-row">
           <div className="bp-yearnav">
             <button
@@ -540,6 +536,20 @@ export default function BankPosition() {
             })}
           </div>
         </div>
+        <div className="bp-head-controls">
+          <button className="bp-btn" onClick={openNewMonth} disabled={saving}>
+            New month
+          </button>
+          <button className="bp-btn" onClick={printReport} disabled={saving || !period}>
+            Print report
+          </button>
+          <button className="bp-btn" onClick={() => setShowNarrative(true)} disabled={!period}>
+            Narrative
+          </button>
+          <button className="bp-btn bp-btn-primary" onClick={save} disabled={saving || !dirty}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
       </header>
 
       {status && <div className={`bp-status bp-status-${status.kind}`}>{status.msg}</div>}
@@ -574,51 +584,21 @@ export default function BankPosition() {
         <div className="bp-loading">Loading…</div>
       ) : (
         <>
-          {/* headline cards — three readable groupings */}
+          {/* headline cards — single row, colour-grouped */}
           <div className="bp-cards">
-            {/* group net build-up: cash + overdraft + loans = CC group total */}
-            <div className="bp-cg bp-cg-build">
-              <div className="bp-cg-title">Group net build-up</div>
-              <div className="bp-cg-row">
-                {card('Cash', cashTot)}
-                {op('+')}
-                {card('Overdraft', odTot)}
-                {op('+')}
-                {card('Loans', loansTot)}
-                {op('=')}
-                {card('CC Group Total Actual', groupNet, 'total')}
-              </div>
-            </div>
-
-            {/* to group total: + MTB + Palestine = Total */}
-            <div className="bp-cg bp-cg-total">
-              <div className="bp-cg-title">Group total</div>
-              <div className="bp-cg-row">
-                {card('CC Group Total Actual', groupNet)}
-                {op('+')}
-                {card('MTB Loans', mtb)}
-                {op('+')}
-                {card('Palestine', palestine)}
-                {op('=')}
-                {card('Total', grandTotal, 'total')}
-              </div>
-            </div>
-
-            {/* cash-availability waterfall */}
-            <div className="bp-cg bp-cg-free">
-              <div className="bp-cg-title">Cash availability</div>
-              <div className="bp-cg-row">
-                {card('Cash', cashTot)}
-                {op('−')}
-                {card('JV Money', jvCash)}
-                {op('=')}
-                {card('Money under CCC control', moneyControl, 'free')}
-                {op('−')}
-                {card('Blocked Cash', blocked)}
-                {op('=')}
-                {card("CCC's Free Usable Cash", freeUsable, 'free')}
-              </div>
-            </div>
+            {card('Cash', cashTot, '', 'build')}
+            {card('Overdraft', odTot, '', 'build')}
+            {card('Loans', loansTot, '', 'build')}
+            {card('CC Group Total Actual', groupNet, 'total', 'build')}
+            <span className="bp-card-div" />
+            {card('MTB Loans', mtb, '', 'group')}
+            {card('Palestine', palestine, '', 'group')}
+            {card('Total', grandTotal, 'total', 'group')}
+            <span className="bp-card-div" />
+            {card('JV Money', jvCash, '', 'free')}
+            {card('Money under CCC control', moneyControl, 'free', 'free')}
+            {card('Blocked Cash', blocked, '', 'free')}
+            {card("CCC's Free Usable Cash", freeUsable, 'free', 'free')}
           </div>
 
           {/* area × account grid */}
@@ -671,10 +651,14 @@ export default function BankPosition() {
             </div>
           </div>
 
-          {/* month narrative */}
-          <div className="bp-narrative">
+        </>
+      )}
+
+      {showNarrative && (
+        <div className="bp-modal-backdrop" onClick={() => setShowNarrative(false)}>
+          <div className="bp-modal" onClick={e => e.stopPropagation()}>
             <div className="bp-narrative-head">
-              <h2 className="bp-h2">Narrative</h2>
+              <h2 className="bp-h2">Narrative — {period ? fmtPeriodLabel(period) : ''}</h2>
               <div className="bp-list-tools">
                 <button type="button" className="bp-tool bp-tool-b" onClick={() => wrapSel('**')} title="Bold">
                   B
@@ -702,10 +686,16 @@ export default function BankPosition() {
                 setDirty(true)
               }}
               placeholder="Cash position commentary for this month…"
-              rows={8}
+              rows={16}
             />
+            <div className="bp-modal-foot">
+              <span className="bp-modal-hint">Changes save with the month’s Save button.</span>
+              <button type="button" className="bp-btn bp-btn-primary" onClick={() => setShowNarrative(false)}>
+                Done
+              </button>
+            </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   )

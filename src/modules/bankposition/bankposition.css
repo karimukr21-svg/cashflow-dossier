@@ -10,23 +10,24 @@
 
 .bp-head {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
+  align-items: center;
+  gap: 16px;
   margin-bottom: 16px;
 }
 .bp-head-controls {
   display: flex;
   align-items: center;
   gap: 10px;
-  align-self: flex-end;
+  flex: 0 0 auto;
 }
 
-/* ── year nav + month buttons (full-width bar) ────────────────────── */
+/* ── year nav + month buttons (fills the row, left of the actions) ── */
 .bp-months-row {
   display: flex;
   align-items: center;
   gap: 14px;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .bp-yearnav {
   display: flex;
@@ -190,64 +191,52 @@
   font-size: 13px;
 }
 
-/* ── headline cards (grouped) ─────────────────────────────────────── */
+/* ── headline cards (single row, colour-grouped) ──────────────────── */
 .bp-cards {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
+  align-items: stretch;
+  gap: 7px;
   margin-bottom: 20px;
 }
-.bp-cg {
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--mute);
-  border-radius: 8px;
-  background: var(--surface);
-  padding: 10px 14px 12px;
-}
-.bp-cg-build {
-  border-left-color: var(--charcoal);
-}
-.bp-cg-total {
-  border-left-color: var(--crimson);
-}
-.bp-cg-free {
-  border-left-color: #057a55;
-}
-.bp-cg-title {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--mute);
-  font-weight: 500;
-  margin-bottom: 8px;
-}
-.bp-cg-row {
-  display: flex;
-  align-items: stretch;
-  gap: 8px;
-  flex-wrap: wrap;
+.bp-card-div {
+  flex: 0 0 auto;
+  width: 1px;
+  align-self: stretch;
+  background: var(--border);
+  margin: 2px 3px;
 }
 .bp-card {
   flex: 1 1 0;
-  min-width: 96px;
+  min-width: 0;
   border: 1px solid var(--border);
+  border-top: 2.5px solid var(--mute);
   border-radius: 7px;
   background: var(--surface);
-  padding: 9px 11px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
   gap: 5px;
 }
+/* group colour accents (top border) */
+.bp-card-g-build {
+  border-top-color: var(--charcoal);
+}
+.bp-card-g-group {
+  border-top-color: var(--crimson);
+}
+.bp-card-g-free {
+  border-top-color: #057a55;
+}
 .bp-card-label {
-  font-size: 9.5px;
+  font-size: 9px;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
   color: var(--mute);
   font-weight: 500;
   line-height: 1.25;
 }
 .bp-card-val {
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 500;
   color: var(--charcoal);
   font-variant-numeric: tabular-nums;
@@ -255,21 +244,24 @@
 .bp-card-val.neg {
   color: var(--bad);
 }
-/* derived / emphasised cards */
+/* emphasised TOTAL cards — filled crimson, white text */
 .bp-card-total {
   background: var(--crimson);
   border-color: var(--crimson);
+  border-top-color: var(--crimson);
 }
 .bp-card-total .bp-card-label {
-  color: rgba(255, 255, 255, 0.82);
+  color: rgba(255, 255, 255, 0.85);
 }
 .bp-card-total .bp-card-val,
 .bp-card-total .bp-card-val.neg {
   color: #fff;
 }
+/* emphasised FREE/derived cards — green tint */
 .bp-card-free {
   background: #ecfdf5;
   border-color: #6ee7b7;
+  border-top-color: #057a55;
 }
 .bp-card-free .bp-card-label {
   color: #047857;
@@ -279,14 +271,6 @@
 }
 .bp-card-free .bp-card-val.neg {
   color: var(--bad);
-}
-.bp-op {
-  align-self: center;
-  font-size: 16px;
-  color: var(--mute);
-  font-weight: 400;
-  flex: 0 0 auto;
-  padding: 0 1px;
 }
 
 /* ── grid ─────────────────────────────────────────────────────────── */
@@ -434,6 +418,53 @@
   height: 18px;
   background: var(--border);
   margin: 0 2px;
+}
+
+/* ── narrative modal ──────────────────────────────────────────────── */
+.bp-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 20, 20, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 90;
+}
+.bp-modal {
+  width: 100%;
+  max-width: 760px;
+  background: var(--surface);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(20, 20, 20, 0.24);
+  padding: 18px 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.bp-modal textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1.5;
+  color: var(--charcoal);
+  resize: vertical;
+}
+.bp-modal textarea:focus {
+  outline: none;
+  border-color: var(--crimson);
+}
+.bp-modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.bp-modal-hint {
+  font-size: 12px;
+  color: var(--mute);
 }
 
 /* ── group items + narrative ──────────────────────────────────────── */
