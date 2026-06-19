@@ -1,0 +1,215 @@
+/* Treasury Workspace shell — chrome around the active module.
+ * Scoped to .workspace-* and .ws-* so it never touches a module's own UI,
+ * except the one deliberate override that lets a module's 100vh shell fit
+ * inside the body the shell hands it. */
+
+.workspace-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.workspace-bar {
+  flex: 0 0 auto;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px;
+  background: var(--charcoal);
+}
+
+.workspace-bar-brand {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+.workspace-bar-sep {
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 12px;
+}
+.workspace-bar-module {
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.workspace-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+/* Modules size themselves at 100vh; inside the workspace they fill the body
+ * the shell gives them (viewport minus the 40px rail). Higher specificity
+ * than the module's `.shell { height: 100vh }`. */
+.workspace-body .shell {
+  height: 100%;
+}
+
+/* ── Launcher (lives in the dark rail) ───────────────────────────── */
+.ws-launcher {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.ws-launcher:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.34);
+}
+.ws-launcher svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+/* ── Drawer ──────────────────────────────────────────────────────── */
+.ws-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 20, 20, 0.38);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease;
+  z-index: 80;
+}
+.ws-drawer-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.ws-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 264px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  box-shadow: 2px 0 24px rgba(20, 20, 20, 0.14);
+  transform: translateX(-100%);
+  opacity: 0;
+  transition: transform 0.26s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.26s ease;
+  z-index: 81;
+  display: flex;
+  flex-direction: column;
+}
+.ws-drawer.open {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.ws-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.ws-drawer-title {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+  font-weight: 500;
+}
+.ws-drawer-close {
+  border: none;
+  background: transparent;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--mute);
+  cursor: pointer;
+  padding: 0 2px;
+}
+.ws-drawer-close:hover {
+  color: var(--charcoal);
+}
+
+.ws-drawer-list {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ws-mod {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: var(--charcoal);
+  transition: background 0.14s ease;
+}
+.ws-mod:hover {
+  background: var(--surface-alt);
+}
+.ws-mod.active {
+  background: var(--accent-light);
+  border-color: rgba(225, 0, 32, 0.18);
+}
+.ws-mod-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: 7px;
+  background: var(--surface-alt);
+  color: var(--crimson);
+}
+.ws-mod.active .ws-mod-icon {
+  background: #fff;
+}
+.ws-mod-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.ws-mod-label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Gentle staggered reveal of the items once the drawer is open. */
+.ws-drawer.open .ws-mod {
+  animation: wsItemIn 0.3s ease both;
+}
+@keyframes wsItemIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-drawer,
+  .ws-drawer-backdrop,
+  .ws-drawer.open .ws-mod {
+    transition: none;
+    animation: none;
+  }
+}
