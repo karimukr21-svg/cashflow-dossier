@@ -52,6 +52,15 @@ const inline = (s: string) =>
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
 
+/* Auto-bold Tony's standard section labels at the start of a line. */
+const LEAD_LABELS = ['Notable Improvements:', 'Notable Deteriorations:', 'Important Note:', 'Note:']
+const boldLead = (s: string) => {
+  for (const lab of LEAD_LABELS) {
+    if (s.startsWith(lab)) return `<strong>${lab}</strong>${s.slice(lab.length)}`
+  }
+  return s
+}
+
 /** A figure span, negatives shown red and in parens (fmtNum adds the parens). */
 function fig(n: number | null): string {
   const neg = n != null && n < 0
@@ -97,7 +106,7 @@ function narrativeHtml(text: string): string {
       html += `<li>${inline(number[1])}</li>`
     } else {
       close()
-      html += `<p>${inline(line)}</p>`
+      html += `<p>${boldLead(inline(line))}</p>`
     }
   }
   close()
@@ -253,11 +262,11 @@ export function buildReportHtml(d: ReportData): string {
   .twocol { display: flex; gap: 18px; align-items: flex-start; }
   .twocol .tbl { flex: 1.4; }
   .twocol .nar { flex: 1.15; }
-  .narbox { background: #fafafa; border: 1px solid #eee; border-left: 3px solid #E10020; border-radius: 4px; padding: 9px 12px; color: #1f2937; }
-  .narbox p { margin: 4px 0; }
+  .narbox { background: #fafafa; border: 1px solid #eee; border-left: 3px solid #E10020; border-radius: 4px; padding: 10px 13px; color: #1f2937; font-size: 11px; line-height: 1.42; }
+  .narbox p { margin: 5px 0; }
   .narbox p:first-child { margin-top: 0; }
-  .narbox ul, .narbox ol { margin: 5px 0 5px 16px; padding: 0; }
-  .narbox li { margin: 3px 0; line-height: 1.4; padding-left: 2px; }
+  .narbox ul, .narbox ol { margin: 5px 0 5px 17px; padding: 0; }
+  .narbox li { margin: 3.5px 0; line-height: 1.45; padding-left: 2px; }
   .narbox li::marker { color: #E10020; }
   .narbox strong { font-weight: 500; }
 </style></head>
