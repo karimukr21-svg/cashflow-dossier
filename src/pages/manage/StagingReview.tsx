@@ -21,6 +21,7 @@ type Line = {
 type Review = {
   area: string
   currency: string
+  current_year: number
   n_periods: number
   months: Month[]
   balances: { opening: number; net_movement: number; closing_derived: number; ending_stored: number }
@@ -130,7 +131,7 @@ export default function StagingReview(
         <Tile label="File ending (last month)" value={b.ending_stored} cur={cur} />
       </div>
       <div className="cfm-sr-cap">
-        Area cash flow derived from project sheets · {review.n_periods} months · {cur}
+        Current year {review.current_year} · area cash flow from project sheets · {review.n_periods} months · {cur}
       </div>
       {endingZero && (
         <div className="cfm-sr-note">
@@ -143,8 +144,8 @@ export default function StagingReview(
         </div>
       )}
 
-      {/* 2. Per-line movement — the core */}
-      <LineMovement lines={review.lines} months={review.months} grandTotal={b.net_movement} cur={cur} />
+      {/* 2. Per-line movement — the core (current year) */}
+      <LineMovement lines={review.lines} months={review.months} grandTotal={b.net_movement} cur={cur} year={review.current_year} />
 
       {/* 2b. Actuals integrity — would the push restate frozen history? */}
       <ActualsDiff data={actualsDiff} cur={cur} />
@@ -170,7 +171,7 @@ function Tile({ label, value, cur, accent }: { label: string; value: number; cur
    both the area review and per-project detail (showActFc toggles the
    Actual/Forecast columns; project detail shows Total only). */
 function LineMovement({
-  lines, months, grandTotal, cur, showActFc = true, title,
+  lines, months, grandTotal, cur, showActFc = true, title, year,
 }: {
   lines: Line[]
   months: Month[]
@@ -178,6 +179,7 @@ function LineMovement({
   cur: string
   showActFc?: boolean
   title?: string
+  year?: number
 }) {
   const [open, setOpen] = useState<Set<string>>(new Set())
   const monthKeys = months.map(ymKey)
@@ -208,7 +210,7 @@ function LineMovement({
   return (
     <div className="cfm-sr-lines">
       <div className="cfm-sr-section-head">
-        {title || 'Per-line movement'}
+        {title || `Per-line movement${year ? ` · ${year}` : ''}`}
         <span className="cfm-sr-asparsed">as parsed · finalized at push</span>
       </div>
       <table className="cfm-sr-table">

@@ -354,10 +354,15 @@ def resolve_line(label, section, direction, post_ending, resolver, area):
     lt = tight(label)
     if not lt or lt in SKIP_LABELS:
         return None, direction
-    # balance lines
+    # balance lines (exact set, then label-variant keyword fallback, e.g.
+    # "Opening bank balance ($'mil)" / "Ending bank balance")
     if lt in OPENING:
         return 'opening_balance', direction
     if lt in ENDING:
+        return 'ending_balance', direction
+    if 'OPENING' in lt and 'BALANCE' in lt:
+        return 'opening_balance', direction
+    if ('ENDING' in lt or 'CLOSING' in lt) and 'BALANCE' in lt:
         return 'ending_balance', direction
     if post_ending:
         if lt.startswith('LOAN') or lt == 'TREASURYLOANS':
@@ -538,7 +543,7 @@ def parse_sheet(ws, area, sheet_name, resolver, as_of, verbose=False):
             continue
         code, direction = resolve_line(label, section, direction, post_ending,
                                        resolver, area)
-        if lt in ENDING:
+        if lt in ENDING or (('ENDING' in lt or 'CLOSING' in lt) and 'BALANCE' in lt):
             post_ending = True
         if code is None:
             # only report labels that actually carry data (ignore stray text)
