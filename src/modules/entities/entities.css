@@ -407,6 +407,13 @@
   font-weight: 700;
   font-size: 13px;
 }
+.ent-maprow.clickable {
+  cursor: pointer;
+  user-select: none;
+}
+.ent-maprow.clickable:hover {
+  background: var(--surface-alt);
+}
 
 .ent-maprow {
   display: flex;

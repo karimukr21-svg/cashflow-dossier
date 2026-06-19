@@ -410,10 +410,15 @@ function MappingPane({
     const bucketArea =
       item.kind === 'project' && areaNode ? { id: areaNode.id, name: areaNode.name } : undefined
     return (
-      <div key={item.local_key} className={`ent-maprow ${status}${isHeader ? ' header' : ''}`}>
+      <div
+        key={item.local_key}
+        className={`ent-maprow ${status}${isHeader ? ' header' : ''}${toggle ? ' clickable' : ''}`}
+        onClick={toggle ? toggle.onClick : undefined}
+      >
         <div className="ent-local">
           {toggle && (
-            <button type="button" className="ent-twisty" onClick={toggle.onClick}
+            <button type="button" className="ent-twisty"
+              onClick={e => { e.stopPropagation(); toggle.onClick() }}
               aria-label={toggle.open ? 'Collapse' : 'Expand'}>
               <svg viewBox="0 0 24 24" className={toggle.open ? 'open' : ''} aria-hidden="true">
                 <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth={2} />
@@ -427,7 +432,7 @@ function MappingPane({
           </div>
           {count !== undefined && <span className="ent-count">{count}</span>}
         </div>
-        <div className="ent-maps-to">
+        <div className="ent-maps-to" onClick={e => e.stopPropagation()}>
           {status === 'unmapped' ? (
             canMap ? (
               <CanonicalPicker
@@ -517,9 +522,10 @@ function MappingPane({
                 {g.areaItem ? (
                   renderRow(g.areaItem, true, toggle, g.projects.length)
                 ) : (
-                  <div className="ent-maprow header">
+                  <div className="ent-maprow header clickable" onClick={toggle.onClick}>
                     <div className="ent-local">
-                      <button type="button" className="ent-twisty" onClick={toggle.onClick}
+                      <button type="button" className="ent-twisty"
+                        onClick={e => { e.stopPropagation(); toggle.onClick() }}
                         aria-label={open ? 'Collapse' : 'Expand'}>
                         <svg viewBox="0 0 24 24" className={open ? 'open' : ''} aria-hidden="true">
                           <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth={2} />
