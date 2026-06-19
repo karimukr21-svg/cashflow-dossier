@@ -209,6 +209,23 @@
   border-left: 1px solid var(--border);
   padding-left: 6px;
 }
+/* member areas nested under a virtual (grouping) area */
+.ent-kids-areas {
+  border-left-color: rgba(225, 0, 32, 0.25);
+}
+.ent-subarea {
+  margin: 1px 0;
+}
+
+/* virtual / grouping area row */
+.ent-node-virtual .ent-name {
+  font-style: italic;
+}
+.ent-kind-group {
+  color: var(--crimson);
+  border-color: rgba(225, 0, 32, 0.3);
+  background: var(--accent-light);
+}
 
 .ent-ctrls {
   display: inline-flex;

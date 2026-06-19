@@ -73,6 +73,19 @@ export default function Entities() {
     () => nodes.filter(n => n.entity_type === 'area').sort(byOrder),
     [nodes],
   )
+  // Top-level areas (parent_id null) vs member areas nested under a virtual area.
+  const topAreas = useMemo(() => areas.filter(a => !a.parent_id), [areas])
+  const subAreasByParent = useMemo(() => {
+    const m = new Map<string, CanonicalNode[]>()
+    for (const a of areas) {
+      if (!a.parent_id) continue
+      const arr = m.get(a.parent_id) ?? []
+      arr.push(a)
+      m.set(a.parent_id, arr)
+    }
+    for (const arr of m.values()) arr.sort(byOrder)
+    return m
+  }, [areas])
   const projectsByArea = useMemo(() => {
     const m = new Map<string, CanonicalNode[]>()
     for (const n of nodes) {
@@ -130,7 +143,12 @@ export default function Entities() {
       {status && <div className={`ent-toast ${status.kind}`}>{status.msg}</div>}
 
       <div className="ent-panes">
-        <CanonicalPane areas={areas} projectsByArea={projectsByArea} />
+        <CanonicalPane
+          topAreas={topAreas}
+          subAreasByParent={subAreasByParent}
+          projectsByArea={projectsByArea}
+          totalAreas={areas.length}
+        />
         <MappingPane
           sourceKey={sourceKey}
           onSourceChange={setSourceKey}
@@ -154,11 +172,15 @@ export default function Entities() {
  * ================================================================== */
 
 function CanonicalPane({
-  areas,
+  topAreas,
+  subAreasByParent,
   projectsByArea,
+  totalAreas,
 }: {
-  areas: CanonicalNode[]
+  topAreas: CanonicalNode[]
+  subAreasByParent: Map<string, CanonicalNode[]>
   projectsByArea: Map<string, CanonicalNode[]>
+  totalAreas: number
 }) {
   const [open, setOpen] = useState<Set<string>>(new Set())
   const [showInactive, setShowInactive] = useState(false)
@@ -171,8 +193,70 @@ function CanonicalPane({
     })
   }
 
-  const visibleAreas = showInactive ? areas : areas.filter(a => a.is_active)
+  const visibleTop = showInactive ? topAreas : topAreas.filter(a => a.is_active)
   const totalProjects = [...projectsByArea.values()].reduce((s, a) => s + a.length, 0)
+
+  // a real area row: twisty + projects beneath
+  function renderArea(area: CanonicalNode, nested: boolean) {
+    const kids = (projectsByArea.get(area.id) ?? []).filter(p => showInactive || p.is_active)
+    const isOpen = open.has(area.id)
+    return (
+      <div key={area.id} className={nested ? 'ent-subarea' : 'ent-area'}>
+        <div className={`ent-node ent-node-area ${area.is_active ? '' : 'inactive'}`}>
+          <button type="button" className="ent-twisty" onClick={() => toggle(area.id)}
+            aria-label={isOpen ? 'Collapse' : 'Expand'}>
+            <svg viewBox="0 0 24 24" className={isOpen ? 'open' : ''} aria-hidden="true">
+              <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth={2} />
+            </svg>
+          </button>
+          <span className="ent-kind">Area</span>
+          <NodeLabel node={area} />
+          {!area.is_active && <span className="ent-inactive-pill">inactive</span>}
+          <span className="ent-count">{kids.length}</span>
+        </div>
+        {isOpen && (
+          <div className="ent-kids">
+            {kids.map(proj => (
+              <div key={proj.id} className={`ent-node ent-node-proj ${proj.is_active ? '' : 'inactive'}`}>
+                <span className="ent-kind">Project</span>
+                <NodeLabel node={proj} />
+                {!proj.is_active && <span className="ent-inactive-pill">inactive</span>}
+              </div>
+            ))}
+            {kids.length === 0 && <div className="ent-empty">No projects</div>}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // a virtual (grouping) area row: twisty + member areas beneath
+  function renderVirtual(area: CanonicalNode) {
+    const members = (subAreasByParent.get(area.id) ?? []).filter(a => showInactive || a.is_active)
+    const isOpen = open.has(area.id)
+    return (
+      <div key={area.id} className="ent-area">
+        <div className={`ent-node ent-node-area ent-node-virtual ${area.is_active ? '' : 'inactive'}`}>
+          <button type="button" className="ent-twisty" onClick={() => toggle(area.id)}
+            aria-label={isOpen ? 'Collapse' : 'Expand'}>
+            <svg viewBox="0 0 24 24" className={isOpen ? 'open' : ''} aria-hidden="true">
+              <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth={2} />
+            </svg>
+          </button>
+          <span className="ent-kind ent-kind-group">Group</span>
+          <NodeLabel node={area} />
+          {!area.is_active && <span className="ent-inactive-pill">inactive</span>}
+          <span className="ent-count">{members.length}</span>
+        </div>
+        {isOpen && (
+          <div className="ent-kids ent-kids-areas">
+            {members.map(m => renderArea(m, true))}
+            {members.length === 0 && <div className="ent-empty">No areas</div>}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <section className="ent-pane">
@@ -180,62 +264,24 @@ function CanonicalPane({
         <div>
           <h2>Master list — Areas &amp; Projects</h2>
           <p className="ent-sub">
-            {areas.length} areas · {totalProjects} projects · reference only · managed in the dashboard
+            {totalAreas} areas · {totalProjects} projects · reference only · managed in the dashboard
           </p>
         </div>
         <label className="ent-checkline">
-          <input
-            type="checkbox"
-            checked={showInactive}
-            onChange={e => setShowInactive(e.target.checked)}
-          />
+          <input type="checkbox" checked={showInactive}
+            onChange={e => setShowInactive(e.target.checked)} />
           Show inactive
         </label>
       </header>
 
       <div className="ent-tree">
-        {visibleAreas.map((area, i) => {
-          const kids = (projectsByArea.get(area.id) ?? []).filter(
-            p => showInactive || p.is_active,
-          )
-          const isOpen = open.has(area.id)
+        {visibleTop.map((area, i) => {
           const grp = area.area_group ?? 'Ungrouped'
-          const prevGrp = i > 0 ? (visibleAreas[i - 1].area_group ?? 'Ungrouped') : null
-          const showGroup = grp !== prevGrp
+          const prevGrp = i > 0 ? (visibleTop[i - 1].area_group ?? 'Ungrouped') : null
           return (
-            <div key={area.id} className="ent-area">
-              {showGroup && <div className="ent-group-head">{grp}</div>}
-              <div className={`ent-node ent-node-area ${area.is_active ? '' : 'inactive'}`}>
-                <button
-                  type="button"
-                  className="ent-twisty"
-                  onClick={() => toggle(area.id)}
-                  aria-label={isOpen ? 'Collapse' : 'Expand'}
-                >
-                  <svg viewBox="0 0 24 24" className={isOpen ? 'open' : ''} aria-hidden="true">
-                    <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth={2} />
-                  </svg>
-                </button>
-                <span className="ent-kind">Area</span>
-                <NodeLabel node={area} />
-                {!area.is_active && <span className="ent-inactive-pill">inactive</span>}
-                <span className="ent-count">{kids.length}</span>
-              </div>
-              {isOpen && (
-                <div className="ent-kids">
-                  {kids.map(proj => (
-                    <div
-                      key={proj.id}
-                      className={`ent-node ent-node-proj ${proj.is_active ? '' : 'inactive'}`}
-                    >
-                      <span className="ent-kind">Project</span>
-                      <NodeLabel node={proj} />
-                      {!proj.is_active && <span className="ent-inactive-pill">inactive</span>}
-                    </div>
-                  ))}
-                  {kids.length === 0 && <div className="ent-empty">No projects</div>}
-                </div>
-              )}
+            <div key={area.id}>
+              {grp !== prevGrp && <div className="ent-group-head">{grp}</div>}
+              {area.is_virtual ? renderVirtual(area) : renderArea(area, false)}
             </div>
           )
         })}
@@ -244,14 +290,9 @@ function CanonicalPane({
   )
 }
 
-/** Read-only node name + optional code. */
+/** Read-only node name (no codes on this page). */
 function NodeLabel({ node }: { node: CanonicalNode }) {
-  return (
-    <span className="ent-name ent-name-static">
-      {node.name}
-      {node.code && <span className="ent-code">{node.code}</span>}
-    </span>
-  )
+  return <span className="ent-name ent-name-static">{node.name}</span>
 }
 
 /* ================================================================== *
@@ -305,7 +346,8 @@ function MappingPane({
   )
 
   // candidate canonical nodes per kind
-  const areaCandidates = areas
+  // map to real areas only — virtual rollups aren't valid targets
+  const areaCandidates = areas.filter(a => !a.is_virtual)
   const projectCandidates = useMemo(() => {
     const out: { node: CanonicalNode; areaName: string; areaId: string }[] = []
     for (const a of areas) {
