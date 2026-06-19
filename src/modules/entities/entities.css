@@ -173,6 +173,12 @@
 .ent-name:disabled {
   cursor: default;
 }
+.ent-name-static {
+  cursor: default;
+}
+.ent-name-static:hover {
+  background: transparent;
+}
 .ent-code {
   font-size: 11px;
   color: var(--mute);

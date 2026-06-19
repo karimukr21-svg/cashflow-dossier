@@ -3,16 +3,12 @@ import { useRole, canManageCashFlow } from '@/lib/role'
 import {
   loadCanonical,
   loadAliases,
-  createNode,
-  updateNode,
   mapAlias,
   unmapAlias,
   SOURCE_SYSTEMS,
-  OWNER_DEPTS,
   type CanonicalNode,
   type Alias,
   type LocalItem,
-  type EntityType,
 } from './lib'
 import './entities.css'
 
@@ -20,8 +16,7 @@ type Status = { kind: 'ok' | 'err'; msg: string } | null
 
 export default function Entities() {
   const role = useRole()
-  const isAdmin = role === 'admin'
-  const canMap = canManageCashFlow(role) // admin | treasury
+  const canMap = canManageCashFlow(role) // admin | treasury — may edit aliases here
 
   const [nodes, setNodes] = useState<CanonicalNode[]>([])
   const [aliases, setAliases] = useState<Alias[]>([])
@@ -98,42 +93,12 @@ export default function Entities() {
     return m
   }, [aliases, sourceKey])
 
-  // ── canonical mutations (admin only) ──────────────────────────────
   function flash(kind: 'ok' | 'err', msg: string) {
     setStatus({ kind, msg })
     if (kind === 'ok') setTimeout(() => setStatus(s => (s?.msg === msg ? null : s)), 2200)
   }
 
-  async function addArea(name: string) {
-    try {
-      await createNode({ entity_type: 'area', parent_id: null, name, owner_dept: 'group_accounts' })
-      await refresh()
-      flash('ok', `Added area "${name}"`)
-    } catch (e) {
-      flash('err', (e as Error).message)
-    }
-  }
-  async function addProject(areaId: string, name: string) {
-    try {
-      await createNode({ entity_type: 'project', parent_id: areaId, name, owner_dept: 'group_accounts' })
-      await refresh()
-      flash('ok', `Added project "${name}"`)
-    } catch (e) {
-      flash('err', (e as Error).message)
-    }
-  }
-  async function patchNode(id: string, patch: Partial<CanonicalNode>) {
-    // optimistic
-    setNodes(ns => ns.map(n => (n.id === id ? { ...n, ...patch } : n)))
-    try {
-      await updateNode(id, patch)
-    } catch (e) {
-      flash('err', (e as Error).message)
-      await refresh()
-    }
-  }
-
-  // ── alias mutations (admin | treasury) ────────────────────────────
+  // ── alias mutations (admin | treasury) — the only edits made here ──
   async function doMap(item: LocalItem, canonicalId: string) {
     try {
       await mapAlias({
@@ -165,14 +130,7 @@ export default function Entities() {
       {status && <div className={`ent-toast ${status.kind}`}>{status.msg}</div>}
 
       <div className="ent-panes">
-        <CanonicalPane
-          areas={areas}
-          projectsByArea={projectsByArea}
-          isAdmin={isAdmin}
-          onAddArea={addArea}
-          onAddProject={addProject}
-          onPatch={patchNode}
-        />
+        <CanonicalPane areas={areas} projectsByArea={projectsByArea} />
         <MappingPane
           sourceKey={sourceKey}
           onSourceChange={setSourceKey}
@@ -192,27 +150,18 @@ export default function Entities() {
 }
 
 /* ================================================================== *
- * LEFT — canonical tree
+ * LEFT — master list (read-only reference here; managed in the dashboard)
  * ================================================================== */
 
 function CanonicalPane({
   areas,
   projectsByArea,
-  isAdmin,
-  onAddArea,
-  onAddProject,
-  onPatch,
 }: {
   areas: CanonicalNode[]
   projectsByArea: Map<string, CanonicalNode[]>
-  isAdmin: boolean
-  onAddArea: (name: string) => void
-  onAddProject: (areaId: string, name: string) => void
-  onPatch: (id: string, patch: Partial<CanonicalNode>) => void
 }) {
   const [open, setOpen] = useState<Set<string>>(new Set())
   const [showInactive, setShowInactive] = useState(false)
-  const [addingArea, setAddingArea] = useState(false)
 
   function toggle(id: string) {
     setOpen(s => {
@@ -231,8 +180,7 @@ function CanonicalPane({
         <div>
           <h2>Master list — Areas &amp; Projects</h2>
           <p className="ent-sub">
-            {areas.length} areas · {totalProjects} projects · the official list, managed here
-            {isAdmin ? '' : ' · read-only'}
+            {areas.length} areas · {totalProjects} projects · reference only · managed in the dashboard
           </p>
         </div>
         <label className="ent-checkline">
@@ -269,14 +217,9 @@ function CanonicalPane({
                   </svg>
                 </button>
                 <span className="ent-kind">Area</span>
-                <NodeLabel node={area} isAdmin={isAdmin} onPatch={onPatch} />
+                <NodeLabel node={area} />
+                {!area.is_active && <span className="ent-inactive-pill">inactive</span>}
                 <span className="ent-count">{kids.length}</span>
-                <NodeControls
-                  node={area}
-                  isAdmin={isAdmin}
-                  areas={areas}
-                  onPatch={onPatch}
-                />
               </div>
               {isOpen && (
                 <div className="ent-kids">
@@ -286,206 +229,28 @@ function CanonicalPane({
                       className={`ent-node ent-node-proj ${proj.is_active ? '' : 'inactive'}`}
                     >
                       <span className="ent-kind">Project</span>
-                      <NodeLabel node={proj} isAdmin={isAdmin} onPatch={onPatch} />
-                      <NodeControls
-                        node={proj}
-                        isAdmin={isAdmin}
-                        areas={areas}
-                        onPatch={onPatch}
-                      />
+                      <NodeLabel node={proj} />
+                      {!proj.is_active && <span className="ent-inactive-pill">inactive</span>}
                     </div>
                   ))}
-                  {isAdmin && <AddInline label="+ Project" onAdd={n => onAddProject(area.id, n)} />}
-                  {kids.length === 0 && !isAdmin && <div className="ent-empty">No projects</div>}
+                  {kids.length === 0 && <div className="ent-empty">No projects</div>}
                 </div>
               )}
             </div>
           )
         })}
-
-        {isAdmin &&
-          (addingArea ? (
-            <AddInline label="+ Area" autoFocus onAdd={n => { onAddArea(n); setAddingArea(false) }} onCancel={() => setAddingArea(false)} />
-          ) : (
-            <button type="button" className="ent-add-area" onClick={() => setAddingArea(true)}>
-              + Add area
-            </button>
-          ))}
       </div>
     </section>
   )
 }
 
-/** Inline name + active state. Rename on click (admin). */
-function NodeLabel({
-  node,
-  isAdmin,
-  onPatch,
-}: {
-  node: CanonicalNode
-  isAdmin: boolean
-  onPatch: (id: string, patch: Partial<CanonicalNode>) => void
-}) {
-  const [editing, setEditing] = useState(false)
-  const [val, setVal] = useState(node.name)
-  const ref = useRef<HTMLInputElement>(null)
-  useEffect(() => {
-    if (editing) ref.current?.select()
-  }, [editing])
-
-  function commit() {
-    const v = val.trim()
-    setEditing(false)
-    if (v && v !== node.name) onPatch(node.id, { name: v })
-    else setVal(node.name)
-  }
-
-  if (editing) {
-    return (
-      <input
-        ref={ref}
-        className="ent-rename"
-        value={val}
-        onChange={e => setVal(e.target.value)}
-        onBlur={commit}
-        onKeyDown={e => {
-          if (e.key === 'Enter') commit()
-          if (e.key === 'Escape') {
-            setVal(node.name)
-            setEditing(false)
-          }
-        }}
-      />
-    )
-  }
+/** Read-only node name + optional code. */
+function NodeLabel({ node }: { node: CanonicalNode }) {
   return (
-    <button
-      type="button"
-      className="ent-name"
-      title={isAdmin ? 'Click to rename' : undefined}
-      onClick={() => isAdmin && setEditing(true)}
-      disabled={!isAdmin}
-    >
+    <span className="ent-name ent-name-static">
       {node.name}
       {node.code && <span className="ent-code">{node.code}</span>}
-    </button>
-  )
-}
-
-/** Owner dept, re-parent (projects), active toggle — admin only. */
-function NodeControls({
-  node,
-  isAdmin,
-  areas,
-  onPatch,
-}: {
-  node: CanonicalNode
-  isAdmin: boolean
-  areas: CanonicalNode[]
-  onPatch: (id: string, patch: Partial<CanonicalNode>) => void
-}) {
-  if (!isAdmin) {
-    return !node.is_active ? <span className="ent-inactive-pill">inactive</span> : null
-  }
-  return (
-    <span className="ent-ctrls">
-      {node.entity_type === 'project' && (
-        <select
-          className="ent-mini-select"
-          title="Move to area"
-          value={node.parent_id ?? ''}
-          onChange={e => onPatch(node.id, { parent_id: e.target.value })}
-        >
-          {areas.map(a => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
-      )}
-      <select
-        className="ent-mini-select"
-        title="Owner"
-        value={node.owner_dept}
-        onChange={e => onPatch(node.id, { owner_dept: e.target.value })}
-      >
-        {OWNER_DEPTS.map(d => (
-          <option key={d} value={d}>
-            {d.replace('_', ' ')}
-          </option>
-        ))}
-      </select>
-      <button
-        type="button"
-        className={`ent-toggle ${node.is_active ? 'on' : 'off'}`}
-        title={node.is_active ? 'Active — click to deactivate' : 'Inactive — click to activate'}
-        onClick={() => onPatch(node.id, { is_active: !node.is_active })}
-      >
-        {node.is_active ? 'Active' : 'Inactive'}
-      </button>
     </span>
-  )
-}
-
-function AddInline({
-  label,
-  onAdd,
-  onCancel,
-  autoFocus,
-}: {
-  label: string
-  onAdd: (name: string) => void
-  onCancel?: () => void
-  autoFocus?: boolean
-}) {
-  const [open, setOpen] = useState(!!autoFocus)
-  const [val, setVal] = useState('')
-  const ref = useRef<HTMLInputElement>(null)
-  useEffect(() => {
-    if (open) ref.current?.focus()
-  }, [open])
-
-  if (!open) {
-    return (
-      <button type="button" className="ent-add-inline" onClick={() => setOpen(true)}>
-        {label}
-      </button>
-    )
-  }
-  function commit() {
-    const v = val.trim()
-    if (v) onAdd(v)
-    setVal('')
-    setOpen(false)
-    onCancel?.()
-  }
-  return (
-    <div className="ent-add-row">
-      <input
-        ref={ref}
-        className="ent-rename"
-        placeholder={label.replace('+ ', 'New ').toLowerCase()}
-        value={val}
-        onChange={e => setVal(e.target.value)}
-        onKeyDown={e => {
-          if (e.key === 'Enter') commit()
-          if (e.key === 'Escape') {
-            setVal('')
-            setOpen(false)
-            onCancel?.()
-          }
-        }}
-        onBlur={() => {
-          if (!val.trim()) {
-            setOpen(false)
-            onCancel?.()
-          }
-        }}
-      />
-      <button type="button" className="ent-mini-btn" onMouseDown={e => e.preventDefault()} onClick={commit}>
-        Add
-      </button>
-    </div>
   )
 }
 
