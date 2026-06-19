@@ -240,6 +240,7 @@
   font-weight: 500;
   color: var(--charcoal);
   font-variant-numeric: tabular-nums;
+  margin-top: auto; /* line every card's number up along the bottom */
 }
 .bp-card-val.neg {
   color: var(--bad);

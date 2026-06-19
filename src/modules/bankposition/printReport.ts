@@ -4,7 +4,6 @@
  * (bullet/numbered lists). Opens in a new window and prints — no dependencies. */
 import {
   AREA_ACCOUNTS,
-  GROUP_ACCOUNTS,
   type Grid,
   areaNet,
   ccGroupNet,
@@ -222,7 +221,7 @@ export function buildReportHtml(d: ReportData): string {
   .cards { display: flex; gap: 5px; align-items: stretch; }
   .card { flex: 1 1 0; min-width: 0; border: 1px solid #e5e7eb; border-top: 2.5px solid #9ca3af; border-radius: 5px; padding: 5px 7px; display: flex; flex-direction: column; gap: 3px; }
   .card .cl { font-size: 6.6px; text-transform: uppercase; letter-spacing: 0.02em; color: #6b7280; font-weight: 500; line-height: 1.2; }
-  .card .cv { font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .card .cv { font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; margin-top: auto; }
   .card .cv.neg { color: #E10020; }
   .card.g-build { border-top-color: #141414; }
   .card.g-group { border-top-color: #E10020; }
@@ -254,12 +253,13 @@ export function buildReportHtml(d: ReportData): string {
   .twocol { display: flex; gap: 18px; align-items: flex-start; }
   .twocol .tbl { flex: 1.7; }
   .twocol .nar { flex: 1; }
-  ul, ol { margin: 3px 0 3px 15px; padding: 0; }
-  li { margin: 1.5px 0; }
-  .nar p { margin: 3px 0; }
-  .grp { display: flex; gap: 22px; margin-top: 4px; }
-  .grp .gi { font-size: 9px; }
-  .grp .gi b { font-weight: 500; }
+  .narbox { background: #fafafa; border: 1px solid #eee; border-left: 3px solid #E10020; border-radius: 4px; padding: 9px 12px; color: #1f2937; }
+  .narbox p { margin: 4px 0; }
+  .narbox p:first-child { margin-top: 0; }
+  .narbox ul, .narbox ol { margin: 5px 0 5px 16px; padding: 0; }
+  .narbox li { margin: 3px 0; line-height: 1.4; padding-left: 2px; }
+  .narbox li::marker { color: #E10020; }
+  .narbox strong { font-weight: 500; }
 </style></head>
 <body>
   <div class="head">
@@ -285,13 +285,10 @@ export function buildReportHtml(d: ReportData): string {
         <thead><tr><th class="l">Area</th>${AREA_ACCOUNTS.map(a => `<th>${a}</th>`).join('')}<th>Net</th><th>Δ</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
-      <div class="grp">
-        ${GROUP_ACCOUNTS.map(a => `<div class="gi">${a}: <b>${fmtNum(num(d.groupItems[a]))}</b></div>`).join('')}
-      </div>
     </div>
     <div class="nar">
       <h2>Narrative</h2>
-      <div>${narrativeHtml(d.narrative)}</div>
+      <div class="narbox">${narrativeHtml(d.narrative)}</div>
     </div>
   </div>
 
