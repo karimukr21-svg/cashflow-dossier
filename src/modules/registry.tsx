@@ -33,6 +33,17 @@ function CashFlowIcon() {
   )
 }
 
+function BankPositionIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+         strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 10l9-5 9 5" />
+      <path d="M5 10v8M10 10v8M14 10v8M19 10v8" />
+      <path d="M3 21h18" />
+    </svg>
+  )
+}
+
 export const MODULES: WorkspaceModule[] = [
   {
     key: 'cash-flow',
@@ -40,9 +51,15 @@ export const MODULES: WorkspaceModule[] = [
     icon: <CashFlowIcon />,
     route: '/',
   },
+  {
+    key: 'bank-position',
+    label: 'Bank Position',
+    icon: <BankPositionIcon />,
+    route: '/bank-position',
+    requiredRole: 'manage', // Treasury manages the monthly group cash position
+  },
 
   // ── Future modules plug in here — one entry each, nothing else: ──
-  // { key: 'bank-position', label: 'Bank Position', icon: <BankIcon />,    route: '/bank-position' },
   // { key: 'allocations',   label: 'Allocations',   icon: <AllocIcon />,   route: '/allocations'   },
   // { key: 'reports',       label: 'Reports',       icon: <ReportIcon />,  route: '/reports', requiredRole: 'manage' },
 ]

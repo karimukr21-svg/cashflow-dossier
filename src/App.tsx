@@ -4,6 +4,7 @@ import { WorkspaceShell } from './modules/WorkspaceShell'
 import SignIn from './pages/SignIn'
 import Dossier from './pages/Dossier'
 import AnalyzeShell from './pages/analyze/AnalyzeShell'
+import BankPosition from './modules/bankposition/BankPosition'
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
       >
         <Route path="/" element={<Dossier />} />
         <Route path="/analyze" element={<AnalyzeShell />} />
+        <Route path="/bank-position" element={<BankPosition />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
