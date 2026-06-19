@@ -368,6 +368,28 @@
   padding: 6px 12px 32px;
 }
 
+/* Treasury-area groups (mirror Treasury's file structure: area + its projects) */
+.ent-mapgroup {
+  margin-bottom: 12px;
+}
+.ent-mapgroup-projects {
+  margin-left: 14px;
+  border-left: 1px solid var(--border);
+  padding-left: 6px;
+}
+.ent-maprow.header {
+  border-bottom: 1px solid var(--border);
+  border-radius: 6px 6px 0 0;
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 2;
+}
+.ent-maprow.header .ent-local-name {
+  font-weight: 700;
+  font-size: 13px;
+}
+
 .ent-maprow {
   display: flex;
   align-items: center;

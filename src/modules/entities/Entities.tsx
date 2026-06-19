@@ -332,18 +332,35 @@ function MappingPane({
   function statusOf(item: LocalItem): Status {
     const a = aliasByLocalKey.get(item.local_key)
     if (!a) return 'unmapped'
+    if (item.kind === 'area') return 'precise' // an area mapped to an area is correct, not a bucket
     return nodeById.get(a.canonical_id)?.entity_type === 'project' ? 'precise' : 'bucket'
   }
   const rank: Record<Status, number> = { unmapped: 0, bucket: 1, precise: 2 }
 
-  // order: needs-work first (unmapped, then bucketed to refine), precise last
-  const rows = useMemo(() => {
+  // Group local names by their Treasury area — mirrors Treasury's file structure
+  // (an area, with its projects beneath). Within a group: needs-work first.
+  const groups = useMemo(() => {
     const ql = q.trim().toLowerCase()
-    const filtered = ql ? locals.filter(l => l.local_name.toLowerCase().includes(ql)) : locals
-    return [...filtered].sort((a, b) => {
-      const d = rank[statusOf(a)] - rank[statusOf(b)]
-      return d !== 0 ? d : a.local_name.localeCompare(b.local_name)
-    })
+    const map = new Map<string, { areaItem?: LocalItem; projects: LocalItem[] }>()
+    const ensure = (k: string) => {
+      let g = map.get(k)
+      if (!g) { g = { projects: [] }; map.set(k, g) }
+      return g
+    }
+    for (const l of locals) {
+      if (l.kind === 'area') ensure(l.local_name).areaItem = l
+      else ensure(l.context ?? '(no area)').projects.push(l)
+    }
+    const out: { areaName: string; areaItem?: LocalItem; projects: LocalItem[] }[] = []
+    for (const [areaName, g] of [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      const nameMatch = !ql || areaName.toLowerCase().includes(ql)
+      const projs = (nameMatch ? g.projects : g.projects.filter(p => p.local_name.toLowerCase().includes(ql)))
+        .slice()
+        .sort((a, b) => rank[statusOf(a)] - rank[statusOf(b)] || a.local_name.localeCompare(b.local_name))
+      if (!nameMatch && projs.length === 0) continue
+      out.push({ areaName, areaItem: g.areaItem, projects: projs })
+    }
+    return out
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locals, q, aliasByLocalKey, nodeById])
 
@@ -377,6 +394,67 @@ function MappingPane({
     return id ? nodeById.get(id) : undefined
   }
 
+  function renderRow(item: LocalItem, isHeader = false) {
+    const status = statusOf(item)
+    const alias = aliasByLocalKey.get(item.local_key)
+    const target = alias ? nodeById.get(alias.canonical_id) : undefined
+    const areaNode = areaNodeFor(item)
+    const bucketArea =
+      item.kind === 'project' && areaNode ? { id: areaNode.id, name: areaNode.name } : undefined
+    return (
+      <div key={item.local_key} className={`ent-maprow ${status}${isHeader ? ' header' : ''}`}>
+        <div className="ent-local">
+          <span className={`ent-dot ${status}`} />
+          <div className="ent-local-text">
+            <span className="ent-local-name">{item.local_name}</span>
+            <span className="ent-local-meta">{item.kind === 'area' ? 'Area' : 'Project'}</span>
+          </div>
+        </div>
+        <div className="ent-maps-to">
+          {status === 'unmapped' ? (
+            canMap ? (
+              <CanonicalPicker
+                item={item}
+                areaCandidates={areaCandidates}
+                projectCandidates={projectCandidates}
+                defaultAreaId={areaNode?.id}
+                bucketArea={bucketArea}
+                onPick={id => onMap(item, id)}
+                trigger="Map to…"
+                primary
+              />
+            ) : (
+              <span className="ent-notmapped">Not mapped yet</span>
+            )
+          ) : (
+            <div className="ent-mapped-to">
+              <span className="ent-arrow">→</span>
+              <span className="ent-target">{target ? target.name : '(missing node)'}</span>
+              {status === 'bucket' && <span className="ent-bucket-tag">area bucket</span>}
+              {canMap && (
+                <CanonicalPicker
+                  item={item}
+                  areaCandidates={areaCandidates}
+                  projectCandidates={projectCandidates}
+                  defaultAreaId={areaNode?.id}
+                  bucketArea={bucketArea}
+                  onPick={id => onMap(item, id)}
+                  trigger={status === 'bucket' ? 'Set project' : 'Change'}
+                  primary={status === 'bucket'}
+                />
+              )}
+              {canMap && (
+                <button type="button" className="ent-unmap" onClick={() => onUnmap(item)} title="Remove mapping">
+                  Unmap
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <section className="ent-pane">
       <header className="ent-pane-head">
@@ -405,72 +483,27 @@ function MappingPane({
         <div className="ent-empty ent-empty-pad">Loading names…</div>
       ) : (
         <div className="ent-maplist">
-          {rows.map(item => {
-            const status = statusOf(item)
-            const alias = aliasByLocalKey.get(item.local_key)
-            const target = alias ? nodeById.get(alias.canonical_id) : undefined
-            const areaNode = areaNodeFor(item)
-            const bucketArea =
-              item.kind === 'project' && areaNode
-                ? { id: areaNode.id, name: areaNode.name }
-                : undefined
-            return (
-              <div key={item.local_key} className={`ent-maprow ${status}`}>
-                <div className="ent-local">
-                  <span className={`ent-dot ${status}`} />
-                  <div className="ent-local-text">
-                    <span className="ent-local-name">{item.local_name}</span>
-                    <span className="ent-local-meta">
-                      {item.kind === 'area' ? 'Area' : 'Project'}
-                      {item.context ? ` · ${item.context}` : ''}
-                    </span>
+          {groups.map(g => (
+            <div key={g.areaName} className="ent-mapgroup">
+              {g.areaItem ? (
+                renderRow(g.areaItem, true)
+              ) : (
+                <div className="ent-maprow header">
+                  <div className="ent-local">
+                    <div className="ent-local-text">
+                      <span className="ent-local-name">{g.areaName}</span>
+                      <span className="ent-local-meta">Area</span>
+                    </div>
                   </div>
                 </div>
-                <div className="ent-maps-to">
-                  {status === 'unmapped' ? (
-                    canMap ? (
-                      <CanonicalPicker
-                        item={item}
-                        areaCandidates={areaCandidates}
-                        projectCandidates={projectCandidates}
-                        defaultAreaId={areaNode?.id}
-                        bucketArea={bucketArea}
-                        onPick={id => onMap(item, id)}
-                        trigger="Map to…"
-                        primary
-                      />
-                    ) : (
-                      <span className="ent-notmapped">Not mapped yet</span>
-                    )
-                  ) : (
-                    <div className="ent-mapped-to">
-                      <span className="ent-arrow">→</span>
-                      <span className="ent-target">{target ? target.name : '(missing node)'}</span>
-                      {status === 'bucket' && <span className="ent-bucket-tag">area bucket</span>}
-                      {canMap && (
-                        <CanonicalPicker
-                          item={item}
-                          areaCandidates={areaCandidates}
-                          projectCandidates={projectCandidates}
-                          defaultAreaId={areaNode?.id}
-                          bucketArea={bucketArea}
-                          onPick={id => onMap(item, id)}
-                          trigger={status === 'bucket' ? 'Set project' : 'Change'}
-                          primary={status === 'bucket'}
-                        />
-                      )}
-                      {canMap && (
-                        <button type="button" className="ent-unmap" onClick={() => onUnmap(item)} title="Remove mapping">
-                          Unmap
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
+              )}
+              <div className="ent-mapgroup-projects">
+                {g.projects.map(p => renderRow(p))}
+                {g.projects.length === 0 && <div className="ent-empty">No projects</div>}
               </div>
-            )
-          })}
-          {rows.length === 0 && <div className="ent-empty ent-empty-pad">No names match.</div>}
+            </div>
+          ))}
+          {groups.length === 0 && <div className="ent-empty ent-empty-pad">No names match.</div>}
         </div>
       )}
     </section>
