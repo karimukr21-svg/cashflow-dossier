@@ -101,7 +101,7 @@ export default function Allocations() {
         <nav className="al-tabs">
           {(['dashboard', 'inflows', 'obligations'] as Tab[]).map(t => (
             <button key={t} type="button" className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>
-              {t === 'dashboard' ? 'Dashboard' : t === 'inflows' ? 'Inflows' : 'Shopping list'}
+              {t === 'dashboard' ? 'Dashboard' : t === 'inflows' ? 'Inflows' : 'Obligations'}
             </button>
           ))}
         </nav>
@@ -341,6 +341,24 @@ function Dashboard({
   )
 }
 
+/* ── sortable header cell ───────────────────────────────────────── */
+type SortState = { key: string; dir: 'asc' | 'desc' }
+function SortTh({ label, k, sort, setSort, cls }: { label: string; k: string; sort: SortState; setSort: (s: SortState) => void; cls?: string }) {
+  const active = sort.key === k
+  return (
+    <th
+      className={`${cls ?? ''} sortable`}
+      onClick={() => setSort(active ? { key: k, dir: sort.dir === 'asc' ? 'desc' : 'asc' } : { key: k, dir: 'asc' })}
+    >
+      {label}{active && <span className="al-sort-ind">{sort.dir === 'asc' ? ' ▲' : ' ▼'}</span>}
+    </th>
+  )
+}
+function cmp(a: string | number, b: string | number, dir: 'asc' | 'desc'): number {
+  const c = a < b ? -1 : a > b ? 1 : 0
+  return dir === 'asc' ? c : -c
+}
+
 /* ================================================================== *
  * Inflows register
  * ================================================================== */
@@ -355,23 +373,68 @@ function InflowsTab({
   onDelete: (r: Inflow) => void
   onAllocate: (r: Inflow) => void
 }) {
+  const [q, setQ] = useState('')
+  const [typeF, setTypeF] = useState('all')
+  const [statusF, setStatusF] = useState('all')
+  const [sort, setSort] = useState<SortState>({ key: 'dated', dir: 'desc' })
+
+  const rows = useMemo(() => {
+    const ql = q.trim().toLowerCase()
+    const filtered = view.inflows.filter(i => {
+      if (typeF !== 'all' && i.source_type !== typeF) return false
+      if (statusF !== 'all' && i.status !== statusF) return false
+      if (ql && !`${i.source_name} ${i.reference ?? ''}`.toLowerCase().includes(ql)) return false
+      return true
+    })
+    const val = (i: Inflow): string | number => {
+      const d = inflowDer.get(i.id)!
+      switch (sort.key) {
+        case 'source_name': return i.source_name.toLowerCase()
+        case 'source_type': return i.source_type
+        case 'amount_usd': return i.amount_usd
+        case 'allocated': return d.allocated
+        case 'unallocated': return d.unallocated
+        case 'status': return i.status
+        default: return i.dated
+      }
+    }
+    return [...filtered].sort((a, b) => cmp(val(a), val(b), sort.dir))
+  }, [view.inflows, inflowDer, q, typeF, statusF, sort])
+
   return (
     <div className="al-tabbody">
       <div className="al-tabhead">
-        <div><h2>Inflows</h2><p className="al-sub">{view.inflows.length} sources in range</p></div>
+        <div><h2>Inflows</h2><p className="al-sub">{rows.length} of {view.inflows.length} sources in range</p></div>
         {canEdit && <button type="button" className="al-btn primary" onClick={onAdd}>+ Add inflow</button>}
+      </div>
+      <div className="al-filters">
+        <input className="al-search" placeholder="Search source / reference…" value={q} onChange={e => setQ(e.target.value)} />
+        <select value={typeF} onChange={e => setTypeF(e.target.value)}>
+          <option value="all">All types</option>
+          {SOURCE_TYPES.map(t => <option key={t} value={t}>{labelSourceType(t)}</option>)}
+        </select>
+        <select value={statusF} onChange={e => setStatusF(e.target.value)}>
+          <option value="all">All statuses</option>
+          <option value="expected">Expected</option>
+          <option value="received">Received</option>
+        </select>
       </div>
       <table className="al-table">
         <thead>
           <tr>
-            <th className="l">Date</th><th className="l">Source</th><th className="l">Type</th>
-            <th className="r">Native</th><th className="r">USD</th>
-            <th className="r">Allocated</th><th className="r">Unallocated</th>
-            <th className="l">Status</th><th className="r">Actions</th>
+            <SortTh label="Date" k="dated" sort={sort} setSort={setSort} cls="l" />
+            <SortTh label="Source" k="source_name" sort={sort} setSort={setSort} cls="l" />
+            <SortTh label="Type" k="source_type" sort={sort} setSort={setSort} cls="l" />
+            <th className="r">Native</th>
+            <SortTh label="USD" k="amount_usd" sort={sort} setSort={setSort} cls="r" />
+            <SortTh label="Allocated" k="allocated" sort={sort} setSort={setSort} cls="r" />
+            <SortTh label="Unallocated" k="unallocated" sort={sort} setSort={setSort} cls="r" />
+            <SortTh label="Status" k="status" sort={sort} setSort={setSort} cls="l" />
+            <th className="r">Actions</th>
           </tr>
         </thead>
         <tbody>
-          {view.inflows.map(inf => {
+          {rows.map(inf => {
             const der = inflowDer.get(inf.id)!
             return (
               <tr key={inf.id}>
@@ -391,7 +454,7 @@ function InflowsTab({
               </tr>
             )
           })}
-          {view.inflows.length === 0 && <tr><td colSpan={9} className="al-empty">No inflows in range.</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={9} className="al-empty">No inflows match.</td></tr>}
         </tbody>
       </table>
     </div>
@@ -413,23 +476,71 @@ function ObligationsTab({
   onAllocate: (r: Obligation) => void
   onPay: (r: Obligation) => void
 }) {
+  const [q, setQ] = useState('')
+  const [catF, setCatF] = useState('all')
+  const [fundF, setFundF] = useState('all')
+  const [sort, setSort] = useState<SortState>({ key: 'due_date', dir: 'asc' })
+
+  const rows = useMemo(() => {
+    const ql = q.trim().toLowerCase()
+    const filtered = view.obligations.filter(o => {
+      if (catF !== 'all' && o.category !== catF) return false
+      if (fundF !== 'all' && oblDer.get(o.id)!.fundStatus !== fundF) return false
+      if (ql && !o.description.toLowerCase().includes(ql)) return false
+      return true
+    })
+    const val = (o: Obligation): string | number => {
+      const d = oblDer.get(o.id)!
+      switch (sort.key) {
+        case 'description': return o.description.toLowerCase()
+        case 'category': return o.category
+        case 'amount_usd': return o.amount_usd
+        case 'funded': return d.funded
+        case 'outstanding': return d.outstanding
+        case 'paid': return d.paid
+        case 'fundStatus': return d.fundStatus
+        default: return o.due_date ?? '9999-12-31' // undated sort last on asc
+      }
+    }
+    return [...filtered].sort((a, b) => cmp(val(a), val(b), sort.dir))
+  }, [view.obligations, oblDer, q, catF, fundF, sort])
+
   return (
     <div className="al-tabbody">
       <div className="al-tabhead">
-        <div><h2>Shopping list</h2><p className="al-sub">{view.obligations.length} obligations in range</p></div>
+        <div><h2>Obligations</h2><p className="al-sub">{rows.length} of {view.obligations.length} obligations in range</p></div>
         {canEdit && <button type="button" className="al-btn primary" onClick={onAdd}>+ Add obligation</button>}
+      </div>
+      <div className="al-filters">
+        <input className="al-search" placeholder="Search description…" value={q} onChange={e => setQ(e.target.value)} />
+        <select value={catF} onChange={e => setCatF(e.target.value)}>
+          <option value="all">All categories</option>
+          {OBLIGATION_CATEGORIES.map(c => <option key={c} value={c}>{labelCategory(c)}</option>)}
+        </select>
+        <select value={fundF} onChange={e => setFundF(e.target.value)}>
+          <option value="all">All funding</option>
+          <option value="unfunded">Unfunded</option>
+          <option value="partial">Partial</option>
+          <option value="funded">Funded</option>
+        </select>
       </div>
       <table className="al-table">
         <thead>
           <tr>
-            <th className="l">Due</th><th className="l">Description</th><th className="l">Category</th>
-            <th className="r">Native</th><th className="r">USD</th>
-            <th className="r">Funded</th><th className="r">Outstanding</th><th className="r">Paid</th>
-            <th className="l">Status</th><th className="r">Actions</th>
+            <SortTh label="Due" k="due_date" sort={sort} setSort={setSort} cls="l" />
+            <SortTh label="Description" k="description" sort={sort} setSort={setSort} cls="l" />
+            <SortTh label="Category" k="category" sort={sort} setSort={setSort} cls="l" />
+            <th className="r">Native</th>
+            <SortTh label="USD" k="amount_usd" sort={sort} setSort={setSort} cls="r" />
+            <SortTh label="Funded" k="funded" sort={sort} setSort={setSort} cls="r" />
+            <SortTh label="Outstanding" k="outstanding" sort={sort} setSort={setSort} cls="r" />
+            <SortTh label="Paid" k="paid" sort={sort} setSort={setSort} cls="r" />
+            <SortTh label="Status" k="fundStatus" sort={sort} setSort={setSort} cls="l" />
+            <th className="r">Actions</th>
           </tr>
         </thead>
         <tbody>
-          {view.obligations.map(o => {
+          {rows.map(o => {
             const der = oblDer.get(o.id)!
             return (
               <tr key={o.id}>
@@ -454,7 +565,7 @@ function ObligationsTab({
               </tr>
             )
           })}
-          {view.obligations.length === 0 && <tr><td colSpan={10} className="al-empty">No obligations in range.</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={10} className="al-empty">No obligations match.</td></tr>}
         </tbody>
       </table>
     </div>
