@@ -5,6 +5,8 @@ import SignIn from './pages/SignIn'
 import Dossier from './pages/Dossier'
 import AnalyzeShell from './pages/analyze/AnalyzeShell'
 import BankPosition from './modules/bankposition/BankPosition'
+import Entities from './modules/entities/Entities'
+import Allocations from './modules/allocations/Allocations'
 
 export default function App() {
   return (
@@ -22,6 +24,8 @@ export default function App() {
         <Route path="/" element={<Dossier />} />
         <Route path="/analyze" element={<AnalyzeShell />} />
         <Route path="/bank-position" element={<BankPosition />} />
+        <Route path="/entities" element={<Entities />} />
+        <Route path="/allocations" element={<Allocations />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

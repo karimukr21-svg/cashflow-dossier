@@ -44,6 +44,30 @@ function BankPositionIcon() {
   )
 }
 
+function EntitiesIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+         strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="9" y="3" width="6" height="5" rx="1" />
+      <rect x="3" y="16" width="6" height="5" rx="1" />
+      <rect x="15" y="16" width="6" height="5" rx="1" />
+      <path d="M12 8v4M12 12H6v4M12 12h6v4" />
+    </svg>
+  )
+}
+
+function AllocationsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+         strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="6" cy="6" r="3" />
+      <path d="M9 6h4a3 3 0 0 1 3 3v0a3 3 0 0 0 3 3h2" />
+      <path d="M9 6h4a3 3 0 0 0 3-3" />
+      <path d="M18 15l3 3-3 3" />
+    </svg>
+  )
+}
+
 export const MODULES: WorkspaceModule[] = [
   {
     key: 'cash-flow',
@@ -58,9 +82,24 @@ export const MODULES: WorkspaceModule[] = [
     route: '/bank-position',
     requiredRole: 'manage', // Treasury manages the monthly group cash position
   },
+  {
+    key: 'entities',
+    label: 'Areas & Projects',
+    icon: <EntitiesIcon />,
+    route: '/entities',
+    // No requiredRole: reading the canonical tree is open. Editing nodes (admin)
+    // and aliases (manage) is gated inside the module + by RLS.
+  },
+
+  {
+    key: 'allocations',
+    label: 'Allocations',
+    icon: <AllocationsIcon />,
+    route: '/allocations',
+    requiredRole: 'manage', // Treasury source-and-use ledger — admin|treasury only
+  },
 
   // ── Future modules plug in here — one entry each, nothing else: ──
-  // { key: 'allocations',   label: 'Allocations',   icon: <AllocIcon />,   route: '/allocations'   },
   // { key: 'reports',       label: 'Reports',       icon: <ReportIcon />,  route: '/reports', requiredRole: 'manage' },
 ]
 
