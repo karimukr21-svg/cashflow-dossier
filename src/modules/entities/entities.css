@@ -79,6 +79,20 @@
   padding: 8px 10px 32px;
 }
 
+.ent-group-head {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--mute);
+  padding: 14px 8px 4px;
+  margin-top: 2px;
+  border-bottom: 1px solid var(--border);
+}
+.ent-area:first-child .ent-group-head {
+  margin-top: 0;
+}
+
 .ent-node {
   display: flex;
   align-items: center;
@@ -467,6 +481,29 @@
   color: var(--charcoal);
   outline: none;
 }
+.ent-picker-scope {
+  font-size: 11px;
+  color: var(--mute);
+  padding: 6px 12px;
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--border);
+}
+.ent-picker-scope strong {
+  color: var(--charcoal);
+  font-weight: 600;
+}
+.ent-picker-scope button {
+  border: none;
+  background: transparent;
+  color: var(--crimson);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+}
+.ent-picker-scope button:hover {
+  text-decoration: underline;
+}
+
 .ent-picker-list {
   max-height: 260px;
   overflow-y: auto;

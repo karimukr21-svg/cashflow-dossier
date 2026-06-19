@@ -19,6 +19,8 @@ export interface CanonicalNode {
   code: string | null
   owner_dept: string
   is_active: boolean
+  sort_order: number
+  area_group: string | null
 }
 
 export interface Alias {
@@ -51,8 +53,8 @@ export const OWNER_DEPTS = ['group_accounts', 'treasury', 'corporate_planning', 
 export async function loadCanonical(): Promise<CanonicalNode[]> {
   const { data, error } = await supabase
     .from('canonical_entity')
-    .select('id, entity_type, parent_id, name, code, owner_dept, is_active')
-    .order('entity_type', { ascending: true })
+    .select('id, entity_type, parent_id, name, code, owner_dept, is_active, sort_order, area_group')
+    .order('sort_order', { ascending: true })
     .order('name', { ascending: true })
   if (error) throw error
   return (data ?? []) as CanonicalNode[]

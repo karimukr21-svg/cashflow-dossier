@@ -71,11 +71,11 @@ export default function Entities() {
   }, [sourceKey])
 
   // ── derived ───────────────────────────────────────────────────────
+  const byOrder = (a: CanonicalNode, b: CanonicalNode) =>
+    a.sort_order - b.sort_order || a.name.localeCompare(b.name)
+
   const areas = useMemo(
-    () =>
-      nodes
-        .filter(n => n.entity_type === 'area')
-        .sort((a, b) => a.name.localeCompare(b.name)),
+    () => nodes.filter(n => n.entity_type === 'area').sort(byOrder),
     [nodes],
   )
   const projectsByArea = useMemo(() => {
@@ -86,7 +86,7 @@ export default function Entities() {
       arr.push(n)
       m.set(n.parent_id, arr)
     }
-    for (const arr of m.values()) arr.sort((a, b) => a.name.localeCompare(b.name))
+    for (const arr of m.values()) arr.sort(byOrder)
     return m
   }, [nodes])
   const nodeById = useMemo(() => new Map(nodes.map(n => [n.id, n])), [nodes])
@@ -229,9 +229,9 @@ function CanonicalPane({
     <section className="ent-pane">
       <header className="ent-pane-head">
         <div>
-          <h2>Canonical tree</h2>
+          <h2>Master list — Areas &amp; Projects</h2>
           <p className="ent-sub">
-            {areas.length} areas · {totalProjects} projects
+            {areas.length} areas · {totalProjects} projects · the official list, managed here
             {isAdmin ? '' : ' · read-only'}
           </p>
         </div>
@@ -246,13 +246,17 @@ function CanonicalPane({
       </header>
 
       <div className="ent-tree">
-        {visibleAreas.map(area => {
+        {visibleAreas.map((area, i) => {
           const kids = (projectsByArea.get(area.id) ?? []).filter(
             p => showInactive || p.is_active,
           )
           const isOpen = open.has(area.id)
+          const grp = area.area_group ?? 'Ungrouped'
+          const prevGrp = i > 0 ? (visibleAreas[i - 1].area_group ?? 'Ungrouped') : null
+          const showGroup = grp !== prevGrp
           return (
             <div key={area.id} className="ent-area">
+              {showGroup && <div className="ent-group-head">{grp}</div>}
               <div className={`ent-node ent-node-area ${area.is_active ? '' : 'inactive'}`}>
                 <button
                   type="button"
@@ -538,12 +542,20 @@ function MappingPane({
   // candidate canonical nodes per kind
   const areaCandidates = areas
   const projectCandidates = useMemo(() => {
-    const out: { node: CanonicalNode; areaName: string }[] = []
+    const out: { node: CanonicalNode; areaName: string; areaId: string }[] = []
     for (const a of areas) {
-      for (const p of projectsByArea.get(a.id) ?? []) out.push({ node: p, areaName: a.name })
+      for (const p of projectsByArea.get(a.id) ?? [])
+        out.push({ node: p, areaName: a.name, areaId: a.id })
     }
     return out.sort((x, y) => x.node.name.localeCompare(y.node.name))
   }, [areas, projectsByArea])
+
+  // For a project local item, the canonical area its Treasury area maps to —
+  // lets the picker default-scope to that area's projects.
+  function defaultAreaFor(item: LocalItem): string | undefined {
+    if (item.kind !== 'project' || !item.context) return undefined
+    return aliasByLocalKey.get(`area:${item.context}`)?.canonical_id
+  }
 
   return (
     <section className="ent-pane">
@@ -614,6 +626,7 @@ function MappingPane({
                           item={item}
                           areaCandidates={areaCandidates}
                           projectCandidates={projectCandidates}
+                          defaultAreaId={defaultAreaFor(item)}
                           onPick={id => onMap(item, id)}
                           trigger="Change"
                         />
@@ -634,6 +647,7 @@ function MappingPane({
                       item={item}
                       areaCandidates={areaCandidates}
                       projectCandidates={projectCandidates}
+                      defaultAreaId={defaultAreaFor(item)}
                       onPick={id => onMap(item, id)}
                       trigger="Map to…"
                       primary
@@ -657,21 +671,30 @@ function CanonicalPicker({
   item,
   areaCandidates,
   projectCandidates,
+  defaultAreaId,
   onPick,
   trigger,
   primary,
 }: {
   item: LocalItem
   areaCandidates: CanonicalNode[]
-  projectCandidates: { node: CanonicalNode; areaName: string }[]
+  projectCandidates: { node: CanonicalNode; areaName: string; areaId: string }[]
+  defaultAreaId?: string
   onPick: (id: string) => void
   trigger: string
   primary?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
+  const [allAreas, setAllAreas] = useState(false) // escape the area scope
   const boxRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  const scopedAreaName =
+    defaultAreaId && item.kind === 'project'
+      ? projectCandidates.find(p => p.areaId === defaultAreaId)?.areaName
+      : undefined
+  const scoped = !!defaultAreaId && item.kind === 'project' && !allAreas && !q.trim()
 
   useEffect(() => {
     if (open) inputRef.current?.focus()
@@ -694,10 +717,11 @@ function CanonicalPicker({
         .map(a => ({ id: a.id, label: a.name, sub: 'Area' }))
     }
     return projectCandidates
+      .filter(p => (scoped ? p.areaId === defaultAreaId : true))
       .filter(p => !ql || p.node.name.toLowerCase().includes(ql) || p.areaName.toLowerCase().includes(ql))
       .slice(0, 50)
       .map(p => ({ id: p.node.id, label: p.node.name, sub: p.areaName }))
-  }, [q, item.kind, areaCandidates, projectCandidates])
+  }, [q, item.kind, areaCandidates, projectCandidates, scoped, defaultAreaId])
 
   return (
     <div className="ent-picker" ref={boxRef}>
@@ -717,6 +741,25 @@ function CanonicalPicker({
             value={q}
             onChange={e => setQ(e.target.value)}
           />
+          {scopedAreaName && !q.trim() && (
+            <div className="ent-picker-scope">
+              {scoped ? (
+                <>
+                  Showing <strong>{scopedAreaName}</strong> projects ·{' '}
+                  <button type="button" onClick={() => setAllAreas(true)}>
+                    show all
+                  </button>
+                </>
+              ) : (
+                <>
+                  Showing all areas ·{' '}
+                  <button type="button" onClick={() => setAllAreas(false)}>
+                    back to {scopedAreaName}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
           <div className="ent-picker-list">
             {matches.map(m => (
               <button
