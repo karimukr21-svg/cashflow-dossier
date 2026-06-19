@@ -5,7 +5,6 @@ import {
   AREA_ACCOUNTS,
   GROUP_ACCOUNTS,
   GROUP_AREA,
-  EXCLUDED_FROM_GROUP,
   BANK_SECTION,
   type BankRow,
   type Grid,
@@ -14,7 +13,8 @@ import {
   fmtNum,
   areaNet,
   ccGroupNet,
-  groupNetByPeriod,
+  operatingAreas,
+  cashDebtByPeriod,
   orderAreas,
   fmtPeriodLabel,
   monthInputToPeriod,
@@ -47,6 +47,7 @@ export default function BankPosition() {
   const [narrative, setNarrative] = useState('')
   const narrativeOrig = useRef<{ id: number; content: string } | null>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
+  const [focusKey, setFocusKey] = useState<string | null>(null) // cell being edited (shows raw)
 
   const [viewYear, setViewYear] = useState<number>(() => new Date().getUTCFullYear())
 
@@ -204,6 +205,21 @@ export default function BankPosition() {
     })
   }
 
+  // wrap the selection with an inline mark (** bold, * italic, __ underline)
+  function wrapSel(mark: string) {
+    const ta = taRef.current
+    if (!ta) return
+    const { selectionStart: s, selectionEnd: e, value } = ta
+    const sel = value.slice(s, e) || 'text'
+    const next = value.slice(0, s) + mark + sel + mark + value.slice(e)
+    setNarrative(next)
+    setDirty(true)
+    requestAnimationFrame(() => {
+      ta.focus()
+      ta.setSelectionRange(s + mark.length, s + mark.length + sel.length)
+    })
+  }
+
   // open a printable / save-to-PDF report for the current month
   function printReport() {
     const w = window.open('', '_blank', 'width=900,height=1100')
@@ -216,13 +232,19 @@ export default function BankPosition() {
       .from('bank_position')
       .select('period,area,account,balance')
       .then(({ data }) => {
-        const monthly = groupNetByPeriod((data || []) as BankRow[])
-        const liveNet = ccGroupNet(grid, areas) // reflect unsaved edits for the selected month
-        const idx = monthly.findIndex(m => m.period === period)
-        if (idx >= 0) monthly[idx] = { period, net: liveNet }
+        const cd = cashDebtByPeriod((data || []) as BankRow[])
+        // reflect unsaved edits for the selected month in the trend series
+        const ops = operatingAreas(areas)
+        const liveCash = ops.reduce((s, a) => s + (num(grid[a]?.['Cash']) ?? 0), 0)
+        const liveDebt = ops.reduce(
+          (s, a) => s + (num(grid[a]?.['Overdrafts']) ?? 0) + (num(grid[a]?.['Loans']) ?? 0),
+          0,
+        )
+        const idx = cd.findIndex(m => m.period === period)
+        if (idx >= 0) cd[idx] = { period, cash: liveCash, debt: liveDebt }
         else {
-          monthly.push({ period, net: liveNet })
-          monthly.sort((a, b) => a.period.localeCompare(b.period))
+          cd.push({ period, cash: liveCash, debt: liveDebt })
+          cd.sort((a, b) => a.period.localeCompare(b.period))
         }
         const html = buildReportHtml({
           period,
@@ -231,7 +253,8 @@ export default function BankPosition() {
           groupItems,
           narrative,
           priorNet,
-          monthly,
+          cashSeries: cd.map(d => ({ period: d.period, val: d.cash })),
+          debtSeries: cd.map(d => ({ period: d.period, val: d.debt })),
           generatedAt: new Date().toLocaleString('en-GB'),
         })
         w.document.open()
@@ -356,12 +379,102 @@ export default function BankPosition() {
     }
   }
 
-  // ── derived figures ───────────────────────────────────────────────
-  const groupNet = ccGroupNet(grid, areas)
+  // ── derived figures (Tony's subtotal hierarchy) ───────────────────
+  const opAreas = operatingAreas(areas)
+  const hasMtb = areas.includes('MTB Overdraft')
+  const hasPalestine = areas.includes('Palestine')
+  const groupNet = ccGroupNet(grid, areas) // CC GROUP TOTAL (Σ operating)
+  const mtb = hasMtb ? areaNet(grid, 'MTB Overdraft') : null
+  const palestine = hasPalestine ? areaNet(grid, 'Palestine') : null
+  const groupWithMtb = groupNet + (mtb ?? 0)
+  const grandTotal = groupWithMtb + (palestine ?? 0)
   const jvCash = num(groupItems['JV Cash'])
   const blocked = num(groupItems['Blocked'])
-  const mtb = areas.includes('MTB Overdraft') ? areaNet(grid, 'MTB Overdraft') : null
-  const palestine = areas.includes('Palestine') ? areaNet(grid, 'Palestine') : null
+
+  // CC Group total build-up components (Σ over operating areas)
+  const sumAcct = (acct: string) => opAreas.reduce((s, a) => s + (num(grid[a]?.[acct]) ?? 0), 0)
+  const cashTot = sumAcct('Cash')
+  const odTot = sumAcct('Overdrafts')
+  const loansTot = sumAcct('Loans')
+  // cash-availability waterfall
+  const moneyControl = cashTot - (jvCash ?? 0)
+  const freeUsable = moneyControl - (blocked ?? 0)
+
+  // prior-month subtotals for the Δ column
+  const hasPrior = Object.keys(priorNet).length > 0
+  const priorOp = opAreas.reduce((s, a) => s + (priorNet[a] ?? 0), 0)
+  const priorGroupWithMtb = priorOp + (priorNet['MTB Overdraft'] ?? 0)
+  const priorTotal = priorGroupWithMtb + (priorNet['Palestine'] ?? 0)
+
+  // display value for an editable cell: raw while focused, formatted otherwise
+  const cellVal = (key: string, raw: string | undefined) => {
+    if (focusKey === key) return raw ?? ''
+    if (!raw || raw.trim() === '') return ''
+    const n = num(raw)
+    return n == null ? raw : fmtNum(n)
+  }
+  const cellNeg = (key: string, raw: string | undefined) => {
+    if (focusKey === key) return false
+    const n = num(raw)
+    return n != null && n < 0
+  }
+
+  // one editable area row (Cash / OD / Loans + Net + Δ)
+  const areaRow = (area: string, special = false) => {
+    const net = areaNet(grid, area)
+    const prev = priorNet[area]
+    const delta = prev == null ? null : net - prev
+    return (
+      <tr key={area} className={special ? 'bp-special' : ''}>
+        <td className="label">{area}</td>
+        {AREA_ACCOUNTS.map(account => {
+          const key = cellKey(area, account)
+          const raw = grid[area]?.[account]
+          return (
+            <td key={account} className="bp-cell">
+              <input
+                type="text"
+                inputMode="text"
+                className={cellNeg(key, raw) ? 'neg' : ''}
+                value={cellVal(key, raw)}
+                onFocus={() => setFocusKey(key)}
+                onBlur={() => setFocusKey(null)}
+                onChange={e => setCell(area, account, e.target.value)}
+              />
+            </td>
+          )
+        })}
+        <td className={`bp-num ${net < 0 ? 'neg' : ''}`}>{fmtNum(net)}</td>
+        <td className={`bp-num bp-delta ${delta == null ? '' : delta < 0 ? 'neg' : ''}`}>
+          {delta == null ? '—' : (delta > 0 ? '+' : '') + fmtNum(delta)}
+        </td>
+      </tr>
+    )
+  }
+
+  // a subtotal row in Tony's hierarchy
+  const subtotalRow = (label: string, value: number, prior: number, strong = false) => {
+    const delta = hasPrior ? value - prior : null
+    return (
+      <tr className={`bp-subtotal ${strong ? 'bp-subtotal-strong' : ''}`}>
+        <td className="label">{label}</td>
+        <td colSpan={AREA_ACCOUNTS.length} />
+        <td className={`bp-num ${value < 0 ? 'neg' : ''}`}>{fmtNum(value)}</td>
+        <td className={`bp-num bp-delta ${delta == null ? '' : delta < 0 ? 'neg' : ''}`}>
+          {delta == null ? '—' : (delta > 0 ? '+' : '') + fmtNum(delta)}
+        </td>
+      </tr>
+    )
+  }
+
+  // headline card + operator glyph
+  const card = (label: string, value: number | null, variant: '' | 'total' | 'free' = '') => (
+    <div className={`bp-card ${variant ? `bp-card-${variant}` : ''}`}>
+      <span className="bp-card-label">{label}</span>
+      <span className={`bp-card-val ${value != null && value < 0 ? 'neg' : ''}`}>{fmtNum(value)}</span>
+    </div>
+  )
+  const op = (glyph: string) => <span className="bp-op">{glyph}</span>
 
   if (!canManage) {
     return (
@@ -377,6 +490,17 @@ export default function BankPosition() {
   return (
     <div className="bp-root">
       <header className="bp-head">
+        <div className="bp-head-controls">
+          <button className="bp-btn" onClick={openNewMonth} disabled={saving}>
+            New month
+          </button>
+          <button className="bp-btn" onClick={printReport} disabled={saving || !period}>
+            Print report
+          </button>
+          <button className="bp-btn bp-btn-primary" onClick={save} disabled={saving || !dirty}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
         <div className="bp-months-row">
           <div className="bp-yearnav">
             <button
@@ -416,17 +540,6 @@ export default function BankPosition() {
             })}
           </div>
         </div>
-        <div className="bp-head-controls">
-          <button className="bp-btn" onClick={openNewMonth} disabled={saving}>
-            New month
-          </button>
-          <button className="bp-btn" onClick={printReport} disabled={saving || !period}>
-            Print report
-          </button>
-          <button className="bp-btn bp-btn-primary" onClick={save} disabled={saving || !dirty}>
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
       </header>
 
       {status && <div className={`bp-status bp-status-${status.kind}`}>{status.msg}</div>}
@@ -461,27 +574,50 @@ export default function BankPosition() {
         <div className="bp-loading">Loading…</div>
       ) : (
         <>
-          {/* headline figures */}
-          <div className="bp-kpis">
-            <div className="bp-kpi bp-kpi-lead">
-              <span className="bp-kpi-label">CC Group net</span>
-              <span className={`bp-kpi-val ${groupNet < 0 ? 'neg' : ''}`}>{fmtNum(groupNet)}</span>
+          {/* headline cards — three readable groupings */}
+          <div className="bp-cards">
+            {/* group net build-up: cash + overdraft + loans = CC group total */}
+            <div className="bp-cg bp-cg-build">
+              <div className="bp-cg-title">Group net build-up</div>
+              <div className="bp-cg-row">
+                {card('Cash', cashTot)}
+                {op('+')}
+                {card('Overdraft', odTot)}
+                {op('+')}
+                {card('Loans', loansTot)}
+                {op('=')}
+                {card('CC Group Total Actual', groupNet, 'total')}
+              </div>
             </div>
-            <div className="bp-kpi">
-              <span className="bp-kpi-label">JV Cash</span>
-              <span className="bp-kpi-val">{fmtNum(jvCash)}</span>
+
+            {/* to group total: + MTB + Palestine = Total */}
+            <div className="bp-cg bp-cg-total">
+              <div className="bp-cg-title">Group total</div>
+              <div className="bp-cg-row">
+                {card('CC Group Total Actual', groupNet)}
+                {op('+')}
+                {card('MTB Loans', mtb)}
+                {op('+')}
+                {card('Palestine', palestine)}
+                {op('=')}
+                {card('Total', grandTotal, 'total')}
+              </div>
             </div>
-            <div className="bp-kpi">
-              <span className="bp-kpi-label">Blocked</span>
-              <span className="bp-kpi-val">{fmtNum(blocked)}</span>
-            </div>
-            <div className="bp-kpi">
-              <span className="bp-kpi-label">MTB Overdraft</span>
-              <span className={`bp-kpi-val ${(mtb ?? 0) < 0 ? 'neg' : ''}`}>{fmtNum(mtb)}</span>
-            </div>
-            <div className="bp-kpi">
-              <span className="bp-kpi-label">Palestine</span>
-              <span className={`bp-kpi-val ${(palestine ?? 0) < 0 ? 'neg' : ''}`}>{fmtNum(palestine)}</span>
+
+            {/* cash-availability waterfall */}
+            <div className="bp-cg bp-cg-free">
+              <div className="bp-cg-title">Cash availability</div>
+              <div className="bp-cg-row">
+                {card('Cash', cashTot)}
+                {op('−')}
+                {card('JV Money', jvCash)}
+                {op('=')}
+                {card('Money under CCC control', moneyControl, 'free')}
+                {op('−')}
+                {card('Blocked Cash', blocked)}
+                {op('=')}
+                {card("CCC's Free Usable Cash", freeUsable, 'free')}
+              </div>
             </div>
           </div>
 
@@ -499,37 +635,12 @@ export default function BankPosition() {
                 </tr>
               </thead>
               <tbody>
-                {areas.map(area => {
-                  const net = areaNet(grid, area)
-                  const prev = priorNet[area]
-                  const delta = prev == null ? null : net - prev
-                  const special = EXCLUDED_FROM_GROUP.includes(area)
-                  return (
-                    <tr key={area} className={special ? 'bp-special' : ''}>
-                      <td className="label">{area}</td>
-                      {AREA_ACCOUNTS.map(account => (
-                        <td key={account} className="bp-cell">
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            value={grid[area]?.[account] ?? ''}
-                            onChange={e => setCell(area, account, e.target.value)}
-                          />
-                        </td>
-                      ))}
-                      <td className={`bp-num ${net < 0 ? 'neg' : ''}`}>{fmtNum(net)}</td>
-                      <td className={`bp-num bp-delta ${delta == null ? '' : delta < 0 ? 'neg' : ''}`}>
-                        {delta == null ? '—' : (delta > 0 ? '+' : '') + fmtNum(delta)}
-                      </td>
-                    </tr>
-                  )
-                })}
-                <tr className="bp-total">
-                  <td className="label">CC Group net</td>
-                  <td colSpan={AREA_ACCOUNTS.length} />
-                  <td className={`bp-num ${groupNet < 0 ? 'neg' : ''}`}>{fmtNum(groupNet)}</td>
-                  <td />
-                </tr>
+                {opAreas.map(area => areaRow(area))}
+                {subtotalRow('CC Group total', groupNet, priorOp)}
+                {hasMtb && areaRow('MTB Overdraft', true)}
+                {subtotalRow('CC Group total incl. MTB', groupWithMtb, priorGroupWithMtb)}
+                {hasPalestine && areaRow('Palestine', true)}
+                {subtotalRow('Total', grandTotal, priorTotal, true)}
               </tbody>
             </table>
           </div>
@@ -539,17 +650,24 @@ export default function BankPosition() {
             <h2 className="bp-h2">Group items</h2>
             <p className="bp-group-hint">Cash-availability waterfall — stored under the “Total” row.</p>
             <div className="bp-group-fields">
-              {GROUP_ACCOUNTS.map(account => (
-                <label key={account} className="bp-field">
-                  <span>{account}</span>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={groupItems[account] ?? ''}
-                    onChange={e => setGroup(account, e.target.value)}
-                  />
-                </label>
-              ))}
+              {GROUP_ACCOUNTS.map(account => {
+                const key = cellKey(GROUP_AREA, account)
+                const raw = groupItems[account]
+                return (
+                  <label key={account} className="bp-field">
+                    <span>{account}</span>
+                    <input
+                      type="text"
+                      inputMode="text"
+                      className={cellNeg(key, raw) ? 'neg' : ''}
+                      value={cellVal(key, raw)}
+                      onFocus={() => setFocusKey(key)}
+                      onBlur={() => setFocusKey(null)}
+                      onChange={e => setGroup(account, e.target.value)}
+                    />
+                  </label>
+                )
+              })}
             </div>
           </div>
 
@@ -558,6 +676,16 @@ export default function BankPosition() {
             <div className="bp-narrative-head">
               <h2 className="bp-h2">Narrative</h2>
               <div className="bp-list-tools">
+                <button type="button" className="bp-tool bp-tool-b" onClick={() => wrapSel('**')} title="Bold">
+                  B
+                </button>
+                <button type="button" className="bp-tool bp-tool-i" onClick={() => wrapSel('*')} title="Italic">
+                  I
+                </button>
+                <button type="button" className="bp-tool bp-tool-u" onClick={() => wrapSel('__')} title="Underline">
+                  U
+                </button>
+                <span className="bp-tool-sep" />
                 <button type="button" className="bp-tool" onClick={() => applyList('bullet')} title="Bullet list">
                   • List
                 </button>
