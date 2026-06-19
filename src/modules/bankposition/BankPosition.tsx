@@ -14,13 +14,16 @@ import {
   fmtNum,
   areaNet,
   ccGroupNet,
+  groupNetByPeriod,
   orderAreas,
   fmtPeriodLabel,
-  periodToMonthInput,
   monthInputToPeriod,
   priorPeriod,
 } from './lib'
+import { buildReportHtml } from './printReport'
 import './bankposition.css'
+
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 type Status = { kind: 'ok' | 'err' | 'busy'; msg: string } | null
 
@@ -43,6 +46,9 @@ export default function BankPosition() {
   const [priorNet, setPriorNet] = useState<Record<string, number>>({})
   const [narrative, setNarrative] = useState('')
   const narrativeOrig = useRef<{ id: number; content: string } | null>(null)
+  const taRef = useRef<HTMLTextAreaElement>(null)
+
+  const [viewYear, setViewYear] = useState<number>(() => new Date().getUTCFullYear())
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -58,7 +64,18 @@ export default function BankPosition() {
     () => (draftPeriod ? [draftPeriod, ...periods] : periods),
     [draftPeriod, periods],
   )
-  const isDraft = period !== '' && period === draftPeriod
+
+  // year-button row bounds: span the available data (plus a draft year)
+  const yearBounds = useMemo(() => {
+    const years = allPeriods.map(p => Number(p.slice(0, 4)))
+    if (!years.length) return { min: viewYear, max: viewYear }
+    return { min: Math.min(...years), max: Math.max(...years) }
+  }, [allPeriods, viewYear])
+
+  // keep the visible year in step with the selected month
+  useEffect(() => {
+    if (period) setViewYear(Number(period.slice(0, 4)))
+  }, [period])
 
   // ── initial period list ───────────────────────────────────────────
   useEffect(() => {
@@ -159,16 +176,68 @@ export default function BankPosition() {
     setGroupItems(g => ({ ...g, [account]: value }))
     setDirty(true)
   }
-  function addArea() {
-    const name = window.prompt('New area name (e.g. Qatar):')?.trim()
-    if (!name) return
-    if (areas.includes(name) || name === GROUP_AREA) {
-      setStatus({ kind: 'err', msg: `Area "${name}" already exists.` })
+  // turn the selected lines of the narrative into a bullet / numbered list
+  function applyList(kind: 'bullet' | 'number') {
+    const ta = taRef.current
+    if (!ta) return
+    const value = ta.value
+    const start = value.lastIndexOf('\n', ta.selectionStart - 1) + 1
+    let end = value.indexOf('\n', ta.selectionEnd)
+    if (end === -1) end = value.length
+    const block = value.slice(start, end)
+    let n = 0
+    const transformed = block
+      .split('\n')
+      .map(ln => {
+        const stripped = ln.replace(/^(\s*)([-*•]\s+|\d+[.)]\s+)?/, '$1')
+        if (stripped.trim() === '') return ln
+        n += 1
+        return kind === 'bullet' ? `- ${stripped.trimStart()}` : `${n}. ${stripped.trimStart()}`
+      })
+      .join('\n')
+    const next = value.slice(0, start) + transformed + value.slice(end)
+    setNarrative(next)
+    setDirty(true)
+    requestAnimationFrame(() => {
+      ta.focus()
+      ta.setSelectionRange(start, start + transformed.length)
+    })
+  }
+
+  // open a printable / save-to-PDF report for the current month
+  function printReport() {
+    const w = window.open('', '_blank', 'width=900,height=1100')
+    if (!w) {
+      setStatus({ kind: 'err', msg: 'Allow pop-ups to print the report.' })
       return
     }
-    setAreas(a => orderAreas([...a, name]))
-    setGrid(g => ({ ...g, [name]: {} }))
-    setDirty(true)
+    w.document.write('<!doctype html><title>Preparing report…</title><body style="font-family:system-ui;padding:40px;color:#666">Preparing report…</body>')
+    supabase
+      .from('bank_position')
+      .select('period,area,account,balance')
+      .then(({ data }) => {
+        const monthly = groupNetByPeriod((data || []) as BankRow[])
+        const liveNet = ccGroupNet(grid, areas) // reflect unsaved edits for the selected month
+        const idx = monthly.findIndex(m => m.period === period)
+        if (idx >= 0) monthly[idx] = { period, net: liveNet }
+        else {
+          monthly.push({ period, net: liveNet })
+          monthly.sort((a, b) => a.period.localeCompare(b.period))
+        }
+        const html = buildReportHtml({
+          period,
+          areas,
+          grid,
+          groupItems,
+          narrative,
+          priorNet,
+          monthly,
+          generatedAt: new Date().toLocaleString('en-GB'),
+        })
+        w.document.open()
+        w.document.write(html)
+        w.document.close()
+      })
   }
 
   // ── new month (clone prior as starting point, persisted on Save) ──
@@ -308,24 +377,51 @@ export default function BankPosition() {
   return (
     <div className="bp-root">
       <header className="bp-head">
-        <div className="bp-head-main">
-          <h1 className="bp-title">Bank Position</h1>
-          <p className="bp-sub">Monthly group cash position by area and account. Edits write to the same data the dashboard reads.</p>
+        <div className="bp-months-row">
+          <div className="bp-yearnav">
+            <button
+              className="bp-yearbtn"
+              onClick={() => setViewYear(y => y - 1)}
+              disabled={viewYear <= yearBounds.min}
+              aria-label="Previous year"
+            >
+              ‹
+            </button>
+            <span className="bp-year">{viewYear}</span>
+            <button
+              className="bp-yearbtn"
+              onClick={() => setViewYear(y => y + 1)}
+              disabled={viewYear >= yearBounds.max}
+              aria-label="Next year"
+            >
+              ›
+            </button>
+          </div>
+          <div className="bp-months">
+            {MONTH_ABBR.map((label, i) => {
+              const p = `${viewYear}-${String(i + 1).padStart(2, '0')}-01`
+              const available = allPeriods.includes(p)
+              const selected = p === period
+              return (
+                <button
+                  key={label}
+                  className={`bp-month ${selected ? 'is-selected' : ''} ${p === draftPeriod ? 'is-draft' : ''}`}
+                  onClick={() => selectPeriod(p)}
+                  disabled={!available || saving}
+                  title={available ? '' : 'No data — use New month to create'}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
         </div>
         <div className="bp-head-controls">
-          <label className="bp-field">
-            <span>Month</span>
-            <select value={period} onChange={e => selectPeriod(e.target.value)} disabled={saving}>
-              {allPeriods.map(p => (
-                <option key={p} value={p}>
-                  {fmtPeriodLabel(p)}
-                  {p === draftPeriod ? ' (draft)' : ''}
-                </option>
-              ))}
-            </select>
-          </label>
           <button className="bp-btn" onClick={openNewMonth} disabled={saving}>
             New month
+          </button>
+          <button className="bp-btn" onClick={printReport} disabled={saving || !period}>
+            Print report
           </button>
           <button className="bp-btn bp-btn-primary" onClick={save} disabled={saving || !dirty}>
             {saving ? 'Saving…' : 'Save'}
@@ -369,7 +465,7 @@ export default function BankPosition() {
           <div className="bp-kpis">
             <div className="bp-kpi bp-kpi-lead">
               <span className="bp-kpi-label">CC Group net</span>
-              <span className={`bp-kpi-val ${groupNet < 0 ? 'neg' : 'pos'}`}>{fmtNum(groupNet)}</span>
+              <span className={`bp-kpi-val ${groupNet < 0 ? 'neg' : ''}`}>{fmtNum(groupNet)}</span>
             </div>
             <div className="bp-kpi">
               <span className="bp-kpi-label">JV Cash</span>
@@ -421,8 +517,8 @@ export default function BankPosition() {
                           />
                         </td>
                       ))}
-                      <td className={`bp-num ${net < 0 ? 'neg' : 'pos'}`}>{fmtNum(net)}</td>
-                      <td className={`bp-num bp-delta ${delta == null ? '' : delta < 0 ? 'neg' : 'pos'}`}>
+                      <td className={`bp-num ${net < 0 ? 'neg' : ''}`}>{fmtNum(net)}</td>
+                      <td className={`bp-num bp-delta ${delta == null ? '' : delta < 0 ? 'neg' : ''}`}>
                         {delta == null ? '—' : (delta > 0 ? '+' : '') + fmtNum(delta)}
                       </td>
                     </tr>
@@ -431,14 +527,11 @@ export default function BankPosition() {
                 <tr className="bp-total">
                   <td className="label">CC Group net</td>
                   <td colSpan={AREA_ACCOUNTS.length} />
-                  <td className={`bp-num ${groupNet < 0 ? 'neg' : 'pos'}`}>{fmtNum(groupNet)}</td>
+                  <td className={`bp-num ${groupNet < 0 ? 'neg' : ''}`}>{fmtNum(groupNet)}</td>
                   <td />
                 </tr>
               </tbody>
             </table>
-            <button className="bp-addarea" onClick={addArea}>
-              + Add area
-            </button>
           </div>
 
           {/* group waterfall items (stored under area = Total) */}
@@ -462,9 +555,19 @@ export default function BankPosition() {
 
           {/* month narrative */}
           <div className="bp-narrative">
-            <h2 className="bp-h2">Narrative</h2>
-            <p className="bp-group-hint">Tony's monthly write-up — saved to report_remarks.</p>
+            <div className="bp-narrative-head">
+              <h2 className="bp-h2">Narrative</h2>
+              <div className="bp-list-tools">
+                <button type="button" className="bp-tool" onClick={() => applyList('bullet')} title="Bullet list">
+                  • List
+                </button>
+                <button type="button" className="bp-tool" onClick={() => applyList('number')} title="Numbered list">
+                  1. List
+                </button>
+              </div>
+            </div>
             <textarea
+              ref={taRef}
               value={narrative}
               onChange={e => {
                 setNarrative(e.target.value)

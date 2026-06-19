@@ -10,29 +10,91 @@
 
 .bp-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  gap: 16px;
   flex-wrap: wrap;
   margin-bottom: 16px;
 }
-.bp-title {
-  font-size: 20px;
-  font-weight: 500;
-  color: var(--crimson);
-  margin: 0 0 4px;
-  letter-spacing: 0.01em;
-}
-.bp-sub {
-  font-size: 13px;
-  color: var(--mute);
-  margin: 0;
-  max-width: 560px;
-}
 .bp-head-controls {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 10px;
+}
+
+/* ── year nav + month buttons ─────────────────────────────────────── */
+.bp-months-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.bp-yearnav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.bp-yearbtn {
+  width: 26px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--charcoal);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.bp-yearbtn:hover:not(:disabled) {
+  background: var(--surface-alt);
+}
+.bp-yearbtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.bp-year {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--charcoal);
+  min-width: 42px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.bp-months {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+.bp-month {
+  min-width: 38px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--charcoal);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.bp-month:hover:not(:disabled) {
+  background: var(--surface-alt);
+}
+.bp-month:disabled {
+  color: #c2c6cc;
+  background: var(--surface);
+  cursor: default;
+}
+.bp-month.is-selected {
+  background: var(--crimson);
+  border-color: var(--crimson);
+  color: #fff;
+  font-weight: 500;
+}
+.bp-month.is-draft:not(.is-selected) {
+  border-style: dashed;
+  border-color: var(--crimson);
+  color: var(--crimson);
 }
 
 .bp-field {
@@ -261,17 +323,30 @@
   background: var(--surface-alt);
 }
 
-.bp-addarea {
-  margin: 8px 4px 0;
-  border: none;
-  background: none;
-  color: var(--crimson);
+.bp-narrative-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.bp-list-tools {
+  display: flex;
+  gap: 6px;
+}
+.bp-tool {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--charcoal);
   font-size: 12.5px;
   cursor: pointer;
-  padding: 4px 6px;
 }
-.bp-addarea:hover {
-  text-decoration: underline;
+.bp-tool:hover {
+  background: var(--surface-alt);
+  border-color: var(--crimson);
+  color: var(--crimson);
 }
 
 /* ── group items + narrative ──────────────────────────────────────── */
