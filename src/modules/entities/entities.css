@@ -351,14 +351,32 @@
   padding: 10px 18px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .ent-search input {
-  width: 100%;
+  flex: 1 1 auto;
   font-size: 13px;
   padding: 7px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg);
+  color: var(--charcoal);
+}
+.ent-collapse-all {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--mute);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ent-collapse-all:hover {
+  border-color: var(--mute);
   color: var(--charcoal);
 }
 

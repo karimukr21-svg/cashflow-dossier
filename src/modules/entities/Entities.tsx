@@ -325,6 +325,14 @@ function MappingPane({
   onUnmap: (item: LocalItem) => void
 }) {
   const [q, setQ] = useState('')
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  function toggleGroup(name: string) {
+    setCollapsed(s => {
+      const n = new Set(s)
+      n.has(name) ? n.delete(name) : n.add(name)
+      return n
+    })
+  }
 
   type Status = 'unmapped' | 'bucket' | 'precise'
   // bucket = mapped to an Area node (the right bucket, not the exact project yet)
@@ -394,7 +402,7 @@ function MappingPane({
     return id ? nodeById.get(id) : undefined
   }
 
-  function renderRow(item: LocalItem, isHeader = false) {
+  function renderRow(item: LocalItem, isHeader = false, toggle?: { open: boolean; onClick: () => void }, count?: number) {
     const status = statusOf(item)
     const alias = aliasByLocalKey.get(item.local_key)
     const target = alias ? nodeById.get(alias.canonical_id) : undefined
@@ -404,11 +412,20 @@ function MappingPane({
     return (
       <div key={item.local_key} className={`ent-maprow ${status}${isHeader ? ' header' : ''}`}>
         <div className="ent-local">
+          {toggle && (
+            <button type="button" className="ent-twisty" onClick={toggle.onClick}
+              aria-label={toggle.open ? 'Collapse' : 'Expand'}>
+              <svg viewBox="0 0 24 24" className={toggle.open ? 'open' : ''} aria-hidden="true">
+                <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth={2} />
+              </svg>
+            </button>
+          )}
           <span className={`ent-dot ${status}`} />
           <div className="ent-local-text">
             <span className="ent-local-name">{item.local_name}</span>
             <span className="ent-local-meta">{item.kind === 'area' ? 'Area' : 'Project'}</span>
           </div>
+          {count !== undefined && <span className="ent-count">{count}</span>}
         </div>
         <div className="ent-maps-to">
           {status === 'unmapped' ? (
@@ -477,32 +494,54 @@ function MappingPane({
 
       <div className="ent-search">
         <input placeholder="Search local names…" value={q} onChange={e => setQ(e.target.value)} />
+        <button
+          type="button"
+          className="ent-collapse-all"
+          onClick={() =>
+            setCollapsed(s => (s.size > 0 ? new Set() : new Set(groups.map(g => g.areaName))))
+          }
+        >
+          {collapsed.size > 0 ? 'Expand all' : 'Collapse all'}
+        </button>
       </div>
 
       {localsLoading ? (
         <div className="ent-empty ent-empty-pad">Loading names…</div>
       ) : (
         <div className="ent-maplist">
-          {groups.map(g => (
-            <div key={g.areaName} className="ent-mapgroup">
-              {g.areaItem ? (
-                renderRow(g.areaItem, true)
-              ) : (
-                <div className="ent-maprow header">
-                  <div className="ent-local">
-                    <div className="ent-local-text">
-                      <span className="ent-local-name">{g.areaName}</span>
-                      <span className="ent-local-meta">Area</span>
+          {groups.map(g => {
+            const open = !!q.trim() || !collapsed.has(g.areaName)
+            const toggle = { open, onClick: () => toggleGroup(g.areaName) }
+            return (
+              <div key={g.areaName} className="ent-mapgroup">
+                {g.areaItem ? (
+                  renderRow(g.areaItem, true, toggle, g.projects.length)
+                ) : (
+                  <div className="ent-maprow header">
+                    <div className="ent-local">
+                      <button type="button" className="ent-twisty" onClick={toggle.onClick}
+                        aria-label={open ? 'Collapse' : 'Expand'}>
+                        <svg viewBox="0 0 24 24" className={open ? 'open' : ''} aria-hidden="true">
+                          <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth={2} />
+                        </svg>
+                      </button>
+                      <div className="ent-local-text">
+                        <span className="ent-local-name">{g.areaName}</span>
+                        <span className="ent-local-meta">Area</span>
+                      </div>
                     </div>
+                    <span className="ent-count">{g.projects.length}</span>
                   </div>
-                </div>
-              )}
-              <div className="ent-mapgroup-projects">
-                {g.projects.map(p => renderRow(p))}
-                {g.projects.length === 0 && <div className="ent-empty">No projects</div>}
+                )}
+                {open && (
+                  <div className="ent-mapgroup-projects">
+                    {g.projects.map(p => renderRow(p))}
+                    {g.projects.length === 0 && <div className="ent-empty">No projects</div>}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            )
+          })}
           {groups.length === 0 && <div className="ent-empty ent-empty-pad">No names match.</div>}
         </div>
       )}
