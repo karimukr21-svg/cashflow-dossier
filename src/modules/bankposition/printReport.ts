@@ -210,18 +210,18 @@ export function buildReportHtml(d: ReportData): string {
   @page { size: A4 landscape; margin: 5mm; }
   * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   html, body { height: auto; }
-  body { font-family: Rubik, system-ui, sans-serif; color: #141414; margin: 0; font-size: 8.4px; line-height: 1.28; }
+  body { font-family: Rubik, system-ui, sans-serif; color: #141414; margin: 0; font-size: 9.4px; line-height: 1.32; }
   .head { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #E10020; padding-bottom: 5px; margin-bottom: 8px; }
   .hleft { display: flex; align-items: center; gap: 12px; }
   .logo { height: 30px; width: auto; }
   .head h1 { font-size: 15px; font-weight: 500; margin: 0; }
   .head .ctx { color: #E10020; font-weight: 500; font-size: 11px; }
   .head .gen { font-size: 8px; color: #6b7280; text-align: right; }
-  h2 { font-size: 9px; font-weight: 500; margin: 7px 0 4px; text-transform: uppercase; letter-spacing: 0.04em; color: #374151; }
+  h2 { font-size: 9.5px; font-weight: 500; margin: 7px 0 4px; text-transform: uppercase; letter-spacing: 0.04em; color: #374151; }
   .cards { display: flex; gap: 5px; align-items: stretch; }
   .card { flex: 1 1 0; min-width: 0; border: 1px solid #e5e7eb; border-top: 2.5px solid #9ca3af; border-radius: 5px; padding: 5px 7px; display: flex; flex-direction: column; gap: 3px; }
-  .card .cl { font-size: 6.6px; text-transform: uppercase; letter-spacing: 0.02em; color: #6b7280; font-weight: 500; line-height: 1.2; }
-  .card .cv { font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; margin-top: auto; }
+  .card .cl { font-size: 7px; text-transform: uppercase; letter-spacing: 0.02em; color: #6b7280; font-weight: 500; line-height: 1.2; }
+  .card .cv { font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; margin-top: auto; }
   .card .cv.neg { color: #E10020; }
   .card.g-build { border-top-color: #141414; }
   .card.g-group { border-top-color: #E10020; }
@@ -240,19 +240,19 @@ export function buildReportHtml(d: ReportData): string {
   .cx { font-size: 6.5px; fill: #6b7280; text-anchor: middle; }
   .cval { font-size: 7.5px; fill: #141414; font-weight: 500; text-anchor: middle; }
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-  th, td { padding: 2.3px 7px; border-bottom: 1px solid #eee; }
-  th { font-size: 7.2px; text-transform: uppercase; letter-spacing: 0.03em; color: #6b7280; font-weight: 500; text-align: right; }
-  th.l, td.l { text-align: left; }
+  th, td { padding: 2.6px 6px; border-bottom: 1px solid #eee; }
+  th { font-size: 7.8px; text-transform: uppercase; letter-spacing: 0.03em; color: #6b7280; font-weight: 500; text-align: right; }
+  th.l, td.l { text-align: left; padding-left: 4px; padding-right: 3px; width: 1%; white-space: nowrap; }
   td.r { text-align: right; }
   tr.special td.l { font-style: italic; color: #6b7280; }
   tr.sub td { border-top: 1px solid #141414; border-bottom: none; font-weight: 500; background: #f5f5f5; }
-  tr.sub td.l { text-transform: uppercase; font-size: 7.6px; letter-spacing: 0.03em; }
+  tr.sub td.l { text-transform: uppercase; font-size: 7.6px; letter-spacing: 0.02em; }
   tr.sub.strong td { border-top: 2px solid #141414; background: #ededed; }
   .neg { color: #E10020; }
   .muted { color: #9ca3af; }
   .twocol { display: flex; gap: 18px; align-items: flex-start; }
-  .twocol .tbl { flex: 1.7; }
-  .twocol .nar { flex: 1; }
+  .twocol .tbl { flex: 1.4; }
+  .twocol .nar { flex: 1.15; }
   .narbox { background: #fafafa; border: 1px solid #eee; border-left: 3px solid #E10020; border-radius: 4px; padding: 9px 12px; color: #1f2937; }
   .narbox p { margin: 4px 0; }
   .narbox p:first-child { margin-top: 0; }
