@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRole, canManageCashFlow } from '@/lib/role'
 import {
@@ -422,20 +422,58 @@ export default function BankPosition() {
     return n != null && n < 0
   }
 
+  // editable rows in visual order (subtotal rows are skipped — not editable)
+  const editRows = [
+    ...opAreas,
+    ...(hasMtb ? ['MTB Overdraft'] : []),
+    ...(hasPalestine ? ['Palestine'] : []),
+  ]
+  const focusCell = (r: number, c: number) => {
+    const el = document.getElementById(`bpcell-${r}-${c}`) as HTMLInputElement | null
+    if (el) {
+      el.focus()
+      el.select()
+    }
+  }
+  // arrow-key / Enter movement between cells; Left/Right only jump at the caret edge
+  const onCellKey = (e: KeyboardEvent<HTMLInputElement>, r: number, c: number) => {
+    const nR = editRows.length
+    const nC = AREA_ACCOUNTS.length
+    const el = e.currentTarget
+    const atStart = el.selectionStart === 0 && el.selectionEnd === 0
+    const atEnd = el.selectionStart === el.value.length && el.selectionEnd === el.value.length
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      focusCell((r - 1 + nR) % nR, c)
+    } else if (e.key === 'ArrowDown' || e.key === 'Enter') {
+      e.preventDefault()
+      focusCell((r + 1) % nR, c)
+    } else if (e.key === 'ArrowLeft' && atStart) {
+      e.preventDefault()
+      if (c > 0) focusCell(r, c - 1)
+      else if (r > 0) focusCell(r - 1, nC - 1)
+    } else if (e.key === 'ArrowRight' && atEnd) {
+      e.preventDefault()
+      if (c < nC - 1) focusCell(r, c + 1)
+      else if (r < nR - 1) focusCell(r + 1, 0)
+    }
+  }
+
   // one editable area row (Cash / OD / Loans + Net + Δ)
-  const areaRow = (area: string, special = false) => {
+  const areaRow = (area: string, special = false, rowIndex = 0) => {
     const net = areaNet(grid, area)
     const prev = priorNet[area]
     const delta = prev == null ? null : net - prev
     return (
       <tr key={area} className={special ? 'bp-special' : ''}>
         <td className="label">{area}</td>
-        {AREA_ACCOUNTS.map(account => {
+        {AREA_ACCOUNTS.map((account, ci) => {
           const key = cellKey(area, account)
           const raw = grid[area]?.[account]
           return (
             <td key={account} className="bp-cell">
               <input
+                id={`bpcell-${rowIndex}-${ci}`}
                 type="text"
                 inputMode="text"
                 className={cellNeg(key, raw) ? 'neg' : ''}
@@ -443,6 +481,7 @@ export default function BankPosition() {
                 onFocus={() => setFocusKey(key)}
                 onBlur={() => setFocusKey(null)}
                 onChange={e => setCell(area, account, e.target.value)}
+                onKeyDown={e => onCellKey(e, rowIndex, ci)}
               />
             </td>
           )
@@ -615,11 +654,11 @@ export default function BankPosition() {
                 </tr>
               </thead>
               <tbody>
-                {opAreas.map(area => areaRow(area))}
+                {opAreas.map((area, i) => areaRow(area, false, i))}
                 {subtotalRow('CC Group total', groupNet, priorOp)}
-                {hasMtb && areaRow('MTB Overdraft', true)}
+                {hasMtb && areaRow('MTB Overdraft', true, opAreas.length)}
                 {subtotalRow('CC Group total incl. MTB', groupWithMtb, priorGroupWithMtb)}
-                {hasPalestine && areaRow('Palestine', true)}
+                {hasPalestine && areaRow('Palestine', true, opAreas.length + (hasMtb ? 1 : 0))}
                 {subtotalRow('Total', grandTotal, priorTotal, true)}
               </tbody>
             </table>

@@ -110,9 +110,9 @@ const ML = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 function chartSvg(series: Series[], color: string, selected: string): string {
   if (!series.length) return '<p class="muted">No data.</p>'
   const W = 360
-  const H = 150
-  const padT = 12
-  const padB = 30
+  const H = 128
+  const padT = 10
+  const padB = 26
   const padX = 8
   const vals = series.map(d => d.val)
   const max = Math.max(0, ...vals)
@@ -208,16 +208,17 @@ export function buildReportHtml(d: ReportData): string {
 <title>Group Cash Position — ${esc(fmtPeriodLabel(d.period))}</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500&display=swap');
-  @page { size: A4 landscape; margin: 9mm; }
+  @page { size: A4 landscape; margin: 5mm; }
   * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  body { font-family: Rubik, system-ui, sans-serif; color: #141414; margin: 0; font-size: 8.6px; line-height: 1.32; }
-  .head { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #E10020; padding-bottom: 6px; margin-bottom: 10px; }
+  html, body { height: auto; }
+  body { font-family: Rubik, system-ui, sans-serif; color: #141414; margin: 0; font-size: 8.4px; line-height: 1.28; }
+  .head { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #E10020; padding-bottom: 5px; margin-bottom: 8px; }
   .hleft { display: flex; align-items: center; gap: 12px; }
   .logo { height: 30px; width: auto; }
   .head h1 { font-size: 15px; font-weight: 500; margin: 0; }
   .head .ctx { color: #E10020; font-weight: 500; font-size: 11px; }
   .head .gen { font-size: 8px; color: #6b7280; text-align: right; }
-  h2 { font-size: 9.5px; font-weight: 500; margin: 10px 0 5px; text-transform: uppercase; letter-spacing: 0.04em; color: #374151; }
+  h2 { font-size: 9px; font-weight: 500; margin: 7px 0 4px; text-transform: uppercase; letter-spacing: 0.04em; color: #374151; }
   .cards { display: flex; gap: 5px; align-items: stretch; }
   .card { flex: 1 1 0; min-width: 0; border: 1px solid #e5e7eb; border-top: 2.5px solid #9ca3af; border-radius: 5px; padding: 5px 7px; display: flex; flex-direction: column; gap: 3px; }
   .card .cl { font-size: 6.6px; text-transform: uppercase; letter-spacing: 0.02em; color: #6b7280; font-weight: 500; line-height: 1.2; }

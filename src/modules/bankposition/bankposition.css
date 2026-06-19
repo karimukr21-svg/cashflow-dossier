@@ -244,32 +244,34 @@
 .bp-card-val.neg {
   color: var(--bad);
 }
-/* emphasised TOTAL cards — filled crimson, white text */
-.bp-card-total {
-  background: var(--crimson);
-  border-color: var(--crimson);
-  border-top-color: var(--crimson);
+/* emphasised TOTAL cards — filled crimson, white text.
+ * Two-class selector (.bp-card.bp-card-total) so the fill always beats the
+ * base .bp-card / .bp-card-g-* rules regardless of source order. */
+.bp-card.bp-card-total {
+  background: #e10020;
+  border-color: #e10020;
+  border-top-color: #e10020;
 }
-.bp-card-total .bp-card-label {
-  color: rgba(255, 255, 255, 0.85);
+.bp-card.bp-card-total .bp-card-label {
+  color: rgba(255, 255, 255, 0.9);
 }
-.bp-card-total .bp-card-val,
-.bp-card-total .bp-card-val.neg {
-  color: #fff;
+.bp-card.bp-card-total .bp-card-val,
+.bp-card.bp-card-total .bp-card-val.neg {
+  color: #ffffff;
 }
 /* emphasised FREE/derived cards — green tint */
-.bp-card-free {
+.bp-card.bp-card-free {
   background: #ecfdf5;
   border-color: #6ee7b7;
   border-top-color: #057a55;
 }
-.bp-card-free .bp-card-label {
+.bp-card.bp-card-free .bp-card-label {
   color: #047857;
 }
-.bp-card-free .bp-card-val {
+.bp-card.bp-card-free .bp-card-val {
   color: #065f46;
 }
-.bp-card-free .bp-card-val.neg {
+.bp-card.bp-card-free .bp-card-val.neg {
   color: var(--bad);
 }
 
