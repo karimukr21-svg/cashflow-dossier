@@ -162,33 +162,46 @@ def extract_rollup_balances(ws, as_of):
     First-row-wins per kind: the rollup commonly prints the native liquid-funds
     ending followed by a USD ('000) restatement; taking the first match keeps the
     native-currency series and drops the duplicate (which otherwise summed into
-    garbage). Returns {'opening': {'YYYY-MM': v}, 'ending': {'YYYY-MM': v}}."""
-    rows = list(ws.iter_rows(min_row=1, max_row=80, max_col=120, values_only=True))
+    garbage).
+
+    Also lifts the area's debt STOCKS verbatim — accumulated loans and overdraft
+    balances (the running closing-debt rows below BALANCE AT END). These are stocks,
+    not flows, so summing them across project sheets double-counts; the rollup is the
+    authoritative source. Returns {'opening','ending','accum_loans','accum_od'},
+    each {'YYYY-MM': v}."""
+    rows = list(ws.iter_rows(min_row=1, max_row=90, max_col=120, values_only=True))
     hdr = detect_header(rows, as_of)
+    empty = {'opening': {}, 'ending': {}, 'accum_loans': {}, 'accum_od': {}}
     if not hdr:
-        return {'opening': {}, 'ending': {}}
+        return empty
     lc = hdr['label_col']
     periods = hdr['periods']
-    opening, ending = {}, {}
-    got_open = got_end = False
+    opening, ending, accum_loans, accum_od = {}, {}, {}, {}
+    got_open = got_end = got_accl = got_accod = False
+
+    def series(r):
+        out = {}
+        for ci, (y, m, _k) in periods.items():
+            if ci < len(r) and isinstance(r[ci], (int, float)):
+                out[f'{y:04d}-{m:02d}'] = round(float(r[ci]), 4)
+        return out
+
     for r in rows[hdr['header_row'] + 1:]:
         label = r[lc] if lc < len(r) and isinstance(r[lc], str) else None
         if not label or not label.strip():
             continue
         lt = tight(label)
         if not got_open and is_opening_label(lt):
-            for ci, (y, m, _k) in periods.items():
-                if ci < len(r) and isinstance(r[ci], (int, float)):
-                    opening[f'{y:04d}-{m:02d}'] = round(float(r[ci]), 4)
-            got_open = True
+            opening = series(r); got_open = True
         elif not got_end and is_ending_label(lt):
-            for ci, (y, m, _k) in periods.items():
-                if ci < len(r) and isinstance(r[ci], (int, float)):
-                    ending[f'{y:04d}-{m:02d}'] = round(float(r[ci]), 4)
-            got_end = True
-        if got_open and got_end:
-            break
-    return {'opening': opening, 'ending': ending}
+            ending = series(r); got_end = True
+        # debt stocks sit BELOW the ending balance (the closing-debt block)
+        elif got_end and not got_accl and ('ACCOUMULATEDLOAN' in lt or 'ACCUMULATEDLOAN' in lt):
+            accum_loans = series(r); got_accl = True
+        elif got_end and not got_accod and lt.startswith('OVERDRAFT'):
+            accum_od = series(r); got_accod = True
+    return {'opening': opening, 'ending': ending,
+            'accum_loans': accum_loans, 'accum_od': accum_od}
 
 
 # Area-item sheet tokens (fold to project_code='_AREA', is_area_item=true) -------

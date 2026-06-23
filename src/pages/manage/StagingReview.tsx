@@ -144,10 +144,35 @@ function CashflowGrid({ runId, currency }: { runId: string; currency: string }) 
   const wg = (ym: string) => at(sec.wg, ym)
   const bank = (ym: string) => at(sec.bank, ym)
   const netMove = (ym: string) => operNet(ym) + interest(ym) + nonop(ym) + wg(ym) + bank(ym)
-  const opening = (ym: string) => at(yd.opening, ym)
-  const ending = (ym: string) => at(yd.ending, ym)
   const accumL = (ym: string) => at(sec.accum_loans, ym)
   const accumO = (ym: string) => at(sec.accum_od, ym)
+
+  // Opening/ending are a DERIVED running balance: only the very first opening of
+  // the whole series is taken from the file (the anchor); every ending = opening +
+  // that month's net movement, and the next month opens where the prior closed.
+  // Chained across all years so this year's opening continues from the last.
+  const netMoveOf = (g: GridYear, ym: string) => {
+    const s = g.sections || {}
+    return at(s.oper_rec, ym) + at(s.oper_pay, ym) + at(s.interest, ym)
+      + at(s.nonop, ym) + at(s.wg, ym) + at(s.bank, ym)
+  }
+  const derivedOpen: Record<string, number> = {}
+  const derivedEnd: Record<string, number> = {}
+  {
+    const firstG = data.by_year[String(data.years[0])]
+    let bal = firstG && firstG.months.length ? at(firstG.opening, firstG.months[0].ym) : 0
+    for (const yy of data.years) {
+      const g = data.by_year[String(yy)]
+      if (!g) continue
+      for (const mo of g.months) {
+        derivedOpen[mo.ym] = bal
+        bal = bal + netMoveOf(g, mo.ym)
+        derivedEnd[mo.ym] = bal
+      }
+    }
+  }
+  const opening = (ym: string) => derivedOpen[ym] ?? 0
+  const ending = (ym: string) => derivedEnd[ym] ?? 0
 
   // Boundaries: open/close of the actual stretch and of the forecast stretch.
   const actMs = months.filter(m => m.kind === 'actual').map(m => m.ym)
@@ -204,6 +229,10 @@ function CashflowGrid({ runId, currency }: { runId: string; currency: string }) 
         {fcMs.length > 0 && (
           <Bnd label="Forecast" open={opening(fcMs[0])} close={ending(fcMs[fcMs.length - 1])} />
         )}
+      </div>
+      <div className="cfm-cfg-note">
+        Opening &amp; ending are a running balance — only the first opening comes from the file,
+        each month then closes at opening + net movement. Accumulated loans &amp; overdraft are the file's own stock balances.
       </div>
 
       <div className="cfm-cfg-scroll">
