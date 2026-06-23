@@ -144,23 +144,29 @@ function CashflowGrid({ runId, currency }: { runId: string; currency: string }) 
   const wg = (ym: string) => at(sec.wg, ym)
   const bank = (ym: string) => at(sec.bank, ym)
   const netMove = (ym: string) => operNet(ym) + interest(ym) + nonop(ym) + wg(ym) + bank(ym)
-  const accumL = (ym: string) => at(sec.accum_loans, ym)
-  const accumO = (ym: string) => at(sec.accum_od, ym)
 
-  // Opening/ending are a DERIVED running balance: only the very first opening of
-  // the whole series is taken from the file (the anchor); every ending = opening +
-  // that month's net movement, and the next month opens where the prior closed.
-  // Chained across all years so this year's opening continues from the last.
-  const netMoveOf = (g: GridYear, ym: string) => {
-    const s = g.sections || {}
-    return at(s.oper_rec, ym) + at(s.oper_pay, ym) + at(s.interest, ym)
-      + at(s.nonop, ym) + at(s.wg, ym) + at(s.bank, ym)
-  }
+  // All balances are DERIVED running balances: only the very FIRST value of the
+  // whole series is taken from the file (the anchor), then each is rolled forward
+  // by its movements. Cash: ending = opening + net movement (next month opens where
+  // the prior closed). Loans / overdraft: anchored at the first rollup stock, then
+  // moved by the bank-financing loan-in/out and overdraft-in/out flows. Chained
+  // across all years so this year continues from the last.
+  const secAt = (g: GridYear, key: string, ym: string) => at(g.sections?.[key], ym)
+  const netMoveOf = (g: GridYear, ym: string) =>
+    secAt(g, 'oper_rec', ym) + secAt(g, 'oper_pay', ym) + secAt(g, 'interest', ym)
+      + secAt(g, 'nonop', ym) + secAt(g, 'wg', ym) + secAt(g, 'bank', ym)
+
   const derivedOpen: Record<string, number> = {}
   const derivedEnd: Record<string, number> = {}
+  const derivedLoans: Record<string, number> = {}
+  const derivedOd: Record<string, number> = {}
   {
     const firstG = data.by_year[String(data.years[0])]
-    let bal = firstG && firstG.months.length ? at(firstG.opening, firstG.months[0].ym) : 0
+    const firstYm = firstG?.months?.[0]?.ym
+    let bal = firstG && firstYm ? at(firstG.opening, firstYm) : 0
+    let loanBal = firstG && firstYm ? secAt(firstG, 'accum_loans', firstYm) : 0
+    let odBal = firstG && firstYm ? secAt(firstG, 'accum_od', firstYm) : 0
+    let first = true
     for (const yy of data.years) {
       const g = data.by_year[String(yy)]
       if (!g) continue
@@ -168,11 +174,20 @@ function CashflowGrid({ runId, currency }: { runId: string; currency: string }) 
         derivedOpen[mo.ym] = bal
         bal = bal + netMoveOf(g, mo.ym)
         derivedEnd[mo.ym] = bal
+        if (!first) {
+          loanBal = loanBal + secAt(g, 'bf_loans', mo.ym)
+          odBal = odBal + secAt(g, 'bf_od', mo.ym)
+        }
+        derivedLoans[mo.ym] = loanBal
+        derivedOd[mo.ym] = odBal
+        first = false
       }
     }
   }
   const opening = (ym: string) => derivedOpen[ym] ?? 0
   const ending = (ym: string) => derivedEnd[ym] ?? 0
+  const accumL = (ym: string) => derivedLoans[ym] ?? 0
+  const accumO = (ym: string) => derivedOd[ym] ?? 0
 
   // Boundaries: open/close of the actual stretch and of the forecast stretch.
   const actMs = months.filter(m => m.kind === 'actual').map(m => m.ym)
@@ -231,8 +246,8 @@ function CashflowGrid({ runId, currency }: { runId: string; currency: string }) 
         )}
       </div>
       <div className="cfm-cfg-note">
-        Opening &amp; ending are a running balance — only the first opening comes from the file,
-        each month then closes at opening + net movement. Accumulated loans &amp; overdraft are the file's own stock balances.
+        All balances are running balances — only the first value of each comes from the file, then rolled forward by movements.
+        Cash closes at opening + net movement; accumulated loans &amp; overdraft move with the bank-financing loan / overdraft flows.
       </div>
 
       <div className="cfm-cfg-scroll">
