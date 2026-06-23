@@ -222,10 +222,26 @@
 .cfm-sr-tile-val.neg { color: #b91c1c; }
 .cfm-sr-tile-cur { font-size: 10.5px; color: #9ca3af; }
 
+.cfm-sr-tile.is-muted { background: #fafafa; border-style: dashed; }
+.cfm-sr-tile.is-muted .cfm-sr-tile-val { font-weight: 500; color: #6b7280; }
+
 .cfm-sr-cap { font-size: 11.5px; color: #6b7280; margin: 2px 0 8px; }
 .cfm-sr-cap-sm { font-size: 11px; color: #9ca3af; margin-top: 6px; }
 .cfm-sr-note { font-size: 11.5px; color: #6b7280; margin: 0 0 6px; }
 .cfm-sr-note-amber { color: #b45309; }
+
+/* Sheet classification — what was summed vs ignored (basis-B safety net) */
+.cfm-sr-sheets { margin: 0 0 8px; }
+.cfm-sr-sheets-toggle { background: none; border: none; padding: 2px 0; cursor: pointer;
+  font-size: 11.5px; color: #6b7280; text-align: left; }
+.cfm-sr-sheets-toggle strong { color: #374151; font-weight: 600; }
+.cfm-sr-sheets-caret { display: inline-block; width: 12px; color: #9ca3af; }
+.cfm-sr-sheets-body { display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+  margin: 6px 0 2px; padding: 10px 12px; border: 1px solid #eef0f2; border-radius: 8px; background: #fcfcfd; }
+.cfm-sr-sheets-h { font-size: 10.5px; color: #9ca3af; text-transform: uppercase;
+  letter-spacing: 0.04em; margin-bottom: 4px; }
+.cfm-sr-sheets-list { font-size: 11.5px; color: #374151; line-height: 1.5; }
+.cfm-sr-sheets-list.cfm-sr-sheets-muted { color: #9ca3af; }
 
 /* line movement table */
 .cfm-sr-lines { margin-top: 12px; }

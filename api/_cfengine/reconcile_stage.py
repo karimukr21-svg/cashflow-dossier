@@ -29,7 +29,8 @@ from collections import defaultdict, Counter
 
 from parse_cashflow import (SRC, AREA_BY_FILE, Resolver, load_ref, parse_sheet,
                             pick_usd_sheets, classify, strip_currency, tight,
-                            DEFAULT_AS_OF, MIN_YEAR)
+                            DEFAULT_AS_OF, MIN_YEAR, detect_header,
+                            is_opening_label, is_ending_label)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -117,6 +118,79 @@ def detect_currency(wb, sheets):
                                 break
     return votes.most_common(1)[0][0] if votes else '?'
 
+def detect_target_sheet(wb, native_ccy):
+    """Auto-detect the area-total / consolidated rollup sheet (the recon target,
+    and the sheet basis-B reads the area balance from) WITHOUT a per-file map, so
+    a new cycle's file (different name) still self-identifies its rollup.
+
+    A candidate is any sheet whose name says CONSOLIDATED / CONSOL / PROJECTS
+    TOTAL. Score prefers the area's native currency, de-prioritises prev/legacy
+    restatements. Reproduces the tuned TARGET_SHEET map for 19/21 known files;
+    the two ambiguous ones keep an explicit override in TARGET_SHEET. Returns the
+    sheet name or None."""
+    cands = []
+    for n in wb.sheetnames:
+        up = n.upper()
+        base, cur = strip_currency(n)
+        if not ('CONSOLIDAT' in up or 'CONSOL' in up or 'PROJECTS TOTAL' in up):
+            continue
+        score = 0
+        if native_ccy and native_ccy != '?':
+            if cur == native_ccy:
+                score += 100
+            if native_ccy in up:
+                score += 100
+        if cur == 'USD' or 'USD' in up:
+            score += 10
+        if 'PROJECTS TOTAL' in up:
+            score += 5
+        if 'PREV' in up or 'LEGACY' in up or 'OLD' in up:
+            score -= 50
+        cands.append((score, len(n), n))
+    if not cands:
+        return None
+    cands.sort(key=lambda x: (-x[0], x[1]))
+    return cands[0][2]
+
+
+def extract_rollup_balances(ws, as_of):
+    """Basis B: lift the area's OWN maintained opening/ending cash balance from the
+    rollup sheet, verbatim. Project sheets either open at 0 (e.g. KSA, movement-only)
+    or carry their own balances (e.g. Qatar) — so the authoritative area balance is
+    the rollup's BALANCE AT START / BALANCE AT END row, not a derivation.
+
+    First-row-wins per kind: the rollup commonly prints the native liquid-funds
+    ending followed by a USD ('000) restatement; taking the first match keeps the
+    native-currency series and drops the duplicate (which otherwise summed into
+    garbage). Returns {'opening': {'YYYY-MM': v}, 'ending': {'YYYY-MM': v}}."""
+    rows = list(ws.iter_rows(min_row=1, max_row=80, max_col=120, values_only=True))
+    hdr = detect_header(rows, as_of)
+    if not hdr:
+        return {'opening': {}, 'ending': {}}
+    lc = hdr['label_col']
+    periods = hdr['periods']
+    opening, ending = {}, {}
+    got_open = got_end = False
+    for r in rows[hdr['header_row'] + 1:]:
+        label = r[lc] if lc < len(r) and isinstance(r[lc], str) else None
+        if not label or not label.strip():
+            continue
+        lt = tight(label)
+        if not got_open and is_opening_label(lt):
+            for ci, (y, m, _k) in periods.items():
+                if ci < len(r) and isinstance(r[ci], (int, float)):
+                    opening[f'{y:04d}-{m:02d}'] = round(float(r[ci]), 4)
+            got_open = True
+        elif not got_end and is_ending_label(lt):
+            for ci, (y, m, _k) in periods.items():
+                if ci < len(r) and isinstance(r[ci], (int, float)):
+                    ending[f'{y:04d}-{m:02d}'] = round(float(r[ci]), 4)
+            got_end = True
+        if got_open and got_end:
+            break
+    return {'opening': opening, 'ending': ending}
+
+
 # Area-item sheet tokens (fold to project_code='_AREA', is_area_item=true) -------
 AREA_ITEM_TOKENS = ('PMV', 'CAMP', 'RMPT', 'OVERHEAD', 'RECOVER', 'AREAOH', 'MOEST')
 
@@ -171,6 +245,7 @@ def reconcile_workbook_bytes(file_bytes, fn, resolver, as_of):
 
 def _reconcile_with_wb(wb, fn, resolver, as_of):
     area = AREA_BY_FILE.get(fn, fn.split('_')[0])
+    all_sheets = list(wb.sheetnames)
     sel = pick_usd_sheets(wb)
     excl = EXCLUDE_SHEETS.get(fn, set())
     sel = [s for s in sel if s.strip() not in {e.strip() for e in excl}]
@@ -212,11 +287,16 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
         p['n'] += len(rows)
         _merge_unmatched(meta['unmatched'])
 
+    # basis B: the area's own maintained opening/ending balance, read verbatim from
+    # the rollup (set below once the target/main sheet is known).
+    rollup_balances = {'opening': {}, 'ending': {}}
+
     # single-entity areas: no per-project decomposition — stage the area's own
     # cash-flow sheet under _AREA (nothing to reconcile against).
     single_area = False
     if not proj_rows:
-        fb = TARGET_SHEET.get(fn) or MAIN_SHEET.get(fn)
+        fb = (TARGET_SHEET.get(fn) or MAIN_SHEET.get(fn)
+              or detect_target_sheet(wb, currency))
         if fb and fb in wb.sheetnames:
             rows, meta = parse_sheet(wb[fb], area, fb, resolver, as_of)
             if rows:
@@ -225,6 +305,7 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
                 projects['_AREA'] = {'sheets': [fb], 'is_area_item': True,
                                      'is_jv': False, 'n': len(rows)}
                 _merge_unmatched(meta['unmatched'])
+                rollup_balances = extract_rollup_balances(wb[fb], as_of)
                 single_area = True
 
     # aggregate project rows to canonical grain (sum within-run dups, e.g. _AREA)
@@ -243,13 +324,16 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
 
     # reconcile against the target rollup sheet (skip for single-entity areas)
     MATERIAL = {'real', 'missing_in_total', 'missing_in_projects'}
-    target = TARGET_SHEET.get(fn, '__AUTO__')
+    # explicit per-file override wins (incl. an explicit None); otherwise auto-detect
+    # the consolidated rollup so a new cycle's filename self-identifies its target.
+    target = TARGET_SHEET[fn] if fn in TARGET_SHEET else detect_target_sheet(wb, currency)
     breaks = []
     recon_status = 'single_area' if single_area else 'no_total'
     target_used = None
     if target and target in wb.sheetnames and not single_area:
         tgt, _ = parse_target(wb, area, target, resolver, as_of)
         target_used = target
+        rollup_balances = extract_rollup_balances(wb[target], as_of)
         keys = set(flowsum) | set(tgt)
         material = 0
         for k in sorted(keys):
@@ -292,10 +376,19 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
         staged.append({'kind': kind, 'area': area, 'project_code': pc,
                        'line_code': lc, 'year': y, 'month': m, 'value': round(v, 4)})
 
+    summed_set = set(sel)
+    sheet_classification = {
+        'target': target_used,
+        'summed': sorted(sel),
+        'ignored': sorted(n for n in all_sheets
+                          if n not in summed_set and n != target_used),
+    }
+
     return {
         'area': area, 'file': fn, 'currency': currency,
         'as_of': as_of, 'n_sheets': len(sel), 'projects': projects,
         'n_projects': len(projects), 'unmatched_labels': dict(unmatched_labels),
+        'rollup_balances': rollup_balances, 'sheet_classification': sheet_classification,
         'recon_status': recon_status, 'recon_target': target_used,
         'n_real_breaks': len(flow_breaks),
         'n_rounding': sum(1 for b in breaks if b['classification'] == 'rounding'),
@@ -374,6 +467,11 @@ def stage(res, ref, created_by='reconcile_stage.py'):
         'breaks_by_class': dict(Counter(b['classification'] for b in res['breaks'])),
         'breaks_by_category': res['breaks_by_category'],
         'breaks_actual': res['n_breaks_actual'], 'breaks_forecast': res['n_breaks_forecast'],
+        # basis B: the area's own opening/ending balance, read verbatim from the
+        # rollup (run-scoped metadata — NOT a staged fact, so it never reaches the
+        # canonical store on push). cf_run_review surfaces it as the balance tiles.
+        'rollup_balances': res.get('rollup_balances', {'opening': {}, 'ending': {}}),
+        'sheet_classification': res.get('sheet_classification'),
     }
     # Staged UNASSIGNED: no cycle/as_of/proposed_version until the run is pushed
     # into a chosen version. n_forecast_rows carries the full staged total (the

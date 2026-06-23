@@ -18,11 +18,20 @@ type Line = {
   total: number | null
   by_month: ByMonth
 }
+type SheetClassification = {
+  target: string | null
+  summed: string[]
+  ignored: string[]
+} | null
 type Review = {
   area: string
   currency: string
   current_year: number
   n_periods: number
+  // 'rollup' = opening/closing read verbatim from the area's own rollup balance row
+  // (basis B); 'projects' = summed from the project sheets (single-entity / no rollup).
+  opening_basis: 'rollup' | 'projects'
+  sheet_classification: SheetClassification
   months: Month[]
   balances: { opening: number; net_movement: number; closing_derived: number; ending_stored: number }
   monthly: { ym: string; net: number; running_close: number; ending_stored: number }[]
@@ -115,32 +124,44 @@ export default function StagingReview(
 
   const cur = review.currency || currency
   const b = review.balances
-  const endingZero = b.ending_stored === 0
-  const driftFlag = !endingZero && Math.abs(b.closing_derived - b.ending_stored) > 1
+  const fromRollup = review.opening_basis === 'rollup'
+  const closing = fromRollup ? b.ending_stored : b.closing_derived
+  const closingZero = closing === 0
+  // Cross-check: when we have the rollup's own closing, does the project-derived
+  // closing (opening + Σ-project net) agree with it? A gap means the project
+  // sheets don't fully reconcile to the area rollup (e.g. the known KSA basis gap).
+  const driftFlag = fromRollup && !closingZero &&
+    Math.abs(b.closing_derived - b.ending_stored) > Math.max(1, 0.01 * Math.abs(b.ending_stored))
 
   return (
     <div className="cfm-sr">
       {/* 0. Verdict — the glance: is this file safe to push? */}
       <VerdictBanner run={run} actualsDiff={actualsDiff} cur={cur} />
 
-      {/* 1. Balance tiles — the headline */}
+      {/* 1. Balance tiles — the headline. Opening & Closing are the area's own
+          maintained balance (read verbatim from the rollup); Net movement is what
+          the project sheets sum to. */}
       <div className="cfm-sr-tiles">
-        <Tile label="Opening" value={b.opening} cur={cur} />
-        <Tile label="Net movement" value={b.net_movement} cur={cur} />
-        <Tile label="Closing (derived)" value={b.closing_derived} cur={cur} accent />
-        <Tile label="File ending (last month)" value={b.ending_stored} cur={cur} />
+        <Tile label={fromRollup ? 'Opening (rollup)' : 'Opening'} value={b.opening} cur={cur} />
+        <Tile label="Net movement (Σ projects)" value={b.net_movement} cur={cur} />
+        <Tile label={fromRollup ? 'Closing (rollup)' : 'Closing (derived)'} value={closing} cur={cur} accent />
+        {fromRollup && <Tile label="Derived (open + net)" value={b.closing_derived} cur={cur} muted />}
       </div>
       <div className="cfm-sr-cap">
-        Current year {review.current_year} · area cash flow from project sheets · {review.n_periods} months · {cur}
+        Current year {review.current_year} · {fromRollup
+          ? 'opening & closing from the area rollup, verbatim'
+          : 'balances from the project sheets'} · net movement from project sheets · {review.n_periods} months · {cur}
       </div>
-      {endingZero && (
+      <SheetClassificationLine sc={review.sheet_classification} />
+      {closingZero && (
         <div className="cfm-sr-note">
-          File carries no closing balance in the final forecast period.
+          File carries no closing balance in the final period.
         </div>
       )}
       {driftFlag && (
         <div className="cfm-sr-note cfm-sr-note-amber">
-          Derived closing ≠ file ending — worth a look.
+          Project-derived closing ({fmt(b.closing_derived)}) ≠ rollup closing ({fmt(b.ending_stored)}) —
+          the project sheets don't fully tie to the area rollup. Check the reconciliation below.
         </div>
       )}
 
@@ -156,13 +177,42 @@ export default function StagingReview(
   )
 }
 
-function Tile({ label, value, cur, accent }: { label: string; value: number; cur: string; accent?: boolean }) {
+function Tile({ label, value, cur, accent, muted }: { label: string; value: number; cur: string; accent?: boolean; muted?: boolean }) {
   const neg = Number(value) < 0
   return (
-    <div className={`cfm-sr-tile ${accent ? 'is-accent' : ''}`}>
+    <div className={`cfm-sr-tile ${accent ? 'is-accent' : ''} ${muted ? 'is-muted' : ''}`}>
       <span className="cfm-sr-tile-label">{label}</span>
       <span className={`cfm-sr-tile-val ${neg ? 'neg' : ''}`}>{fmt(value)}</span>
       <span className="cfm-sr-tile-cur">{cur}</span>
+    </div>
+  )
+}
+
+/* Which sheets were summed into the area cash flow, which were ignored (rollups /
+   helper tabs / junk), and which is the reconciliation target. The safety net for
+   the auto-classification: the reviewer can see at a glance what went in. */
+function SheetClassificationLine({ sc }: { sc: SheetClassification }) {
+  const [open, setOpen] = useState(false)
+  if (!sc) return null
+  return (
+    <div className="cfm-sr-sheets">
+      <button className="cfm-sr-sheets-toggle" onClick={() => setOpen(o => !o)}>
+        <span className="cfm-sr-sheets-caret">{open ? '▾' : '▸'}</span>
+        Sheets: <strong>{sc.summed.length}</strong> summed · <strong>{sc.ignored.length}</strong> ignored
+        {sc.target && <> · target <strong>{sc.target}</strong></>}
+      </button>
+      {open && (
+        <div className="cfm-sr-sheets-body">
+          <div className="cfm-sr-sheets-col">
+            <div className="cfm-sr-sheets-h">Summed into the area ({sc.summed.length})</div>
+            <div className="cfm-sr-sheets-list">{sc.summed.join(' · ') || '—'}</div>
+          </div>
+          <div className="cfm-sr-sheets-col">
+            <div className="cfm-sr-sheets-h">Ignored — rollups / helpers / junk ({sc.ignored.length})</div>
+            <div className="cfm-sr-sheets-list cfm-sr-sheets-muted">{sc.ignored.join(' · ') || '—'}</div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

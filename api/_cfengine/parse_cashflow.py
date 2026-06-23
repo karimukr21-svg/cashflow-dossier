@@ -343,6 +343,26 @@ OPENING = {'OPENINGBALANCE', 'CASHOPENINGBALANCE', 'BALANCEATSTART',
 ENDING = {'ENDINGBALANCE', 'CASHENDBALANCE', 'BALANCEATEND', 'CASHENDBALANCE000',
           'BALANCEATENDUSD000', 'BALANCEATENDLIQUIDFUNDS', 'BALANCEATENDLIQUIDFUND'}
 
+
+def is_opening_label(lt):
+    """True if a tightened label names an opening/start-of-period cash balance.
+    Excludes 'NET BALANCE AT START' (a memo subtotal, in SKIP_LABELS)."""
+    if lt in SKIP_LABELS:
+        return False
+    return lt in OPENING or lt.startswith('BALANCEATSTART') \
+        or ('OPENING' in lt and 'BALANCE' in lt)
+
+
+def is_ending_label(lt):
+    """True if a tightened label names an ending/closing cash balance. Note the
+    rollup often carries TWO ending rows (native liquid-funds then a USD '000
+    restatement); callers that want a single series take the FIRST match."""
+    if lt in SKIP_LABELS:
+        return False
+    return lt in ENDING or lt.startswith('BALANCEATEND') \
+        or (('ENDING' in lt or 'CLOSING' in lt) and 'BALANCE' in lt)
+
+
 def section_of(label_tight):
     for key, cat in SECTION_MAP:
         if label_tight.startswith(key) or label_tight == key:

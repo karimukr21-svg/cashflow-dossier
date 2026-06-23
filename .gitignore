@@ -9,3 +9,7 @@ dist-ssr
 .vite
 *.tsbuildinfo
 .vercel
+
+# Python cache
+__pycache__/
+*.pyc
