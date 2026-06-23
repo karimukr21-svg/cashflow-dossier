@@ -308,25 +308,55 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
                 if cell not in agg['locations'] and len(agg['locations']) < 8:
                     agg['locations'].append(cell)
     nat = {L['line_code']: L['nature'] for L in resolver_lines(resolver)}
-    for n in sel:
+
+    # Per-sheet metadata for the interactive include/ignore toggle. EVERY parseable
+    # sheet is staged (each row stamped with its source sheet) so a sheet can be
+    # moved between Included and Ignored after the fact. default_included reproduces
+    # today's summed set (the `sel` sheets, non-JV); everything else stages
+    # default-excluded and is opt-in in the UI — this is how a real area component
+    # the classifier hides as a 'rollup' (e.g. KSA 'AREA') can be pulled back in.
+    sheet_meta = {}   # sheet -> {sheet, code, role, is_jv, name, default_included}
+
+    def _role_of(code, n, area_item, jv):
+        if jv:
+            return 'jv'
+        if area_item or code == '_AREA':
+            return 'area_item'
+        if classify(n)[0] == 'rollup':
+            return 'rollup'
+        return 'assigned' if resolver.gacc.get(tight(code)) else 'unassigned'
+
+    def _ingest(n, default_inc, dest):
+        """Parse sheet n, stamp project_code + sheet on every row into `dest`, and
+        record sheet_meta. Only default-included sheets feed `projects`/unmatched
+        (the recon basis stays exactly today's behaviour)."""
         rows, meta = parse_sheet(wb[n], area, n, resolver, as_of)
         if rows is None:
-            continue
+            return
         raw_code = meta['project_code']
         area_item = is_area_item(raw_code)
         jv = is_jv_code(raw_code)
         # area items (non-JV) fold to the _AREA bucket
         code = '_AREA' if (area_item and not jv) else raw_code
         for r in rows:
-            r = dict(r); r['project_code'] = code
-            proj_rows.append(r)
-        p = projects.setdefault(code, {'sheets': [], 'is_area_item': False,
-                                       'is_jv': False, 'n': 0})
-        p['sheets'].append(n)
-        p['is_area_item'] = p['is_area_item'] or area_item
-        p['is_jv'] = p['is_jv'] or jv
-        p['n'] += len(rows)
-        _merge_unmatched(meta['unmatched'])
+            r = dict(r); r['project_code'] = code; r['sheet'] = n
+            dest.append(r)
+        gi = resolver.gacc.get(tight(code))
+        sheet_meta[n] = {'sheet': n, 'code': code,
+                         'role': _role_of(code, n, area_item, jv), 'is_jv': jv,
+                         'name': (gi.get('abbreviation') if gi else None),
+                         'default_included': bool(default_inc) and not jv}
+        if default_inc:
+            p = projects.setdefault(code, {'sheets': [], 'is_area_item': False,
+                                           'is_jv': False, 'n': 0})
+            p['sheets'].append(n)
+            p['is_area_item'] = p['is_area_item'] or area_item
+            p['is_jv'] = p['is_jv'] or jv
+            p['n'] += len(rows)
+            _merge_unmatched(meta['unmatched'])
+
+    for n in sel:
+        _ingest(n, True, proj_rows)
 
     # basis B: the area's own maintained opening/ending balance + its own section
     # totals, read verbatim from the rollup (set below once the target/main sheet is
@@ -345,9 +375,12 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
             rows, meta = parse_sheet(wb[fb], area, fb, resolver, as_of)
             if rows:
                 for r in rows:
-                    r = dict(r); r['project_code'] = '_AREA'; proj_rows.append(r)
+                    r = dict(r); r['project_code'] = '_AREA'; r['sheet'] = fb
+                    proj_rows.append(r)
                 projects['_AREA'] = {'sheets': [fb], 'is_area_item': True,
                                      'is_jv': False, 'n': len(rows)}
+                sheet_meta[fb] = {'sheet': fb, 'code': '_AREA', 'role': 'area_item',
+                                  'is_jv': False, 'name': None, 'default_included': True}
                 _merge_unmatched(meta['unmatched'])
                 rollup_balances = extract_rollup_balances(wb[fb], as_of)
                 # file == our data here, so file sections = our sections (variance 0)
@@ -411,11 +444,23 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
                     if datetime.date(b['year'], b['month'], 1) <= as_of)
     n_brk_fc = len(flow_breaks) - n_brk_act
 
+    # Stage every OTHER parseable sheet as default-excluded so it can be toggled
+    # in later (the recon above is untouched — it only ever saw the `sel` sheets).
+    extra_rows = []
+    for n in all_sheets:
+        if n in sheet_meta or n == target:
+            continue
+        _ingest(n, False, extra_rows)
     wb.close()
-    # split rows into actual/forecast by period vs as_of
+
+    # Staging aggregate keeps the SHEET in the key, so area items that fold to the
+    # same _AREA bucket (PMV/CAMP/RMPT/AREA) stay individually toggleable.
+    stage_agg = defaultdict(float)
+    for r in proj_rows + extra_rows:
+        stage_agg[(r['project_code'], r['sheet'], r['line_code'], r['year'], r['month'])] += r['value']
     staged = []
     n_act = n_fc = 0
-    for (pc, lc, y, m), v in agg.items():
+    for (pc, sheet, lc, y, m), v in stage_agg.items():
         if y < MIN_YEAR:
             continue
         kind = 'actual' if datetime.date(y, m, 1) <= as_of else 'forecast'
@@ -423,7 +468,7 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
             n_act += 1
         else:
             n_fc += 1
-        staged.append({'kind': kind, 'area': area, 'project_code': pc,
+        staged.append({'kind': kind, 'area': area, 'project_code': pc, 'sheet': sheet,
                        'line_code': lc, 'year': y, 'month': m, 'value': round(v, 4)})
 
     summed_set = set(sel)
@@ -444,8 +489,15 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
                                      'is_jv': p['is_jv']})
                 else:
                     unassigned.append({'sheet': sheet, 'code': code, 'is_jv': p['is_jv']})
+    # Flat per-sheet list (workbook order) driving the include/ignore toggle, plus
+    # the default-included set the run is seeded with. compare_target is the rollup
+    # the statement reconciles to (the file side) — shown, never toggled.
+    sheets_list = [sheet_meta[n] for n in all_sheets if n in sheet_meta]
+    included_sheets = [m['sheet'] for m in sheets_list if m['default_included']]
     sheet_classification = {
         'target': target_used,
+        'compare_target': target,
+        'sheets': sheets_list,
         'summed': sorted(sel),
         'assigned': sorted(assigned, key=lambda x: x['sheet']),
         'unassigned': sorted(unassigned, key=lambda x: x['sheet']),
@@ -459,7 +511,7 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
         'as_of': as_of, 'n_sheets': len(sel), 'projects': projects,
         'n_projects': len(projects), 'unmatched_labels': dict(unmatched_labels),
         'rollup_balances': rollup_balances, 'rollup_sections': rollup_sections,
-        'sheet_classification': sheet_classification,
+        'sheet_classification': sheet_classification, 'included_sheets': included_sheets,
         'recon_status': recon_status, 'recon_target': target_used,
         'n_real_breaks': len(flow_breaks),
         'n_rounding': sum(1 for b in breaks if b['classification'] == 'rounding'),
@@ -558,6 +610,7 @@ def stage(res, ref, created_by='reconcile_stage.py'):
         'recon_target_sheet': res['recon_target'], 'recon_status': res['recon_status'],
         'recon_n_breaks': res['n_real_breaks'], 'recon_n_rounding': res['n_rounding'],
         'recon_max_abs_diff': res['max_abs_diff'], 'recon_summary': summary,
+        'included_sheets': res['included_sheets'],
         'created_by': created_by,
     }])[0]
     run_id = run['run_id']

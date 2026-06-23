@@ -7,8 +7,14 @@ import { supabase } from '@/lib/supabase'
    Self-contained: fetches its own review + project data. */
 
 type SheetEntry = { sheet: string; code: string; name?: string; is_jv?: boolean }
+type SheetMeta = {
+  sheet: string; code: string; role: string
+  is_jv: boolean; name?: string | null; default_included: boolean
+}
 type SheetClassification = {
   target: string | null
+  compare_target?: string | null
+  sheets?: SheetMeta[]
   summed: string[]
   assigned?: SheetEntry[]
   unassigned?: SheetEntry[]
@@ -31,6 +37,7 @@ type RunSummary = {
   currency?: string
   recon_status?: string; recon_n_breaks?: number
   n_unmatched_labels?: number; n_projects?: number; n_projects_new?: number
+  included_sheets?: string[] | null
   recon_summary?: { sheet_classification?: SheetClassification }
 }
 
@@ -71,17 +78,38 @@ export default function StagingReview(
 
   const cur = run?.currency || currency
   const sc = run?.recon_summary?.sheet_classification ?? null
+  const sheets = sc?.sheets ?? []
+
+  // Which sheets are summed into the statement. Seeded from the run's saved set
+  // (engine default = today's summed sheets); the toggle persists changes.
+  const [included, setIncluded] = useState<Set<string>>(() =>
+    new Set(run?.included_sheets ?? sheets.filter(s => s.default_included).map(s => s.sheet)))
+  // Bumped after a toggle is persisted, to force the grid to recompute.
+  const [gridNonce, setGridNonce] = useState(0)
+
+  const onToggle = async (sheet: string, next: boolean) => {
+    // optimistic chip move (snappy); grid refetches only once the write lands
+    setIncluded(prev => { const n = new Set(prev); next ? n.add(sheet) : n.delete(sheet); return n })
+    const { data, error } = await supabase.rpc('cf_set_sheet_included',
+      { p_run_id: runId, p_sheet: sheet, p_included: next })
+    if (error) {
+      setIncluded(prev => { const n = new Set(prev); next ? n.delete(sheet) : n.add(sheet); return n })
+      return
+    }
+    if (Array.isArray(data)) setIncluded(new Set(data as string[]))
+    setGridNonce(x => x + 1)
+  }
 
   return (
     <div className="cfm-sr">
       {/* The area cash-flow statement, reconstructed from the staged run —
           months as columns, sections as rows, bracketed by the rollup's own
-          opening/ending balance. Year switcher for prior years. */}
-      <CashflowGrid runId={runId} currency={cur} />
+          opening/ending balance. Recomputes when the included-sheet set changes. */}
+      <CashflowGrid runId={runId} currency={cur} nonce={gridNonce} />
 
-      {/* Sheets — each is a project or an area item: what mapped to the canonical
-          registry vs what didn't. */}
-      <SheetsPanel sc={sc} />
+      {/* Sheets — move each between Included and Ignored to fix what's summed. */}
+      <SheetsPanel sheets={sheets} included={included}
+                   compareTarget={sc?.compare_target} onToggle={onToggle} />
 
       {/* Actuals integrity — would the push restate frozen history? */}
       <ActualsDiff data={actualsDiff} cur={cur} />
@@ -107,7 +135,7 @@ type GridData = {
 
 const MON = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-function CashflowGrid({ runId, currency }: { runId: string; currency: string }) {
+function CashflowGrid({ runId, currency, nonce }: { runId: string; currency: string; nonce?: number }) {
   const [data, setData] = useState<GridData | null>(null)
   const [year, setYear] = useState<number | null>(null)
   const [compare, setCompare] = useState(false)   // Values vs Variance-vs-file mode
@@ -115,16 +143,18 @@ function CashflowGrid({ runId, currency }: { runId: string; currency: string }) 
 
   useEffect(() => {
     let alive = true
-    setErr(null); setData(null)
+    setErr(null)
     supabase.rpc('cf_run_cashflow_grid', { p_run_id: runId }).then(({ data, error }) => {
       if (!alive) return
       if (error) { setErr(String(error.message || error)); return }
       const d = unwrap<GridData>(data)
       setData(d)
-      setYear(d.years?.length ? d.years[d.years.length - 1] : null)
+      // keep the chosen year if it still exists; else default to the latest
+      setYear(prev => (prev != null && d.years?.includes(prev))
+        ? prev : (d.years?.length ? d.years[d.years.length - 1] : null))
     })
     return () => { alive = false }
-  }, [runId])
+  }, [runId, nonce])
 
   if (err) return <div className="cfm-sr-error">Cash flow failed: {err}</div>
   if (!data || year == null) return <div className="cfm-empty-sm">Loading cash flow…</div>
@@ -297,72 +327,76 @@ function CashflowGrid({ runId, currency }: { runId: string; currency: string }) 
   )
 }
 
-/* Sheets — each summed sheet is a project or an area item. Three lists side by
-   side: ASSIGNED (mapped onto the canonical project registry) · NOT ASSIGNED
-   (summed as a project but unrecognised — needs mapping) · IGNORED (rollups / junk,
-   not summed). Area items shown beneath for context. */
-function SheetsPanel({ sc }: { sc: SheetClassification }) {
-  if (!sc) return null
-  const assigned = sc.assigned ?? []
-  const unassigned = sc.unassigned ?? []
-  const areaItems = sc.area_items ?? []
-  const ignored = sc.ignored ?? []
+/* Sheets — the interactive include/ignore control. Every parseable sheet in the
+   workbook is listed; move one between INCLUDED (summed into the statement above)
+   and IGNORED to fix what's counted. The grid + "ties the file" badge recompute
+   after each move. JV sheets are equity-accounted and never summed, so they're
+   shown for reference only, not as toggles. */
+const ROLE_LABEL: Record<string, string> = {
+  assigned: 'project', unassigned: 'project?', area_item: 'area item', rollup: 'rollup',
+}
+const ROLE_CLS: Record<string, string> = {
+  assigned: 'is-ok', unassigned: 'is-warn', area_item: 'is-area', rollup: 'is-mute',
+}
 
-  const Item = ({ e }: { e: SheetEntry }) => (
-    <div className="cfm-shp-item">
-      <span className="cfm-shp-sheet">{e.sheet}</span>
-      {e.name && e.name !== e.sheet && <span className="cfm-shp-map">→ {e.name}</span>}
-      {e.is_jv && <span className="cfm-shp-jv">JV</span>}
-    </div>
+function SheetsPanel({ sheets, included, compareTarget, onToggle }: {
+  sheets: SheetMeta[]
+  included: Set<string>
+  compareTarget?: string | null
+  onToggle: (sheet: string, next: boolean) => void
+}) {
+  if (!sheets?.length) return null
+  const toggleable = sheets.filter(s => !s.is_jv)
+  const jv = sheets.filter(s => s.is_jv)
+  const inc = toggleable.filter(s => included.has(s.sheet))
+  const ign = toggleable.filter(s => !included.has(s.sheet))
+
+  const Chip = ({ s, on }: { s: SheetMeta; on: boolean }) => (
+    <button className={`cfm-shx-chip ${on ? 'is-in' : 'is-out'}`}
+            onClick={() => onToggle(s.sheet, !on)}
+            title={on ? 'Click to ignore (remove from the statement)' : 'Click to include (sum into the statement)'}>
+      <span className={`cfm-shx-role ${ROLE_CLS[s.role] || 'is-mute'}`}>{ROLE_LABEL[s.role] || s.role}</span>
+      <span className="cfm-shx-sheet">{s.sheet}</span>
+      {s.name && s.name !== s.sheet && <span className="cfm-shx-map">→ {s.name}</span>}
+      <span className="cfm-shx-arrow">{on ? '✕' : '＋'}</span>
+    </button>
   )
 
   return (
-    <div className="cfm-shp">
-      <div className="cfm-shp-cols cfm-shp-cols-4">
-        <div className="cfm-shp-col">
-          <div className="cfm-shp-h">
-            <span className="cfm-shp-dot is-ok" />Assigned
-            <span className="cfm-shp-n">{assigned.length}</span>
+    <div className="cfm-shx">
+      <div className="cfm-shx-cap">
+        These are the workbook's sheets. <b>Included</b> sheets are summed into the
+        statement above; move sheets across until it ties the file. The grid and the
+        “ties the file” check refresh after each move.
+        {compareTarget && <> Reconciling to <b>{compareTarget}</b> — the file's own total.</>}
+      </div>
+      <div className="cfm-shx-cols">
+        <div className="cfm-shx-col">
+          <div className="cfm-shx-h">
+            <span className="cfm-shp-dot is-ok" />Included
+            <span className="cfm-shp-n">{inc.length}</span>
           </div>
-          <div className="cfm-shp-list">
-            {assigned.length ? assigned.map(e => <Item key={e.sheet} e={e} />)
-              : <div className="cfm-shp-empty">None</div>}
-          </div>
-        </div>
-        <div className="cfm-shp-col">
-          <div className="cfm-shp-h">
-            <span className="cfm-shp-dot is-warn" />Not assigned
-            <span className="cfm-shp-n">{unassigned.length}</span>
-          </div>
-          <div className="cfm-shp-list">
-            {unassigned.length ? unassigned.map(e => <Item key={e.sheet} e={e} />)
-              : <div className="cfm-shp-empty">None — every project mapped</div>}
+          <div className="cfm-shx-list">
+            {inc.length ? inc.map(s => <Chip key={s.sheet} s={s} on={true} />)
+              : <div className="cfm-shp-empty">None included</div>}
           </div>
         </div>
-        <div className="cfm-shp-col">
-          <div className="cfm-shp-h">
-            <span className="cfm-shp-dot is-area" />Area items
-            <span className="cfm-shp-n">{areaItems.length}</span>
-          </div>
-          <div className="cfm-shp-list">
-            {areaItems.length ? areaItems.map(e => <Item key={e.sheet} e={e} />)
-              : <div className="cfm-shp-empty">None</div>}
-          </div>
-        </div>
-        <div className="cfm-shp-col">
-          <div className="cfm-shp-h">
+        <div className="cfm-shx-col">
+          <div className="cfm-shx-h">
             <span className="cfm-shp-dot is-mute" />Ignored
-            <span className="cfm-shp-n">{ignored.length}</span>
+            <span className="cfm-shp-n">{ign.length}</span>
           </div>
-          <div className="cfm-shp-list">
-            {ignored.length ? ignored.map(s => (
-              <div key={s} className="cfm-shp-item cfm-shp-item-mute">
-                <span className="cfm-shp-sheet">{s}</span>
-              </div>
-            )) : <div className="cfm-shp-empty">None</div>}
+          <div className="cfm-shx-list">
+            {ign.length ? ign.map(s => <Chip key={s.sheet} s={s} on={false} />)
+              : <div className="cfm-shp-empty">None</div>}
           </div>
         </div>
       </div>
+      {jv.length > 0 && (
+        <div className="cfm-shx-jv">
+          JV — equity-accounted, never summed: {jv.map(s => s.sheet).join(' · ')}
+        </div>
+      )}
     </div>
   )
 }
