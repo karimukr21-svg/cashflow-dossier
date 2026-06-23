@@ -259,7 +259,12 @@
   font-family: ui-monospace, "SF Mono", Menlo, monospace; }
 .cfm-sr-table .neg { color: #b91c1c; }
 
+.cfm-sr-cat { cursor: pointer; }
 .cfm-sr-cat td { background: #f8fafc; font-weight: 600; color: #141414; border-bottom: 1px solid #e5e7eb; }
+.cfm-sr-cat:hover td { background: #f1f5f9; }
+.cfm-sr-cat.is-open td { background: #eef2f7; }
+.cfm-sr-cat-n { display: inline-block; margin-left: 7px; padding: 0 6px; border-radius: 8px;
+  background: #e5e7eb; color: #6b7280; font-size: 10px; font-weight: 600; vertical-align: middle; }
 .cfm-sr-line { cursor: pointer; }
 .cfm-sr-line:hover { background: #f8fafc; }
 .cfm-sr-line.is-open { background: #fcfcfd; }

@@ -372,7 +372,12 @@ def section_of(label_tight):
 def resolve_line(label, section, direction, post_ending, resolver, area):
     """Return (line_code or None, new_direction). `direction` is 'Receipts'/'Payments'."""
     lt = tight(label)
-    if not lt or lt in SKIP_LABELS:
+    # In Interest / Non-Operational a bare RECEIPTS / PAYMENTS row IS the data line,
+    # so don't let the SKIP_LABELS guard reject it (it stays a skippable sub-header
+    # everywhere else — Operation etc.).
+    section_data = (section in ('Interest', 'Non Operational')
+                    and lt in ('RECEIPTS', 'RECEIPT', 'PAYMENTS', 'PAYMENT'))
+    if not lt or (lt in SKIP_LABELS and not section_data):
         return None, direction
     # balance lines (exact set, then label-variant keyword fallback, e.g.
     # "Opening bank balance ($'mil)" / "Ending bank balance")
@@ -559,7 +564,14 @@ def parse_sheet(ws, area, sheet_name, resolver, as_of, verbose=False):
             direction = 'Receipts'; continue
         if lt in ('OUT', 'OUTSETTLE'):
             direction = 'Payments'; continue
-        if lt in SKIP_LABELS:
+        # In Interest / Non-Operational the bare RECEIPTS / PAYMENTS rows ARE the
+        # data lines (one receipt + one payment carry the section's whole value) —
+        # unlike Operation, where they are sub-headers. So don't let SKIP_LABELS
+        # drop them; fall through to resolve_line, which maps them to
+        # interest_recpt/pay and nonop_recpt/pay.
+        is_section_data = (section in ('Interest', 'Non Operational')
+                           and lt in ('RECEIPTS', 'RECEIPT', 'PAYMENTS', 'PAYMENT'))
+        if lt in SKIP_LABELS and not is_section_data:
             continue
         code, direction = resolve_line(label, section, direction, post_ending,
                                        resolver, area)

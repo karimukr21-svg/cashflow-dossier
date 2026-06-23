@@ -75,6 +75,15 @@ function fmt(v: any) {
   return n.toLocaleString(undefined, { maximumFractionDigits: 0 })
 }
 
+// Accounting format: negatives in parentheses (the caller colours them red via .neg).
+function fmtAcct(v: any) {
+  if (v == null) return '—'
+  const n = Number(v)
+  if (!isFinite(n)) return '—'
+  const a = Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 })
+  return n < 0 ? `(${a})` : a
+}
+
 function ymKey(m: Month) {
   return `${m.year}-${String(m.month).padStart(2, '0')}`
 }
@@ -182,7 +191,7 @@ function Tile({ label, value, cur, accent, muted }: { label: string; value: numb
   return (
     <div className={`cfm-sr-tile ${accent ? 'is-accent' : ''} ${muted ? 'is-muted' : ''}`}>
       <span className="cfm-sr-tile-label">{label}</span>
-      <span className={`cfm-sr-tile-val ${neg ? 'neg' : ''}`}>{fmt(value)}</span>
+      <span className={`cfm-sr-tile-val ${neg ? 'neg' : ''}`}>{fmtAcct(value)}</span>
       <span className="cfm-sr-tile-cur">{cur}</span>
     </div>
   )
@@ -232,6 +241,8 @@ function LineMovement({
   year?: number
 }) {
   const [open, setOpen] = useState<Set<string>>(new Set())
+  // Category groups start COLLAPSED — the reviewer opens a section to drill in.
+  const [openCats, setOpenCats] = useState<Set<string>>(new Set())
   const monthKeys = months.map(ymKey)
 
   const toggle = (code: string) =>
@@ -239,6 +250,14 @@ function LineMovement({
       const next = new Set(prev)
       if (next.has(code)) next.delete(code)
       else next.add(code)
+      return next
+    })
+
+  const toggleCat = (category: string) =>
+    setOpenCats(prev => {
+      const next = new Set(prev)
+      if (next.has(category)) next.delete(category)
+      else next.add(category)
       return next
     })
 
@@ -273,15 +292,21 @@ function LineMovement({
           </tr>
         </thead>
         <tbody>
-          {groups.map(g => (
+          {groups.map(g => {
+            const catOpen = openCats.has(g.category)
+            return (
             <Fragment key={`cat-${g.category}`}>
-              <tr className="cfm-sr-cat">
-                <td>{g.category}</td>
+              <tr className={`cfm-sr-cat ${catOpen ? 'is-open' : ''}`} onClick={() => toggleCat(g.category)}>
+                <td>
+                  <span className="cfm-sr-caret">{catOpen ? '▾' : '▸'}</span>
+                  {g.category}
+                  <span className="cfm-sr-cat-n">{g.lines.length}</span>
+                </td>
                 {showActFc && <td />}
                 {showActFc && <td />}
-                <td className={`num ${g.subtotal < 0 ? 'neg' : ''}`}>{fmt(g.subtotal)}</td>
+                <td className={`num ${g.subtotal < 0 ? 'neg' : ''}`}>{fmtAcct(g.subtotal)}</td>
               </tr>
-              {g.lines.map(ln => {
+              {catOpen && g.lines.map(ln => {
                 const isOpen = open.has(ln.line_code)
                 return (
                   <Fragment key={ln.line_code}>
@@ -293,9 +318,9 @@ function LineMovement({
                         <span className="cfm-sr-caret">{isOpen ? '▾' : '▸'}</span>
                         <span className="mono">{ln.line_code}</span>
                       </td>
-                      {showActFc && <td className={`num ${Number(ln.actual) < 0 ? 'neg' : ''}`}>{fmt(ln.actual)}</td>}
-                      {showActFc && <td className={`num ${Number(ln.forecast) < 0 ? 'neg' : ''}`}>{fmt(ln.forecast)}</td>}
-                      <td className={`num ${Number(ln.total) < 0 ? 'neg' : ''}`}>{fmt(ln.total)}</td>
+                      {showActFc && <td className={`num ${Number(ln.actual) < 0 ? 'neg' : ''}`}>{fmtAcct(ln.actual)}</td>}
+                      {showActFc && <td className={`num ${Number(ln.forecast) < 0 ? 'neg' : ''}`}>{fmtAcct(ln.forecast)}</td>}
+                      <td className={`num ${Number(ln.total) < 0 ? 'neg' : ''}`}>{fmtAcct(ln.total)}</td>
                     </tr>
                     {isOpen && (
                       <tr className="cfm-sr-strip-row">
@@ -306,7 +331,7 @@ function LineMovement({
                               return (
                                 <div key={k} className="cfm-sr-cell">
                                   <span className="cfm-sr-cell-ym">{ymShort(k)}</span>
-                                  <span className={`cfm-sr-cell-val ${Number(v) < 0 ? 'neg' : ''}`}>{fmt(v ?? 0)}</span>
+                                  <span className={`cfm-sr-cell-val ${Number(v) < 0 ? 'neg' : ''}`}>{fmtAcct(v ?? 0)}</span>
                                 </div>
                               )
                             })}
@@ -318,13 +343,13 @@ function LineMovement({
                 )
               })}
             </Fragment>
-          ))}
+          )})}
           {grandTotal != null && (
             <tr className="cfm-sr-grand">
               <td>Net movement</td>
               {showActFc && <td />}
               {showActFc && <td />}
-              <td className={`num ${grandTotal < 0 ? 'neg' : ''}`}>{fmt(grandTotal)}</td>
+              <td className={`num ${grandTotal < 0 ? 'neg' : ''}`}>{fmtAcct(grandTotal)}</td>
             </tr>
           )}
         </tbody>
