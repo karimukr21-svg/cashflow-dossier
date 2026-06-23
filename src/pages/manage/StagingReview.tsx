@@ -133,46 +133,17 @@ export default function StagingReview(
 
   const cur = review.currency || currency
   const b = review.balances
-  const fromRollup = review.opening_basis === 'rollup'
-  const closing = fromRollup ? b.ending_stored : b.closing_derived
-  const closingZero = closing === 0
-  // Cross-check: when we have the rollup's own closing, does the project-derived
-  // closing (opening + Σ-project net) agree with it? A gap means the project
-  // sheets don't fully reconcile to the area rollup (e.g. the known KSA basis gap).
-  const driftFlag = fromRollup && !closingZero &&
-    Math.abs(b.closing_derived - b.ending_stored) > Math.max(1, 0.01 * Math.abs(b.ending_stored))
 
   return (
     <div className="cfm-sr">
       {/* 0. Verdict — the glance: is this file safe to push? */}
       <VerdictBanner run={run} actualsDiff={actualsDiff} cur={cur} />
 
-      {/* 1. Balance tiles — the headline. Opening & Closing are the area's own
-          maintained balance (read verbatim from the rollup); Net movement is what
-          the project sheets sum to. */}
-      <div className="cfm-sr-tiles">
-        <Tile label={fromRollup ? 'Opening (rollup)' : 'Opening'} value={b.opening} cur={cur} />
-        <Tile label="Net movement (Σ projects)" value={b.net_movement} cur={cur} />
-        <Tile label={fromRollup ? 'Closing (rollup)' : 'Closing (derived)'} value={closing} cur={cur} accent />
-        {fromRollup && <Tile label="Derived (open + net)" value={b.closing_derived} cur={cur} muted />}
-      </div>
-      <div className="cfm-sr-cap">
-        Current year {review.current_year} · {fromRollup
-          ? 'opening & closing from the area rollup, verbatim'
-          : 'balances from the project sheets'} · net movement from project sheets · {review.n_periods} months · {cur}
-      </div>
+      {/* 1. The area cash-flow statement, reconstructed from the staged run —
+          months as columns, sections as rows, bracketed by the rollup's own
+          opening/ending balance. Year switcher for prior years. */}
+      <CashflowGrid runId={runId} currency={cur} />
       <SheetClassificationLine sc={review.sheet_classification} />
-      {closingZero && (
-        <div className="cfm-sr-note">
-          File carries no closing balance in the final period.
-        </div>
-      )}
-      {driftFlag && (
-        <div className="cfm-sr-note cfm-sr-note-amber">
-          Project-derived closing ({fmt(b.closing_derived)}) ≠ rollup closing ({fmt(b.ending_stored)}) —
-          the project sheets don't fully tie to the area rollup. Check the reconciliation below.
-        </div>
-      )}
 
       {/* 2. Per-line movement — the core (current year) */}
       <LineMovement lines={review.lines} months={review.months} grandTotal={b.net_movement} cur={cur} year={review.current_year} />
@@ -186,13 +157,155 @@ export default function StagingReview(
   )
 }
 
-function Tile({ label, value, cur, accent, muted }: { label: string; value: number; cur: string; accent?: boolean; muted?: boolean }) {
-  const neg = Number(value) < 0
+/* The area cash-flow statement, rebuilt from the staged run (cf_run_cashflow_grid):
+   months as columns for the chosen year, section totals as rows, bracketed by the
+   rollup's own opening/ending balance. The pre-push "does this look right" surface. */
+type GridYear = {
+  months: { ym: string; m: number; kind: 'actual' | 'forecast' }[]
+  sections: Record<string, Record<string, number> | null>
+  opening: Record<string, number>
+  ending: Record<string, number>
+}
+type GridData = {
+  area: string; currency: string
+  years: number[]
+  by_year: Record<string, GridYear>
+}
+
+const MON = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+function CashflowGrid({ runId, currency }: { runId: string; currency: string }) {
+  const [data, setData] = useState<GridData | null>(null)
+  const [year, setYear] = useState<number | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    setErr(null); setData(null)
+    supabase.rpc('cf_run_cashflow_grid', { p_run_id: runId }).then(({ data, error }) => {
+      if (!alive) return
+      if (error) { setErr(String(error.message || error)); return }
+      const d = unwrap<GridData>(data)
+      setData(d)
+      setYear(d.years?.length ? d.years[d.years.length - 1] : null)
+    })
+    return () => { alive = false }
+  }, [runId])
+
+  if (err) return <div className="cfm-sr-error">Cash flow failed: {err}</div>
+  if (!data || year == null) return <div className="cfm-empty-sm">Loading cash flow…</div>
+
+  const cur = data.currency || currency
+  const yd = data.by_year[String(year)]
+  if (!yd) return <div className="cfm-empty-sm">No data for {year}.</div>
+
+  const months = yd.months || []
+  const ymKeys = months.map(m => m.ym)
+  const sec = yd.sections || {}
+  const at = (map: Record<string, number> | null | undefined, ym: string) => Number(map?.[ym] ?? 0)
+
+  const operRec = (ym: string) => at(sec.oper_rec, ym)
+  const operPay = (ym: string) => at(sec.oper_pay, ym)
+  const operNet = (ym: string) => operRec(ym) + operPay(ym)
+  const interest = (ym: string) => at(sec.interest, ym)
+  const nonop = (ym: string) => at(sec.nonop, ym)
+  const wg = (ym: string) => at(sec.wg, ym)
+  const bank = (ym: string) => at(sec.bank, ym)
+  const netMove = (ym: string) => operNet(ym) + interest(ym) + nonop(ym) + wg(ym) + bank(ym)
+  const opening = (ym: string) => at(yd.opening, ym)
+  const ending = (ym: string) => at(yd.ending, ym)
+  const accumL = (ym: string) => at(sec.accum_loans, ym)
+  const accumO = (ym: string) => at(sec.accum_od, ym)
+
+  // Boundaries: open/close of the actual stretch and of the forecast stretch.
+  const actMs = months.filter(m => m.kind === 'actual').map(m => m.ym)
+  const fcMs = months.filter(m => m.kind === 'forecast').map(m => m.ym)
+  const firstFcYm = fcMs[0]
+
+  type Row = { key: string; label: string; get: (ym: string) => number; type: 'boundary' | 'flow' | 'net' | 'stock' }
+  const rows: Row[] = [
+    { key: 'opening', label: 'Opening balance', get: opening, type: 'boundary' },
+    { key: 'oper_rec', label: 'Receipts — operations', get: operRec, type: 'flow' },
+    { key: 'oper_pay', label: 'Payments — operations', get: operPay, type: 'flow' },
+    { key: 'oper_net', label: 'Net — operations', get: operNet, type: 'net' },
+    { key: 'interest', label: 'Interest', get: interest, type: 'flow' },
+    { key: 'nonop', label: 'Non-operational', get: nonop, type: 'flow' },
+    { key: 'wg', label: 'Within group', get: wg, type: 'flow' },
+    { key: 'bank', label: 'Bank financing', get: bank, type: 'flow' },
+    { key: 'net_move', label: 'Net movement', get: netMove, type: 'net' },
+    { key: 'ending', label: 'Ending balance', get: ending, type: 'boundary' },
+    { key: 'accum_loans', label: 'Accumulated loans', get: accumL, type: 'stock' },
+    { key: 'accum_od', label: 'Overdraft balance', get: accumO, type: 'stock' },
+  ]
+  // Total column: flows/nets sum across the year; balances/stocks show the closing value.
+  const rowTotal = (r: Row) =>
+    (r.type === 'flow' || r.type === 'net')
+      ? ymKeys.reduce((s, ym) => s + r.get(ym), 0)
+      : (ymKeys.length ? r.get(ymKeys[ymKeys.length - 1]) : 0)
+
+  const Bnd = ({ label, open, close }: { label: string; open: number | null; close: number | null }) => (
+    <div className="cfm-cfg-bnd">
+      <span className="cfm-cfg-bnd-lab">{label}</span>
+      <span className="cfm-cfg-bnd-pair">
+        <span><em>open</em> <b className={open != null && open < 0 ? 'neg' : ''}>{open == null ? '—' : fmtAcct(open)}</b></span>
+        <span className="cfm-cfg-bnd-arrow">→</span>
+        <span><em>close</em> <b className={close != null && close < 0 ? 'neg' : ''}>{close == null ? '—' : fmtAcct(close)}</b></span>
+      </span>
+    </div>
+  )
+
   return (
-    <div className={`cfm-sr-tile ${accent ? 'is-accent' : ''} ${muted ? 'is-muted' : ''}`}>
-      <span className="cfm-sr-tile-label">{label}</span>
-      <span className={`cfm-sr-tile-val ${neg ? 'neg' : ''}`}>{fmtAcct(value)}</span>
-      <span className="cfm-sr-tile-cur">{cur}</span>
+    <div className="cfm-cfg">
+      <div className="cfm-cfg-head">
+        <div className="cfm-cfg-years">
+          {data.years.map(y => (
+            <button key={y} className={`cfm-cfg-year ${y === year ? 'is-on' : ''}`} onClick={() => setYear(y)}>{y}</button>
+          ))}
+        </div>
+        <span className="cfm-cfg-cur">{data.area} · {cur}</span>
+      </div>
+
+      <div className="cfm-cfg-bnds">
+        {actMs.length > 0 && (
+          <Bnd label="Actuals" open={opening(actMs[0])} close={ending(actMs[actMs.length - 1])} />
+        )}
+        {fcMs.length > 0 && (
+          <Bnd label="Forecast" open={opening(fcMs[0])} close={ending(fcMs[fcMs.length - 1])} />
+        )}
+      </div>
+
+      <div className="cfm-cfg-scroll">
+        <table className="cfm-cfg-table">
+          <thead>
+            <tr>
+              <th className="cfm-cfg-rowhead">Section</th>
+              {months.map(m => (
+                <th key={m.ym} className={`num ${m.kind === 'forecast' ? 'is-fc' : ''} ${m.ym === firstFcYm ? 'is-cut' : ''}`}>
+                  {MON[m.m]}
+                  {m.kind === 'forecast' && <span className="cfm-cfg-fctag">f</span>}
+                </th>
+              ))}
+              <th className="num cfm-cfg-total">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.key} className={`cfm-cfg-row is-${r.type}`}>
+                <td className="cfm-cfg-rowhead">{r.label}</td>
+                {months.map(m => {
+                  const v = r.get(m.ym)
+                  return (
+                    <td key={m.ym} className={`num ${v < 0 ? 'neg' : ''} ${m.kind === 'forecast' ? 'is-fc' : ''} ${m.ym === firstFcYm ? 'is-cut' : ''}`}>
+                      {v === 0 ? '·' : fmtAcct(v)}
+                    </td>
+                  )
+                })}
+                <td className={`num cfm-cfg-total ${rowTotal(r) < 0 ? 'neg' : ''}`}>{fmtAcct(rowTotal(r))}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

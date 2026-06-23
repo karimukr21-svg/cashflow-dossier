@@ -225,6 +225,49 @@
 .cfm-sr-tile.is-muted { background: #fafafa; border-style: dashed; }
 .cfm-sr-tile.is-muted .cfm-sr-tile-val { font-weight: 500; color: #6b7280; }
 
+/* Cash-flow statement grid (the top review surface) */
+.cfm-cfg { margin: 4px 0 14px; }
+.cfm-cfg-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.cfm-cfg-years { display: inline-flex; gap: 2px; background: #f1f5f9; padding: 2px; border-radius: 8px; }
+.cfm-cfg-year { border: none; background: transparent; padding: 4px 12px; border-radius: 6px; cursor: pointer;
+  font-size: 12px; font-weight: 600; color: #6b7280; }
+.cfm-cfg-year.is-on { background: #fff; color: #141414; box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+.cfm-cfg-cur { font-size: 11.5px; color: #9ca3af; font-weight: 600; }
+
+.cfm-cfg-bnds { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.cfm-cfg-bnd { display: flex; align-items: center; gap: 12px; padding: 8px 14px; border: 1px solid #e5e7eb;
+  border-radius: 8px; background: #f8fafc; }
+.cfm-cfg-bnd-lab { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; font-weight: 600; }
+.cfm-cfg-bnd-pair { display: flex; align-items: center; gap: 10px; font-size: 13px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.cfm-cfg-bnd-pair em { font-style: normal; font-size: 10px; color: #9ca3af; text-transform: uppercase; margin-right: 3px; }
+.cfm-cfg-bnd-pair b { color: #141414; font-weight: 600; }
+.cfm-cfg-bnd-pair b.neg { color: #b91c1c; }
+.cfm-cfg-bnd-arrow { color: #cbd5e1; }
+
+.cfm-cfg-scroll { overflow-x: auto; border: 1px solid #eef0f2; border-radius: 8px; }
+.cfm-cfg-table { border-collapse: collapse; width: 100%; font-size: 11.5px; }
+.cfm-cfg-table th, .cfm-cfg-table td { padding: 5px 9px; white-space: nowrap; border-bottom: 1px solid #f1f5f9; }
+.cfm-cfg-table thead th { position: sticky; top: 0; background: #fff; color: #6b7280; font-weight: 600;
+  border-bottom: 1px solid #e5e7eb; font-size: 10.5px; }
+.cfm-cfg-table .num { text-align: right; font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.cfm-cfg-table .neg { color: #b91c1c; }
+.cfm-cfg-rowhead { text-align: left; position: sticky; left: 0; background: #fff; z-index: 1;
+  color: #374151; font-weight: 500; min-width: 168px; box-shadow: 1px 0 0 #f1f5f9; }
+.cfm-cfg-fctag { display: inline-block; margin-left: 3px; font-size: 8px; color: #b45309; vertical-align: super; }
+.cfm-cfg-table th.is-fc, .cfm-cfg-table td.is-fc { background: #fffdf7; }
+.cfm-cfg-table th.is-cut, .cfm-cfg-table td.is-cut { border-left: 2px solid #fcd9a8; }
+.cfm-cfg-total { border-left: 1px solid #e5e7eb; font-weight: 600; color: #141414; background: #fafafa; }
+
+/* row emphasis by type */
+.cfm-cfg-row.is-boundary td { background: #f4f7fb; font-weight: 600; color: #141414; }
+.cfm-cfg-row.is-boundary .cfm-cfg-rowhead { background: #f4f7fb; }
+.cfm-cfg-row.is-net td { font-weight: 600; color: #141414; border-top: 1px solid #e9edf2; }
+.cfm-cfg-row.is-net .cfm-cfg-rowhead { font-weight: 600; }
+.cfm-cfg-row.is-stock td { color: #6b7280; font-style: italic; }
+.cfm-cfg-row.is-stock .cfm-cfg-rowhead { color: #6b7280; font-style: italic; }
+
 .cfm-sr-cap { font-size: 11.5px; color: #6b7280; margin: 2px 0 8px; }
 .cfm-sr-cap-sm { font-size: 11px; color: #9ca3af; margin-top: 6px; }
 .cfm-sr-note { font-size: 11.5px; color: #6b7280; margin: 0 0 6px; }
