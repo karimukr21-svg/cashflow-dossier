@@ -95,6 +95,7 @@ export default function StagingReview(
 type GridYear = {
   months: { ym: string; m: number; kind: 'actual' | 'forecast' }[]
   sections: Record<string, Record<string, number> | null>
+  file_sections: Record<string, Record<string, number> | null>
   opening: Record<string, number>
   ending: Record<string, number>
 }
@@ -109,6 +110,7 @@ const MON = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 
 function CashflowGrid({ runId, currency }: { runId: string; currency: string }) {
   const [data, setData] = useState<GridData | null>(null)
   const [year, setYear] = useState<number | null>(null)
+  const [compare, setCompare] = useState(false)   // Values vs Variance-vs-file mode
   const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
@@ -189,29 +191,46 @@ function CashflowGrid({ runId, currency }: { runId: string; currency: string }) 
   const accumL = (ym: string) => derivedLoans[ym] ?? 0
   const accumO = (ym: string) => derivedOd[ym] ?? 0
 
+  // The file's OWN stated figures (the rollup), for the variance comparison.
+  const fsec = yd.file_sections || {}
+  const fileAt = (key: string, ym: string) => at(fsec[key], ym)
+  const fOperRec = (ym: string) => fileAt('oper_rec', ym)
+  const fOperPay = (ym: string) => fileAt('oper_pay', ym)
+  const fOpening = (ym: string) => at(yd.opening, ym)
+  const fEnding = (ym: string) => at(yd.ending, ym)
+  const fNetMove = (ym: string) => fOperRec(ym) + fOperPay(ym)
+    + fileAt('interest', ym) + fileAt('nonop', ym) + fileAt('wg', ym) + fileAt('bank', ym)
+
   // First forecast month — marks the actual/forecast cutover divider in the grid.
   const firstFcYm = months.find(m => m.kind === 'forecast')?.ym
 
-  type Row = { key: string; label: string; get: (ym: string) => number; type: 'boundary' | 'flow' | 'net' | 'stock' }
+  type Row = { key: string; label: string; get: (ym: string) => number; file: (ym: string) => number; type: 'boundary' | 'flow' | 'net' | 'stock' }
   const rows: Row[] = [
-    { key: 'opening', label: 'Opening balance', get: opening, type: 'boundary' },
-    { key: 'oper_rec', label: 'Receipts — operations', get: operRec, type: 'flow' },
-    { key: 'oper_pay', label: 'Payments — operations', get: operPay, type: 'flow' },
-    { key: 'oper_net', label: 'Net — operations', get: operNet, type: 'net' },
-    { key: 'interest', label: 'Interest', get: interest, type: 'flow' },
-    { key: 'nonop', label: 'Non-operational', get: nonop, type: 'flow' },
-    { key: 'wg', label: 'Within group', get: wg, type: 'flow' },
-    { key: 'bank', label: 'Bank financing', get: bank, type: 'flow' },
-    { key: 'net_move', label: 'Net movement', get: netMove, type: 'net' },
-    { key: 'ending', label: 'Ending balance', get: ending, type: 'boundary' },
-    { key: 'accum_loans', label: 'Accumulated loans', get: accumL, type: 'stock' },
-    { key: 'accum_od', label: 'Overdraft balance', get: accumO, type: 'stock' },
+    { key: 'opening', label: 'Opening balance', get: opening, file: fOpening, type: 'boundary' },
+    { key: 'oper_rec', label: 'Receipts — operations', get: operRec, file: fOperRec, type: 'flow' },
+    { key: 'oper_pay', label: 'Payments — operations', get: operPay, file: fOperPay, type: 'flow' },
+    { key: 'oper_net', label: 'Net — operations', get: operNet, file: (ym) => fOperRec(ym) + fOperPay(ym), type: 'net' },
+    { key: 'interest', label: 'Interest', get: interest, file: (ym) => fileAt('interest', ym), type: 'flow' },
+    { key: 'nonop', label: 'Non-operational', get: nonop, file: (ym) => fileAt('nonop', ym), type: 'flow' },
+    { key: 'wg', label: 'Within group', get: wg, file: (ym) => fileAt('wg', ym), type: 'flow' },
+    { key: 'bank', label: 'Bank financing', get: bank, file: (ym) => fileAt('bank', ym), type: 'flow' },
+    { key: 'net_move', label: 'Net movement', get: netMove, file: fNetMove, type: 'net' },
+    { key: 'ending', label: 'Ending balance', get: ending, file: fEnding, type: 'boundary' },
+    { key: 'accum_loans', label: 'Accumulated loans', get: accumL, file: (ym) => fileAt('accum_loans', ym), type: 'stock' },
+    { key: 'accum_od', label: 'Overdraft balance', get: accumO, file: (ym) => fileAt('accum_od', ym), type: 'stock' },
   ]
+  // The value shown in a cell: the figure itself, or (compare mode) its variance vs the file.
+  const cellVal = (r: Row, ym: string) => compare ? r.get(ym) - r.file(ym) : r.get(ym)
+  const MAT = 0.5   // variances below this (rounding) read as a tie
   // Total column: flows/nets sum across the year; balances/stocks show the closing value.
-  const rowTotal = (r: Row) =>
-    (r.type === 'flow' || r.type === 'net')
-      ? ymKeys.reduce((s, ym) => s + r.get(ym), 0)
-      : (ymKeys.length ? r.get(ymKeys[ymKeys.length - 1]) : 0)
+  const rowTotal = (r: Row) => {
+    if (r.type === 'flow' || r.type === 'net') return ymKeys.reduce((s, ym) => s + cellVal(r, ym), 0)
+    return ymKeys.length ? cellVal(r, ymKeys[ymKeys.length - 1]) : 0
+  }
+
+  // Headline check: does our derived ending tie to the file's stated ending?
+  const endClose = ymKeys.length ? ending(ymKeys[ymKeys.length - 1]) - fEnding(ymKeys[ymKeys.length - 1]) : 0
+  const endTies = Math.abs(endClose) <= MAT
 
   return (
     <div className="cfm-cfg">
@@ -221,12 +240,22 @@ function CashflowGrid({ runId, currency }: { runId: string; currency: string }) 
             <button key={y} className={`cfm-cfg-year ${y === year ? 'is-on' : ''}`} onClick={() => setYear(y)}>{y}</button>
           ))}
         </div>
-        <span className="cfm-cfg-cur">{data.area} · {cur}</span>
+        <div className="cfm-cfg-head-right">
+          <span className={`cfm-cfg-tie ${endTies ? 'is-ok' : 'is-off'}`}>
+            {endTies ? '✓ Ending ties the file' : `Ending Δ ${fmtAcct(endClose)} vs file`}
+          </span>
+          <div className="cfm-cfg-modes">
+            <button className={`cfm-cfg-mode ${!compare ? 'is-on' : ''}`} onClick={() => setCompare(false)}>Values</button>
+            <button className={`cfm-cfg-mode ${compare ? 'is-on' : ''}`} onClick={() => setCompare(true)}>Compare to file</button>
+          </div>
+          <span className="cfm-cfg-cur">{data.area} · {cur}</span>
+        </div>
       </div>
 
       <div className="cfm-cfg-note">
-        All balances are running balances — only the first value of each comes from the file, then rolled forward by movements.
-        Cash closes at opening + net movement; accumulated loans &amp; overdraft move with the bank-financing loan / overdraft flows.
+        {compare
+          ? 'Each cell is our figure minus the file’s own stated figure — highlighted where they differ. Scan for the highlighted section + month to trace where an ending variance comes from (drilling to the exact project is a later step).'
+          : 'All balances are running balances — only the first value of each comes from the file, then rolled forward by movements. Switch to Compare to file to check every line against the original Excel.'}
       </div>
 
       <div className="cfm-cfg-scroll">
@@ -248,14 +277,17 @@ function CashflowGrid({ runId, currency }: { runId: string; currency: string }) 
               <tr key={r.key} className={`cfm-cfg-row is-${r.type}`}>
                 <td className="cfm-cfg-rowhead">{r.label}</td>
                 {months.map(m => {
-                  const v = r.get(m.ym)
+                  const v = cellVal(r, m.ym)
+                  const tie = Math.abs(v) <= MAT
+                  const isVar = compare && !tie
                   return (
-                    <td key={m.ym} className={`num ${v < 0 ? 'neg' : ''} ${m.kind === 'forecast' ? 'is-fc' : ''} ${m.ym === firstFcYm ? 'is-cut' : ''}`}>
-                      {v === 0 ? '·' : fmtAcct(v)}
+                    <td key={m.ym} className={`num ${v < 0 ? 'neg' : ''} ${m.kind === 'forecast' ? 'is-fc' : ''} ${m.ym === firstFcYm ? 'is-cut' : ''} ${isVar ? 'is-var' : ''}`}>
+                      {(compare ? tie : v === 0) ? '·' : fmtAcct(v)}
                     </td>
                   )
                 })}
-                <td className={`num cfm-cfg-total ${rowTotal(r) < 0 ? 'neg' : ''}`}>{fmtAcct(rowTotal(r))}</td>
+                {(() => { const t = rowTotal(r); const isVar = compare && Math.abs(t) > MAT
+                  return <td className={`num cfm-cfg-total ${t < 0 ? 'neg' : ''} ${isVar ? 'is-var' : ''}`}>{(compare && Math.abs(t) <= MAT) ? '·' : fmtAcct(t)}</td> })()}
               </tr>
             ))}
           </tbody>

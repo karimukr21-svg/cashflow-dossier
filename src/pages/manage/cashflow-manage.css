@@ -233,6 +233,18 @@
   font-size: 12px; font-weight: 600; color: #6b7280; }
 .cfm-cfg-year.is-on { background: #fff; color: #141414; box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
 .cfm-cfg-cur { font-size: 11.5px; color: #9ca3af; font-weight: 600; }
+.cfm-cfg-head-right { display: flex; align-items: center; gap: 12px; }
+.cfm-cfg-tie { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 6px; }
+.cfm-cfg-tie.is-ok { color: #15803d; background: #f0fdf4; }
+.cfm-cfg-tie.is-off { color: #b45309; background: #fffbeb; }
+.cfm-cfg-modes { display: inline-flex; gap: 2px; background: #f1f5f9; padding: 2px; border-radius: 8px; }
+.cfm-cfg-mode { border: none; background: transparent; padding: 4px 10px; border-radius: 6px; cursor: pointer;
+  font-size: 11.5px; font-weight: 600; color: #6b7280; }
+.cfm-cfg-mode.is-on { background: #fff; color: #141414; box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+/* variance highlight (Compare to file mode) */
+.cfm-cfg-table td.is-var { background: #fff7ed; color: #b45309; font-weight: 600; }
+.cfm-cfg-table td.is-var.neg { color: #b91c1c; }
+.cfm-cfg-table td.cfm-cfg-total.is-var { background: #ffedd5; }
 
 
 .cfm-cfg-note { font-size: 11px; color: #9ca3af; margin: 0 0 8px; line-height: 1.45; }

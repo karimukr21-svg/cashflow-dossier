@@ -204,6 +204,34 @@ def extract_rollup_balances(ws, as_of):
             'accum_loans': accum_loans, 'accum_od': accum_od}
 
 
+def section_key(category, nature):
+    """Map a line's (category, nature) to the grid's section bucket — the same
+    grouping the cash-flow grid uses, so the rollup's OWN section totals line up
+    1:1 with Σ-projects for the variance comparison."""
+    if category in ('Operation', 'Claims', 'New Sales') and nature == 'Receipts':
+        return 'oper_rec'
+    if category in ('Operation', 'New Sales') and nature == 'Payments':
+        return 'oper_pay'
+    return {'Interest': 'interest', 'Non Operational': 'nonop',
+            'Within Group': 'wg', 'Bank Financing': 'bank'}.get(category)
+
+
+def sections_from_agg(agg, ref):
+    """Roll a parsed sheet's (line_code, year, month)->value map up into the grid's
+    section totals per month. Used on the rollup so the file's stated movements can
+    be diffed against Σ-projects."""
+    cat = {L['line_code']: L['category'] for L in ref['lines']}
+    nat = {L['line_code']: L['nature'] for L in ref['lines']}
+    out = defaultdict(lambda: defaultdict(float))
+    for (lc, y, m), v in agg.items():
+        if y < MIN_YEAR:
+            continue
+        k = section_key(cat.get(lc), nat.get(lc))
+        if k:
+            out[k][f'{y:04d}-{m:02d}'] += round(v, 4)
+    return {k: dict(v) for k, v in out.items()}
+
+
 # Area-item sheet tokens (fold to project_code='_AREA', is_area_item=true) -------
 AREA_ITEM_TOKENS = ('PMV', 'CAMP', 'RMPT', 'OVERHEAD', 'RECOVER', 'AREAOH', 'MOEST')
 
@@ -300,9 +328,12 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
         p['n'] += len(rows)
         _merge_unmatched(meta['unmatched'])
 
-    # basis B: the area's own maintained opening/ending balance, read verbatim from
-    # the rollup (set below once the target/main sheet is known).
+    # basis B: the area's own maintained opening/ending balance + its own section
+    # totals, read verbatim from the rollup (set below once the target/main sheet is
+    # known). rollup_sections lets the staging UI diff Σ-projects against the file.
     rollup_balances = {'opening': {}, 'ending': {}}
+    rollup_sections = {}
+    ref_lines = {'lines': resolver_lines(resolver)}
 
     # single-entity areas: no per-project decomposition — stage the area's own
     # cash-flow sheet under _AREA (nothing to reconcile against).
@@ -319,6 +350,11 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
                                      'is_jv': False, 'n': len(rows)}
                 _merge_unmatched(meta['unmatched'])
                 rollup_balances = extract_rollup_balances(wb[fb], as_of)
+                # file == our data here, so file sections = our sections (variance 0)
+                fb_agg = defaultdict(float)
+                for r in rows:
+                    fb_agg[(r['line_code'], r['year'], r['month'])] += r['value']
+                rollup_sections = sections_from_agg(fb_agg, ref_lines)
                 single_area = True
 
     # aggregate project rows to canonical grain (sum within-run dups, e.g. _AREA)
@@ -347,6 +383,7 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
         tgt, _ = parse_target(wb, area, target, resolver, as_of)
         target_used = target
         rollup_balances = extract_rollup_balances(wb[target], as_of)
+        rollup_sections = sections_from_agg(tgt, ref_lines)
         keys = set(flowsum) | set(tgt)
         material = 0
         for k in sorted(keys):
@@ -421,7 +458,8 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
         'area': area, 'file': fn, 'currency': currency,
         'as_of': as_of, 'n_sheets': len(sel), 'projects': projects,
         'n_projects': len(projects), 'unmatched_labels': dict(unmatched_labels),
-        'rollup_balances': rollup_balances, 'sheet_classification': sheet_classification,
+        'rollup_balances': rollup_balances, 'rollup_sections': rollup_sections,
+        'sheet_classification': sheet_classification,
         'recon_status': recon_status, 'recon_target': target_used,
         'n_real_breaks': len(flow_breaks),
         'n_rounding': sum(1 for b in breaks if b['classification'] == 'rounding'),
@@ -504,6 +542,7 @@ def stage(res, ref, created_by='reconcile_stage.py'):
         # rollup (run-scoped metadata — NOT a staged fact, so it never reaches the
         # canonical store on push). cf_run_review surfaces it as the balance tiles.
         'rollup_balances': res.get('rollup_balances', {'opening': {}, 'ending': {}}),
+        'rollup_sections': res.get('rollup_sections', {}),
         'sheet_classification': res.get('sheet_classification'),
     }
     # Staged UNASSIGNED: no cycle/as_of/proposed_version until the run is pushed
