@@ -242,11 +242,11 @@ function CashflowGrid({ runId, currency }: { runId: string; currency: string }) 
   )
 }
 
-/* Sheets — each summed sheet is a project or an area item. Two lists: ASSIGNED
-   (mapped onto the canonical project registry) vs NOT ASSIGNED (summed as a project
-   but unrecognised — needs mapping). Area items and ignored sheets shown for context. */
+/* Sheets — each summed sheet is a project or an area item. Three lists side by
+   side: ASSIGNED (mapped onto the canonical project registry) · NOT ASSIGNED
+   (summed as a project but unrecognised — needs mapping) · IGNORED (rollups / junk,
+   not summed). Area items shown beneath for context. */
 function SheetsPanel({ sc }: { sc: SheetClassification }) {
-  const [showIgnored, setShowIgnored] = useState(false)
   if (!sc) return null
   const assigned = sc.assigned ?? []
   const unassigned = sc.unassigned ?? []
@@ -263,7 +263,7 @@ function SheetsPanel({ sc }: { sc: SheetClassification }) {
 
   return (
     <div className="cfm-shp">
-      <div className="cfm-shp-cols">
+      <div className="cfm-shp-cols cfm-shp-cols-3">
         <div className="cfm-shp-col">
           <div className="cfm-shp-h">
             <span className="cfm-shp-dot is-ok" />Assigned
@@ -284,22 +284,27 @@ function SheetsPanel({ sc }: { sc: SheetClassification }) {
               : <div className="cfm-shp-empty">None — every project mapped</div>}
           </div>
         </div>
+        <div className="cfm-shp-col">
+          <div className="cfm-shp-h">
+            <span className="cfm-shp-dot is-mute" />Ignored
+            <span className="cfm-shp-n">{ignored.length}</span>
+          </div>
+          <div className="cfm-shp-list">
+            {ignored.length ? ignored.map(s => (
+              <div key={s} className="cfm-shp-item cfm-shp-item-mute">
+                <span className="cfm-shp-sheet">{s}</span>
+              </div>
+            )) : <div className="cfm-shp-empty">None</div>}
+          </div>
+        </div>
       </div>
-      <div className="cfm-shp-foot">
-        {areaItems.length > 0 && (
+      {areaItems.length > 0 && (
+        <div className="cfm-shp-foot">
           <span className="cfm-shp-foot-grp">
             <span className="cfm-shp-foot-lab">Area items</span>
             {areaItems.map(e => <span key={e.sheet} className="cfm-shp-chip">{e.sheet}</span>)}
           </span>
-        )}
-        {ignored.length > 0 && (
-          <button className="cfm-shp-ign-toggle" onClick={() => setShowIgnored(o => !o)}>
-            {showIgnored ? '▾' : '▸'} Ignored — rollups / junk ({ignored.length})
-          </button>
-        )}
-      </div>
-      {showIgnored && ignored.length > 0 && (
-        <div className="cfm-shp-ign-list">{ignored.join(' · ')}</div>
+        </div>
       )}
     </div>
   )
