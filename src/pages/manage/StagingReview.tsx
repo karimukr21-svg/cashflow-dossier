@@ -263,7 +263,7 @@ function SheetsPanel({ sc }: { sc: SheetClassification }) {
 
   return (
     <div className="cfm-shp">
-      <div className="cfm-shp-cols cfm-shp-cols-3">
+      <div className="cfm-shp-cols cfm-shp-cols-4">
         <div className="cfm-shp-col">
           <div className="cfm-shp-h">
             <span className="cfm-shp-dot is-ok" />Assigned
@@ -286,6 +286,16 @@ function SheetsPanel({ sc }: { sc: SheetClassification }) {
         </div>
         <div className="cfm-shp-col">
           <div className="cfm-shp-h">
+            <span className="cfm-shp-dot is-area" />Area items
+            <span className="cfm-shp-n">{areaItems.length}</span>
+          </div>
+          <div className="cfm-shp-list">
+            {areaItems.length ? areaItems.map(e => <Item key={e.sheet} e={e} />)
+              : <div className="cfm-shp-empty">None</div>}
+          </div>
+        </div>
+        <div className="cfm-shp-col">
+          <div className="cfm-shp-h">
             <span className="cfm-shp-dot is-mute" />Ignored
             <span className="cfm-shp-n">{ignored.length}</span>
           </div>
@@ -298,14 +308,6 @@ function SheetsPanel({ sc }: { sc: SheetClassification }) {
           </div>
         </div>
       </div>
-      {areaItems.length > 0 && (
-        <div className="cfm-shp-foot">
-          <span className="cfm-shp-foot-grp">
-            <span className="cfm-shp-foot-lab">Area items</span>
-            {areaItems.map(e => <span key={e.sheet} className="cfm-shp-chip">{e.sheet}</span>)}
-          </span>
-        </div>
-      )}
     </div>
   )
 }
