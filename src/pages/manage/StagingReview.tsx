@@ -262,7 +262,7 @@ function LineMovement({
     })
 
   // Group lines by category, preserving sort_order.
-  const groups: { category: string; lines: Line[]; subtotal: number }[] = []
+  const groups: { category: string; lines: Line[]; subtotal: number; subActual: number; subForecast: number }[] = []
   const byCat = new Map<string, Line[]>()
   for (const ln of lines) {
     const arr = byCat.get(ln.category)
@@ -271,7 +271,9 @@ function LineMovement({
   }
   for (const [category, ls] of byCat) {
     const subtotal = ls.reduce((s, l) => s + (Number(l.total) || 0), 0)
-    groups.push({ category, lines: ls, subtotal })
+    const subActual = ls.reduce((s, l) => s + (Number(l.actual) || 0), 0)
+    const subForecast = ls.reduce((s, l) => s + (Number(l.forecast) || 0), 0)
+    groups.push({ category, lines: ls, subtotal, subActual, subForecast })
   }
 
   const colSpan = showActFc ? 4 : 2
@@ -302,8 +304,8 @@ function LineMovement({
                   {g.category}
                   <span className="cfm-sr-cat-n">{g.lines.length}</span>
                 </td>
-                {showActFc && <td />}
-                {showActFc && <td />}
+                {showActFc && <td className={`num ${g.subActual < 0 ? 'neg' : ''}`}>{fmtAcct(g.subActual)}</td>}
+                {showActFc && <td className={`num ${g.subForecast < 0 ? 'neg' : ''}`}>{fmtAcct(g.subForecast)}</td>}
                 <td className={`num ${g.subtotal < 0 ? 'neg' : ''}`}>{fmtAcct(g.subtotal)}</td>
               </tr>
               {catOpen && g.lines.map(ln => {
