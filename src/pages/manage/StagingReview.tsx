@@ -189,10 +189,8 @@ function CashflowGrid({ runId, currency }: { runId: string; currency: string }) 
   const accumL = (ym: string) => derivedLoans[ym] ?? 0
   const accumO = (ym: string) => derivedOd[ym] ?? 0
 
-  // Boundaries: open/close of the actual stretch and of the forecast stretch.
-  const actMs = months.filter(m => m.kind === 'actual').map(m => m.ym)
-  const fcMs = months.filter(m => m.kind === 'forecast').map(m => m.ym)
-  const firstFcYm = fcMs[0]
+  // First forecast month — marks the actual/forecast cutover divider in the grid.
+  const firstFcYm = months.find(m => m.kind === 'forecast')?.ym
 
   type Row = { key: string; label: string; get: (ym: string) => number; type: 'boundary' | 'flow' | 'net' | 'stock' }
   const rows: Row[] = [
@@ -215,17 +213,6 @@ function CashflowGrid({ runId, currency }: { runId: string; currency: string }) 
       ? ymKeys.reduce((s, ym) => s + r.get(ym), 0)
       : (ymKeys.length ? r.get(ymKeys[ymKeys.length - 1]) : 0)
 
-  const Bnd = ({ label, open, close }: { label: string; open: number | null; close: number | null }) => (
-    <div className="cfm-cfg-bnd">
-      <span className="cfm-cfg-bnd-lab">{label}</span>
-      <span className="cfm-cfg-bnd-pair">
-        <span><em>open</em> <b className={open != null && open < 0 ? 'neg' : ''}>{open == null ? '—' : fmtAcct(open)}</b></span>
-        <span className="cfm-cfg-bnd-arrow">→</span>
-        <span><em>close</em> <b className={close != null && close < 0 ? 'neg' : ''}>{close == null ? '—' : fmtAcct(close)}</b></span>
-      </span>
-    </div>
-  )
-
   return (
     <div className="cfm-cfg">
       <div className="cfm-cfg-head">
@@ -237,14 +224,6 @@ function CashflowGrid({ runId, currency }: { runId: string; currency: string }) 
         <span className="cfm-cfg-cur">{data.area} · {cur}</span>
       </div>
 
-      <div className="cfm-cfg-bnds">
-        {actMs.length > 0 && (
-          <Bnd label="Actuals" open={opening(actMs[0])} close={ending(actMs[actMs.length - 1])} />
-        )}
-        {fcMs.length > 0 && (
-          <Bnd label="Forecast" open={opening(fcMs[0])} close={ending(fcMs[fcMs.length - 1])} />
-        )}
-      </div>
       <div className="cfm-cfg-note">
         All balances are running balances — only the first value of each comes from the file, then rolled forward by movements.
         Cash closes at opening + net movement; accumulated loans &amp; overdraft move with the bank-financing loan / overdraft flows.
