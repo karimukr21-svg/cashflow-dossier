@@ -295,29 +295,11 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
               <div className="cfm-run-row" onClick={() => toggle(run)}>
                 <span className="cfm-run-caret">{isOpen ? '▾' : '▸'}</span>
                 <span className="cfm-run-area">{run.area}</span>
-                <span className={`cfm-status cfm-status-${run.status}`}>{STATUS_LABEL[run.status] || run.status}</span>
-                <span className={`cfm-verdict cfm-verdict-${run.recon_status}`}>
-                  {VERDICT_LABEL[run.recon_status] || run.recon_status}
-                </span>
+                {run.status !== 'open' && (
+                  <span className={`cfm-status cfm-status-${run.status}`}>{STATUS_LABEL[run.status] || run.status}</span>
+                )}
                 <span className="cfm-run-meta">
                   {run.n_projects} proj · {fmtNum(total)} rows · {run.currency}
-                </span>
-                <span className="cfm-run-flags">
-                  {run.recon_n_breaks > 0 && (
-                    <span className="cfm-flag cfm-flag-break" title="Reconciliation breaks">
-                      {run.recon_n_breaks} breaks
-                    </span>
-                  )}
-                  {run.n_unmatched_labels > 0 && (
-                    <span className="cfm-flag cfm-flag-unmatched" title="Unmatched labels (dropped from staging)">
-                      {run.n_unmatched_labels} unmatched
-                    </span>
-                  )}
-                  {run.n_projects_new > 0 && (
-                    <span className="cfm-flag cfm-flag-new" title="Projects new to the catalog">
-                      {run.n_projects_new} new
-                    </span>
-                  )}
                 </span>
                 <span className="cfm-run-file" title={run.source_file}>{run.source_file}</span>
               </div>
@@ -407,108 +389,14 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
                     )}
                   </div>
 
-                  <StagingReview runId={run.run_id} currency={run.currency} run={run} />
-
-                  <UnmatchedLabels summary={run.recon_summary} lines={lines} canManage={canManage} />
+                  <StagingReview runId={run.run_id} currency={run.currency} run={run}
+                                 lines={lines} canManage={canManage} />
                 </div>
               )}
             </div>
           )
         })}
       </div>
-    </div>
-  )
-}
-
-function UnmatchedLabels({ summary, lines, canManage }: {
-  summary: any
-  lines: { line_code: string; category: string; nature: string; description: string }[]
-  canManage: boolean
-}) {
-  const labels = summary?.unmatched_labels
-  const [open, setOpen] = useState(false)
-  const [picks, setPicks] = useState<Record<string, string>>({})
-  const [done, setDone] = useState<Record<string, string>>({})   // label -> line_code mapped this session
-  const [busy, setBusy] = useState<string | null>(null)
-  if (!labels || Object.keys(labels).length === 0) return null
-  // Tolerate the old {label: count} shape and the new {label: {count, locations}}.
-  const norm = (v: any) => typeof v === 'number'
-    ? { count: v, locations: [] as string[] }
-    : { count: (v?.count ?? 0) as number, locations: (v?.locations ?? []) as string[] }
-  const entries = Object.entries(labels)
-    .map(([lab, v]) => [lab, norm(v)] as [string, { count: number; locations: string[] }])
-    .sort((a, b) => b[1].count - a[1].count)
-
-  const mapLabel = async (label: string) => {
-    const code = picks[label]
-    if (!code) return
-    setBusy(label)
-    const { error } = await supabase.rpc('cf_map_line_alias', {
-      p_alias: label, p_line_code: code, p_notes: 'mapped in staging',
-    })
-    setBusy(null)
-    if (error) { alert('Map failed: ' + error.message); return }
-    setDone(d => ({ ...d, [label]: code }))
-  }
-
-  return (
-    <div className="cfm-unmatched">
-      <button className="cfm-sr-toggle is-warn" onClick={() => setOpen(o => !o)}>
-        <span className="cfm-sr-caret">{open ? '▾' : '▸'}</span>
-        Lines that didn't map ({entries.length})
-      </button>
-      {open && (
-        <div className="cfm-unmatched-body">
-          <div className="cfm-sr-cap cfm-sr-cap-sm">
-            These rows were dropped from staging. Map each to a canonical line so the parser catches it next upload.
-          </div>
-          <div className="cfm-unmatched-list">
-            {entries.map(([lab, info]) => {
-              const mappedCode = done[lab]
-              return (
-                <div key={lab} className={`cfm-unmatched-row ${mappedCode ? 'is-mapped' : ''}`}>
-                  <div className="cfm-unmatched-id">
-                    <span className="cfm-unmatched-label" title={`${info.count}×`}>
-                      {lab}{info.count > 1 ? ` ×${info.count}` : ''}
-                    </span>
-                    {info.locations.length > 0 && (
-                      <span className="cfm-unmatched-locs">
-                        {info.locations.map(loc => (
-                          <span key={loc} className="cfm-loc-pill" title="Sheet ! cell in the source file">{loc}</span>
-                        ))}
-                      </span>
-                    )}
-                  </div>
-                  {mappedCode ? (
-                    <span className="cfm-unmatched-mapped">→ {mappedCode} ✓</span>
-                  ) : canManage ? (
-                    <span className="cfm-unmatched-map">
-                      <select
-                        value={picks[lab] || ''}
-                        onChange={e => setPicks(p => ({ ...p, [lab]: e.target.value }))}
-                      >
-                        <option value="">Map to…</option>
-                        {lines.map(l => (
-                          <option key={l.line_code} value={l.line_code}>
-                            {l.category} · {l.nature} · {l.description}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        className="cfm-btn cfm-btn-ghost cfm-btn-sm"
-                        disabled={!picks[lab] || busy === lab}
-                        onClick={() => mapLabel(lab)}
-                      >
-                        {busy === lab ? '…' : 'Map'}
-                      </button>
-                    </span>
-                  ) : null}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
     </div>
   )
 }

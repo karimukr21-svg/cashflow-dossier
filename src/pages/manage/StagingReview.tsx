@@ -38,7 +38,10 @@ type RunSummary = {
   recon_status?: string; recon_n_breaks?: number
   n_unmatched_labels?: number; n_projects?: number; n_projects_new?: number
   included_sheets?: string[] | null
-  recon_summary?: { sheet_classification?: SheetClassification }
+  recon_summary?: {
+    sheet_classification?: SheetClassification
+    unmatched_by_sheet?: Record<string, Record<string, { count: number; cells?: string[] } | number>>
+  }
 }
 
 function unwrap<T>(x: any): T {
@@ -62,8 +65,11 @@ function fmtAcct(v: any) {
   return n < 0 ? `(${a})` : a
 }
 
+type LineCat = { line_code: string; category: string; nature: string; description: string }
+
 export default function StagingReview(
-  { runId, currency, run }: { runId: string; currency: string; run?: RunSummary }
+  { runId, currency, run, lines = [], canManage = false }:
+  { runId: string; currency: string; run?: RunSummary; lines?: LineCat[]; canManage?: boolean }
 ) {
   const [actualsDiff, setActualsDiff] = useState<ActualsDiffData | null>(null)
 
@@ -110,6 +116,11 @@ export default function StagingReview(
       {/* Sheets — move each between Included and Ignored to fix what's summed. */}
       <SheetsPanel sheets={sheets} included={included}
                    compareTarget={sc?.compare_target} onToggle={onToggle} />
+
+      {/* Lines the parser couldn't map — scoped to the Included sheets only, so
+          ignoring a sheet drops its unmatched lines too. */}
+      <UnmatchedLabels unmatchedBySheet={run?.recon_summary?.unmatched_by_sheet}
+                       included={included} lines={lines} canManage={canManage} />
 
       {/* Actuals integrity — would the push restate frozen history? */}
       <ActualsDiff data={actualsDiff} cur={cur} />
@@ -351,16 +362,19 @@ function SheetsPanel({ sheets, included, compareTarget, onToggle }: {
   const inc = toggleable.filter(s => included.has(s.sheet))
   const ign = toggleable.filter(s => !included.has(s.sheet))
 
-  const Chip = ({ s, on }: { s: SheetMeta; on: boolean }) => (
-    <button className={`cfm-shx-chip ${on ? 'is-in' : 'is-out'}`}
-            onClick={() => onToggle(s.sheet, !on)}
-            title={on ? 'Click to ignore (remove from the statement)' : 'Click to include (sum into the statement)'}>
-      <span className={`cfm-shx-role ${ROLE_CLS[s.role] || 'is-mute'}`}>{ROLE_LABEL[s.role] || s.role}</span>
-      <span className="cfm-shx-sheet">{s.sheet}</span>
-      {s.name && s.name !== s.sheet && <span className="cfm-shx-map">→ {s.name}</span>}
-      <span className="cfm-shx-arrow">{on ? '✕' : '＋'}</span>
-    </button>
-  )
+  const Chip = ({ s, on }: { s: SheetMeta; on: boolean }) => {
+    const role = ROLE_LABEL[s.role] || s.role
+    const tip = `${role}${s.name && s.name !== s.sheet ? ` → ${s.name}` : ''} · `
+      + (on ? 'click to ignore' : 'click to include')
+    return (
+      <button className={`cfm-shx-chip ${on ? 'is-in' : 'is-out'}`}
+              onClick={() => onToggle(s.sheet, !on)} title={tip}>
+        <span className={`cfm-shx-dot ${ROLE_CLS[s.role] || 'is-mute'}`} />
+        <span className="cfm-shx-sheet">{s.sheet}</span>
+        <span className="cfm-shx-arrow">{on ? '✕' : '＋'}</span>
+      </button>
+    )
+  }
 
   return (
     <div className="cfm-shx">
@@ -443,6 +457,106 @@ function ActualsDiff({ data, cur }: { data: ActualsDiffData | null; cur: string 
           {data.n_changed > shown.length && (
             <div className="cfm-sr-cap cfm-sr-cap-sm">Showing the {shown.length} largest of {fmt(data.n_changed)}.</div>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* Lines the parser couldn't map onto the canonical chart — aggregated across the
+   currently INCLUDED sheets only (ignore a sheet and its dropped lines go with it).
+   Each can be mapped to a canonical line so the next upload catches it. */
+function UnmatchedLabels({ unmatchedBySheet, included, lines, canManage }: {
+  unmatchedBySheet?: Record<string, Record<string, { count: number; cells?: string[] } | number>>
+  included: Set<string>
+  lines: LineCat[]
+  canManage: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [picks, setPicks] = useState<Record<string, string>>({})
+  const [done, setDone] = useState<Record<string, string>>({})
+  const [busy, setBusy] = useState<string | null>(null)
+
+  // aggregate label -> {count, locations} over INCLUDED sheets only
+  const agg: Record<string, { count: number; locations: string[] }> = {}
+  for (const [sheet, labels] of Object.entries(unmatchedBySheet || {})) {
+    if (!included.has(sheet)) continue
+    for (const [lab, v] of Object.entries(labels)) {
+      const count = typeof v === 'number' ? v : (v?.count ?? 0)
+      const cells = typeof v === 'number' ? [] : (v?.cells ?? [])
+      const a = (agg[lab] ||= { count: 0, locations: [] })
+      a.count += count
+      for (const c of cells) {
+        const loc = String(c).includes('!') ? String(c) : `${sheet}!${c}`
+        if (a.locations.length < 8 && !a.locations.includes(loc)) a.locations.push(loc)
+      }
+    }
+  }
+  const entries = Object.entries(agg).sort((a, b) => b[1].count - a[1].count)
+  if (entries.length === 0) return null
+
+  const mapLabel = async (label: string) => {
+    const code = picks[label]
+    if (!code) return
+    setBusy(label)
+    const { error } = await supabase.rpc('cf_map_line_alias',
+      { p_alias: label, p_line_code: code, p_notes: 'mapped in staging' })
+    setBusy(null)
+    if (error) { alert('Map failed: ' + error.message); return }
+    setDone(d => ({ ...d, [label]: code }))
+  }
+
+  return (
+    <div className="cfm-unmatched">
+      <button className="cfm-sr-toggle is-warn" onClick={() => setOpen(o => !o)}>
+        <span className="cfm-sr-caret">{open ? '▾' : '▸'}</span>
+        Lines that didn't map ({entries.length})
+      </button>
+      {open && (
+        <div className="cfm-unmatched-body">
+          <div className="cfm-sr-cap cfm-sr-cap-sm">
+            Rows in the <b>included</b> sheets the parser dropped (no canonical line matched).
+            Map each to a line so it's caught on the next upload. Mapping takes effect when the file is re-staged.
+          </div>
+          <div className="cfm-unmatched-list">
+            {entries.map(([lab, info]) => {
+              const mappedCode = done[lab]
+              return (
+                <div key={lab} className={`cfm-unmatched-row ${mappedCode ? 'is-mapped' : ''}`}>
+                  <div className="cfm-unmatched-id">
+                    <span className="cfm-unmatched-label" title={`${info.count}×`}>
+                      {lab}{info.count > 1 ? ` ×${info.count}` : ''}
+                    </span>
+                    {info.locations.length > 0 && (
+                      <span className="cfm-unmatched-locs">
+                        {info.locations.map(loc => (
+                          <span key={loc} className="cfm-loc-pill" title="Sheet ! cell in the source file">{loc}</span>
+                        ))}
+                      </span>
+                    )}
+                  </div>
+                  {mappedCode ? (
+                    <span className="cfm-unmatched-mapped">→ {mappedCode} ✓</span>
+                  ) : canManage ? (
+                    <span className="cfm-unmatched-map">
+                      <select value={picks[lab] || ''} onChange={e => setPicks(p => ({ ...p, [lab]: e.target.value }))}>
+                        <option value="">Map to…</option>
+                        {lines.map(l => (
+                          <option key={l.line_code} value={l.line_code}>
+                            {l.category} · {l.nature} · {l.description}
+                          </option>
+                        ))}
+                      </select>
+                      <button className="cfm-btn cfm-btn-ghost cfm-btn-sm"
+                              disabled={!picks[lab] || busy === lab} onClick={() => mapLabel(lab)}>
+                        {busy === lab ? '…' : 'Map'}
+                      </button>
+                    </span>
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
     </div>

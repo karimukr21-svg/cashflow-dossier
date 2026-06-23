@@ -315,7 +315,8 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
     # today's summed set (the `sel` sheets, non-JV); everything else stages
     # default-excluded and is opt-in in the UI — this is how a real area component
     # the classifier hides as a 'rollup' (e.g. KSA 'AREA') can be pulled back in.
-    sheet_meta = {}   # sheet -> {sheet, code, role, is_jv, name, default_included}
+    sheet_meta = {}        # sheet -> {sheet, code, role, is_jv, name, default_included}
+    sheet_unmatched = {}   # sheet -> {label: {count, cells}} (for ALL staged sheets)
 
     def _role_of(code, n, area_item, jv):
         if jv:
@@ -346,6 +347,8 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
                          'role': _role_of(code, n, area_item, jv), 'is_jv': jv,
                          'name': (gi.get('abbreviation') if gi else None),
                          'default_included': bool(default_inc) and not jv}
+        if meta.get('unmatched'):
+            sheet_unmatched[n] = meta['unmatched']   # per-sheet, regardless of default
         if default_inc:
             p = projects.setdefault(code, {'sheets': [], 'is_area_item': False,
                                            'is_jv': False, 'n': 0})
@@ -381,6 +384,8 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
                                      'is_jv': False, 'n': len(rows)}
                 sheet_meta[fb] = {'sheet': fb, 'code': '_AREA', 'role': 'area_item',
                                   'is_jv': False, 'name': None, 'default_included': True}
+                if meta.get('unmatched'):
+                    sheet_unmatched[fb] = meta['unmatched']
                 _merge_unmatched(meta['unmatched'])
                 rollup_balances = extract_rollup_balances(wb[fb], as_of)
                 # file == our data here, so file sections = our sections (variance 0)
@@ -512,6 +517,7 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
         'n_projects': len(projects), 'unmatched_labels': dict(unmatched_labels),
         'rollup_balances': rollup_balances, 'rollup_sections': rollup_sections,
         'sheet_classification': sheet_classification, 'included_sheets': included_sheets,
+        'unmatched_by_sheet': sheet_unmatched,
         'recon_status': recon_status, 'recon_target': target_used,
         'n_real_breaks': len(flow_breaks),
         'n_rounding': sum(1 for b in breaks if b['classification'] == 'rounding'),
@@ -587,6 +593,7 @@ def stage(res, ref, created_by='reconcile_stage.py'):
                          'is_jv': p['is_jv'], 'rows': p['n']}
                      for c, p in res['projects'].items()},
         'unmatched_labels': res['unmatched_labels'],
+        'unmatched_by_sheet': res.get('unmatched_by_sheet', {}),
         'breaks_by_class': dict(Counter(b['classification'] for b in res['breaks'])),
         'breaks_by_category': res['breaks_by_category'],
         'breaks_actual': res['n_breaks_actual'], 'breaks_forecast': res['n_breaks_forecast'],
