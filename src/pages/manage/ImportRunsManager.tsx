@@ -30,6 +30,7 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
   const [expanded, setExpanded] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)          // run_id currently pushing/discarding
   const [upload, setUpload] = useState<any>({ name: '', state: 'idle', msg: '' }) // idle|busy|ok|err
+  const [reapplyTok, setReapplyTok] = useState<Record<string, number>>({})  // run_id -> remount nonce
   const fileRef = useRef<HTMLInputElement | null>(null)
 
   // Cycles + versions feed the push cascade. Uploads are cycle-agnostic now —
@@ -186,6 +187,29 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
     setBusy(null)
     if (error) { alert('Error: ' + error.message); return }
     await fetchRuns()
+  }
+
+  // Re-parse the run's stored file, picking up line mappings added since staging.
+  // Keeps the Included/Ignored sheet selection; rewrites the staged rows in place.
+  const handleReapply = async (run: any) => {
+    if (!canManage) return
+    setBusy(run.run_id)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const r = await fetch('/api/cf-restage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token || ''}` },
+        body: JSON.stringify({ run_id: run.run_id }),
+      })
+      const json = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(json.error || `re-apply failed (${r.status})`)
+      await fetchRuns()
+      setReapplyTok(t => ({ ...t, [run.run_id]: (t[run.run_id] || 0) + 1 }))  // force the review to remount
+    } catch (err: any) {
+      alert('Re-apply failed: ' + (err.message || err))
+    } finally {
+      setBusy(null)
+    }
   }
 
   const handleFile = async (e: any) => {
@@ -384,13 +408,26 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
                       ? <span>Unassigned — pick a cycle + version, then Push. Area detected from the filename — Edit if wrong.</span>
                       : <span>In <strong>{run.pushed_version_code || '—'}</strong> · {stampedCycle?.name || cycleKeyOf(run.cycle_year, run.cycle_month)}</span>}
                     <span className="cfm-rhb-meta-stat">{fmtNum(total)} rows · staged {fmtDate(run.created_at)}</span>
+                    {canManage && run.status === 'open' && (
+                      <button
+                        className="cfm-btn cfm-btn-ghost cfm-btn-sm cfm-reapply"
+                        disabled={busy === run.run_id}
+                        title="Re-parse the original file, applying any line mappings you've added. Keeps your Included/Ignored sheet selection."
+                        onClick={() => handleReapply(run)}
+                      >
+                        {busy === run.run_id ? 'Re-applying…' : '↻ Re-apply mappings'}
+                      </button>
+                    )}
                     {run.status === 'pushed' && run.pushed_version_code && (
                       <span className="cfm-pushed-note">Loaded — publish it in Cycles &amp; versions.</span>
                     )}
                   </div>
 
-                  <StagingReview runId={run.run_id} currency={run.currency} run={run}
-                                 lines={lines} canManage={canManage} />
+                  <StagingReview key={`${run.run_id}:${reapplyTok[run.run_id] || 0}`}
+                                 runId={run.run_id} currency={run.currency} run={run}
+                                 lines={lines} canManage={canManage}
+                                 onIncludedChange={(inc) => setRuns(rs => rs.map(r =>
+                                   r.run_id === run.run_id ? { ...r, included_sheets: inc } : r))} />
                 </div>
               )}
             </div>

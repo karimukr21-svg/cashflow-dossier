@@ -569,25 +569,24 @@ def fmt(res, full=False):
 
 
 # ---- staging (REST writes) --------------------------------------------------
-def stage(res, ref, created_by='reconcile_stage.py'):
-    import db
-    # 1. upsert discovered projects into cf_projects
+def _proj_rows(res, ref):
+    """The cf_projects rows for a parsed result (skips the _AREA bucket)."""
     gid = ref.get('gacc_id_index', {})
     gidx = ref.get('gacc_index', {})
-    projrows = []
+    rows = []
     for code, p in res['projects'].items():
         if code == '_AREA':
             continue
-        link = gid.get(tight(code))
-        projrows.append({'project_code': code, 'area': res['area'],
-                         'display_name': (gidx.get(tight(code), {}) or {}).get('abbreviation') or code,
-                         'gacc_project_id': link,
-                         'is_area_item': p['is_area_item'], 'is_jv': p['is_jv']})
-    if projrows:
-        db.insert('cf_projects', projrows, upsert=True, on_conflict='project_code')
+        rows.append({'project_code': code, 'area': res['area'],
+                     'display_name': (gidx.get(tight(code), {}) or {}).get('abbreviation') or code,
+                     'gacc_project_id': gid.get(tight(code)),
+                     'is_area_item': p['is_area_item'], 'is_jv': p['is_jv']})
+    return rows
 
-    # 2. cf_import_runs (the open run)
-    summary = {
+
+def _run_summary(res):
+    """The cf_import_runs.recon_summary jsonb for a parsed result."""
+    return {
         'target_sheet': res['recon_target'], 'currency': res['currency'],
         'projects': {c: {'sheets': p['sheets'], 'is_area_item': p['is_area_item'],
                          'is_jv': p['is_jv'], 'rows': p['n']}
@@ -604,6 +603,17 @@ def stage(res, ref, created_by='reconcile_stage.py'):
         'rollup_sections': res.get('rollup_sections', {}),
         'sheet_classification': res.get('sheet_classification'),
     }
+
+
+def stage(res, ref, created_by='reconcile_stage.py'):
+    import db
+    # 1. upsert discovered projects into cf_projects
+    projrows = _proj_rows(res, ref)
+    if projrows:
+        db.insert('cf_projects', projrows, upsert=True, on_conflict='project_code')
+
+    # 2. cf_import_runs (the open run)
+    summary = _run_summary(res)
     # Staged UNASSIGNED: no cycle/as_of/proposed_version until the run is pushed
     # into a chosen version. n_forecast_rows carries the full staged total (the
     # actuals/forecast split is cycle-dependent, resolved at push).
@@ -630,6 +640,45 @@ def stage(res, ref, created_by='reconcile_stage.py'):
     brows = [{'run_id': run_id, **b} for b in res['breaks']]
     if brows:
         db.insert('cf_recon_breaks', brows)
+    return run_id
+
+
+def restage_in_place(run_id, res, ref):
+    """Re-parse result -> overwrite the SAME run's staged rows + summary, KEEPING the
+    user's Included/Ignored sheet selection. Used by the Re-apply Mappings action: a
+    line alias added in the UI only takes effect when the file is parsed again."""
+    import db
+    # preserve the saved sheet selection (drop any sheet that no longer exists)
+    cur = db.select('cf_import_runs',
+                    {'select': 'included_sheets', 'run_id': f'eq.{run_id}'})
+    saved = (cur[0].get('included_sheets') if cur else None) or []
+    new_sheets = {s['sheet'] for s in (res.get('sheet_classification') or {}).get('sheets', [])}
+    kept = [s for s in saved if s in new_sheets]
+    included = kept if kept else res['included_sheets']
+
+    projrows = _proj_rows(res, ref)
+    if projrows:
+        db.insert('cf_projects', projrows, upsert=True, on_conflict='project_code')
+
+    # swap this run's staged rows + breaks (run_id unchanged)
+    db.delete('cf_staged_rows', {'run_id': f'eq.{run_id}'})
+    db.delete('cf_recon_breaks', {'run_id': f'eq.{run_id}'})
+    db.insert('cf_staged_rows', [{'run_id': run_id, **r} for r in res['staged']])
+    brows = [{'run_id': run_id, **b} for b in res['breaks']]
+    if brows:
+        db.insert('cf_recon_breaks', brows)
+
+    db.update('cf_import_runs', {'run_id': f'eq.{run_id}'}, {
+        'source_file': res['file'], 'currency': res['currency'],
+        'n_sheets': res['n_sheets'], 'n_projects': res['n_projects'],
+        'n_projects_new': len(projrows),
+        'n_forecast_rows': res['n_actual'] + res['n_forecast'],
+        'n_unmatched_labels': len(res['unmatched_labels']),
+        'recon_target_sheet': res['recon_target'], 'recon_status': res['recon_status'],
+        'recon_n_breaks': res['n_real_breaks'], 'recon_n_rounding': res['n_rounding'],
+        'recon_max_abs_diff': res['max_abs_diff'], 'recon_summary': _run_summary(res),
+        'included_sheets': included,
+    })
     return run_id
 
 

@@ -329,6 +329,7 @@
 .cfm-shx-chip:hover .cfm-shx-arrow { color: #64748b; }
 @media (max-width: 900px) { .cfm-shx-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .cfm-shx-jv { margin-top: 8px; font-size: 11px; color: #9ca3af; }
+.cfm-reapply { margin-left: 10px; }
 
 /* line movement table */
 .cfm-sr-lines { margin-top: 12px; }

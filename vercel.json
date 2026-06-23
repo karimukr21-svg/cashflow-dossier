@@ -1,6 +1,7 @@
 {
   "functions": {
-    "api/cf-stage.py": { "includeFiles": "api/_cfengine/**" }
+    "api/cf-stage.py": { "includeFiles": "api/_cfengine/**" },
+    "api/cf-restage.py": { "includeFiles": "api/_cfengine/**" }
   },
   "rewrites": [
     { "source": "/((?!favicon\\.svg|favicon\\.ico|assets/.*|app-icons/.*|api/.*).*)", "destination": "/index.html" }

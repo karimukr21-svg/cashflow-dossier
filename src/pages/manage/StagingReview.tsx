@@ -68,8 +68,9 @@ function fmtAcct(v: any) {
 type LineCat = { line_code: string; category: string; nature: string; description: string }
 
 export default function StagingReview(
-  { runId, currency, run, lines = [], canManage = false }:
-  { runId: string; currency: string; run?: RunSummary; lines?: LineCat[]; canManage?: boolean }
+  { runId, currency, run, lines = [], canManage = false, onIncludedChange }:
+  { runId: string; currency: string; run?: RunSummary; lines?: LineCat[]
+    canManage?: boolean; onIncludedChange?: (included: string[]) => void }
 ) {
   const [actualsDiff, setActualsDiff] = useState<ActualsDiffData | null>(null)
 
@@ -102,7 +103,10 @@ export default function StagingReview(
       setIncluded(prev => { const n = new Set(prev); next ? n.delete(sheet) : n.add(sheet); return n })
       return
     }
-    if (Array.isArray(data)) setIncluded(new Set(data as string[]))
+    if (Array.isArray(data)) {
+      setIncluded(new Set(data as string[]))
+      onIncludedChange?.(data as string[])   // keep the parent's run row fresh (survives collapse/expand)
+    }
     setGridNonce(x => x + 1)
   }
 

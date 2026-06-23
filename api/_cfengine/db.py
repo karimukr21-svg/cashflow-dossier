@@ -66,3 +66,34 @@ def delete(table, params, profile="public"):
     r = requests.delete(f"{REST}/{table}", headers=h, params=params, timeout=60)
     if r.status_code >= 300:
         raise RuntimeError(f"delete {table} {r.status_code}: {r.text[:300]}")
+
+
+def update(table, params, patch, profile="public"):
+    h = {**_H, "Content-Type": "application/json", "Content-Profile": profile,
+         "Prefer": "return=minimal"}
+    r = requests.patch(f"{REST}/{table}", headers=h, params=params, json=patch, timeout=60)
+    if r.status_code >= 300:
+        raise RuntimeError(f"update {table} {r.status_code}: {r.text[:300]}")
+
+
+# ---- Storage (the original uploaded workbook, so a run can be re-parsed) --------
+_BUCKET = "cf-uploads"
+
+
+def storage_put(path, data, content_type="application/octet-stream"):
+    """Upsert raw bytes to the cf-uploads bucket (service role bypasses storage RLS)."""
+    h = {**_H, "Content-Type": content_type, "x-upsert": "true"}
+    r = requests.post(f"{URL}/storage/v1/object/{_BUCKET}/{path}",
+                      headers=h, data=data, timeout=120)
+    if r.status_code >= 300:
+        raise RuntimeError(f"storage_put {path} {r.status_code}: {r.text[:300]}")
+
+
+def storage_get(path):
+    """Fetch raw bytes from cf-uploads. Returns None if the object is missing."""
+    r = requests.get(f"{URL}/storage/v1/object/{_BUCKET}/{path}", headers=_H, timeout=120)
+    if r.status_code == 404:
+        return None
+    if r.status_code >= 300:
+        raise RuntimeError(f"storage_get {path} {r.status_code}: {r.text[:300]}")
+    return r.content

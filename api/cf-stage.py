@@ -110,6 +110,14 @@ class handler(BaseHTTPRequestHandler):
 
             run_id = rs.stage(res, ref, created_by=f"upload:{fn}")
 
+            # keep the original file so the run can be re-parsed later (Re-apply
+            # mappings) without a re-upload. Best-effort: never fail a stage on it.
+            try:
+                db.storage_put(f"{run_id}.xlsx", body,
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            except Exception:
+                pass
+
             return self._send(200, {
                 "run_id": run_id,
                 "area": res["area"],
