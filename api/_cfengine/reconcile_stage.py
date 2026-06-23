@@ -377,9 +377,29 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
                        'line_code': lc, 'year': y, 'month': m, 'value': round(v, 4)})
 
     summed_set = set(sel)
+    # Per summed sheet: each is a project or an area item. Split into ASSIGNED
+    # (the project mapped onto the canonical gacc registry) vs UNASSIGNED (summed
+    # as a project but not recognised — needs attention) vs AREA ITEMS (the _AREA
+    # bucket: PMV/CAMP/RMPT/overheads). Everything else = ignored (rollups/junk).
+    assigned, unassigned, area_items = [], [], []
+    for code, p in projects.items():
+        for sheet in p['sheets']:
+            if code == '_AREA' or p['is_area_item']:
+                area_items.append({'sheet': sheet, 'code': code})
+            else:
+                gi = resolver.gacc.get(tight(code))
+                if gi:
+                    assigned.append({'sheet': sheet, 'code': code,
+                                     'name': gi.get('abbreviation') or code,
+                                     'is_jv': p['is_jv']})
+                else:
+                    unassigned.append({'sheet': sheet, 'code': code, 'is_jv': p['is_jv']})
     sheet_classification = {
         'target': target_used,
         'summed': sorted(sel),
+        'assigned': sorted(assigned, key=lambda x: x['sheet']),
+        'unassigned': sorted(unassigned, key=lambda x: x['sheet']),
+        'area_items': sorted(area_items, key=lambda x: x['sheet']),
         'ignored': sorted(n for n in all_sheets
                           if n not in summed_set and n != target_used),
     }

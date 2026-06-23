@@ -9,7 +9,6 @@ const VERDICT_LABEL: Record<string, string> = {
   tie: 'Ties ✓', break: 'Breaks', no_total: 'No area total',
   single_area: 'Single entity', unknown: '—',
 }
-const MATERIAL = new Set(['real', 'missing_in_total', 'missing_in_projects'])
 
 function fmtNum(v: any) {
   if (v == null) return '-'
@@ -29,7 +28,6 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('unassigned')
   const [expanded, setExpanded] = useState<string | null>(null)
-  const [detail, setDetail] = useState<Record<string, any>>({})  // run_id -> { breaks, loading }
   const [busy, setBusy] = useState<string | null>(null)          // run_id currently pushing/discarding
   const [upload, setUpload] = useState<any>({ name: '', state: 'idle', msg: '' }) // idle|busy|ok|err
   const fileRef = useRef<HTMLInputElement | null>(null)
@@ -104,24 +102,8 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
       cycleKeyOf(r.cycle_year, r.cycle_month) === filter
   })
 
-  const loadDetail = async (run: any) => {
-    if (detail[run.run_id]) return
-    setDetail(d => ({ ...d, [run.run_id]: { loading: true, breaks: [] } }))
-    const { data } = await supabase
-      .from('cf_recon_breaks')
-      .select('line_code,nature,year,month,sum_projects,area_total,diff,classification')
-      .eq('run_id', run.run_id)
-    const breaks = (data || [])
-      .filter((b: any) => MATERIAL.has(b.classification))
-      .sort((a: any, b: any) => Math.abs(b.diff) - Math.abs(a.diff))
-      .slice(0, 40)
-    setDetail(d => ({ ...d, [run.run_id]: { loading: false, breaks } }))
-  }
-
   const toggle = (run: any) => {
-    const next = expanded === run.run_id ? null : run.run_id
-    setExpanded(next)
-    if (next) loadDetail(run)
+    setExpanded(expanded === run.run_id ? null : run.run_id)
   }
 
   const handleEditArea = async (run: any) => {
@@ -300,7 +282,6 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
       <div className="cfm-run-list">
         {visible.map(run => {
           const isOpen = expanded === run.run_id
-          const d = detail[run.run_id]
           const total = (run.n_actual_rows || 0) + (run.n_forecast_rows || 0)
           const pick = pushPick[run.run_id] || {}
           const cycleVersions = pick.cycle
@@ -429,36 +410,6 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
                   <StagingReview runId={run.run_id} currency={run.currency} run={run} />
 
                   <UnmatchedLabels summary={run.recon_summary} lines={lines} canManage={canManage} />
-
-                  <details className="cfm-recon-drill">
-                    <summary>Reconciliation — Σ projects vs area total ({run.currency})</summary>
-                    <div className="cfm-breaks">
-                      {d?.loading && <div className="cfm-empty-sm">Loading breaks…</div>}
-                      {d && !d.loading && d.breaks.length === 0 && (
-                        <div className="cfm-empty-sm">No material flow breaks — projects tie to the area total.</div>
-                      )}
-                      {d && !d.loading && d.breaks.length > 0 && (
-                        <table className="cfm-breaks-table">
-                          <thead>
-                            <tr><th>Line</th><th>Period</th><th>Nature</th><th className="num">Σ projects</th><th className="num">Area total</th><th className="num">Δ</th><th>Class</th></tr>
-                          </thead>
-                          <tbody>
-                            {d.breaks.map((b: any, i: number) => (
-                              <tr key={i}>
-                                <td className="mono">{b.line_code}</td>
-                                <td>{b.year}-{String(b.month).padStart(2, '0')}</td>
-                                <td>{b.nature || '-'}</td>
-                                <td className="num">{fmtNum(b.sum_projects)}</td>
-                                <td className="num">{fmtNum(b.area_total)}</td>
-                                <td className={`num ${b.diff < 0 ? 'neg' : 'pos'}`}>{fmtNum(b.diff)}</td>
-                                <td><span className={`cfm-cls cfm-cls-${b.classification}`}>{b.classification.replace(/_/g, ' ')}</span></td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      )}
-                    </div>
-                  </details>
                 </div>
               )}
             </div>
