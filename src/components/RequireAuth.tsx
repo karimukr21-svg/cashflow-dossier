@@ -62,7 +62,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
         <div style={{ maxWidth: 420, width: '100%', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', padding: 32, textAlign: 'center' }}>
           <h1 style={{ fontSize: 20, fontWeight: 500, marginBottom: 12 }}>No access</h1>
           <p style={{ fontSize: 14, color: 'var(--mute)', marginBottom: 16 }}>
-            Your account isn't set up to use Cash Flow Dossier yet. Contact Karim to request access.
+            Your account isn't set up to use Treasury Workspace yet. Contact Karim to request access.
           </p>
           <a href={`mailto:${SUPPORT_EMAIL}`} style={{ display: 'inline-block', fontSize: 14, color: 'var(--crimson)', marginBottom: 24 }}>
             {SUPPORT_EMAIL}

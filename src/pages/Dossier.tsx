@@ -319,7 +319,7 @@ export default function Dossier() {
            Slots are fixed left-to-right; conditional items collapse out
            without reordering anything to their right. */}
         <div className="topbar-row topbar-row-status">
-          <div className="brand">Cash Flow Dossier</div>
+          <div className="brand">Treasury Workspace</div>
           <div className="asof-pill">Actuals · {asOfLabel}</div>
           <button className="period-pill clickable"
                   onClick={() => setShowCustom(true)}

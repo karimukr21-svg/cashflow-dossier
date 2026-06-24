@@ -146,7 +146,7 @@ export default function AnalyzeShell() {
     <div className="shell">
       <div className="topbar">
         <div className="topbar-row topbar-row-status">
-          <div className="brand">Cash Flow Dossier</div>
+          <div className="brand">Treasury Workspace</div>
           <span className="analyze-badge">Analyze · Project grain</span>
           <div className="asof-pill">Actuals · {asOfLabel}</div>
           <button className="period-pill clickable" onClick={() => setShowCustom(true)} title="Change period">
