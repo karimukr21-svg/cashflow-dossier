@@ -190,7 +190,12 @@ function CashflowGrid({ runId, currency, nonce }: { runId: string; currency: str
   const nonop = (ym: string) => at(sec.nonop, ym)
   const wg = (ym: string) => at(sec.wg, ym)
   const bank = (ym: string) => at(sec.bank, ym)
-  const netMove = (ym: string) => operNet(ym) + interest(ym) + nonop(ym) + wg(ym) + bank(ym)
+  // Net movement = the LIQUID-FUNDS cash movement. Bank financing is deliberately
+  // EXCLUDED here: in this model the ending cash balance ("Balance at end / liquid
+  // funds") does not absorb financing — loans/overdraft are tracked as the
+  // accumulated debt stocks below. Including the (gross) bank figure would blow the
+  // balance up by billions. Bank financing is shown as its own section.
+  const netMove = (ym: string) => operNet(ym) + interest(ym) + nonop(ym) + wg(ym)
 
   // All balances are DERIVED running balances: only the very FIRST value of the
   // whole series is taken from the file (the anchor), then each is rolled forward
@@ -199,9 +204,10 @@ function CashflowGrid({ runId, currency, nonce }: { runId: string; currency: str
   // moved by the bank-financing loan-in/out and overdraft-in/out flows. Chained
   // across all years so this year continues from the last.
   const secAt = (g: GridYear, key: string, ym: string) => at(g.sections?.[key], ym)
+  // cash movement excludes bank financing (see netMove above)
   const netMoveOf = (g: GridYear, ym: string) =>
     secAt(g, 'oper_rec', ym) + secAt(g, 'oper_pay', ym) + secAt(g, 'interest', ym)
-      + secAt(g, 'nonop', ym) + secAt(g, 'wg', ym) + secAt(g, 'bank', ym)
+      + secAt(g, 'nonop', ym) + secAt(g, 'wg', ym)
 
   const derivedOpen: Record<string, number> = {}
   const derivedEnd: Record<string, number> = {}
@@ -244,7 +250,7 @@ function CashflowGrid({ runId, currency, nonce }: { runId: string; currency: str
   const fOpening = (ym: string) => at(yd.opening, ym)
   const fEnding = (ym: string) => at(yd.ending, ym)
   const fNetMove = (ym: string) => fOperRec(ym) + fOperPay(ym)
-    + fileAt('interest', ym) + fileAt('nonop', ym) + fileAt('wg', ym) + fileAt('bank', ym)
+    + fileAt('interest', ym) + fileAt('nonop', ym) + fileAt('wg', ym)
 
   // First forecast month — marks the actual/forecast cutover divider in the grid.
   const firstFcYm = months.find(m => m.kind === 'forecast')?.ym
@@ -258,9 +264,10 @@ function CashflowGrid({ runId, currency, nonce }: { runId: string; currency: str
     { key: 'interest', label: 'Interest', get: interest, file: (ym) => fileAt('interest', ym), type: 'flow' },
     { key: 'nonop', label: 'Non-operational', get: nonop, file: (ym) => fileAt('nonop', ym), type: 'flow' },
     { key: 'wg', label: 'Within group', get: wg, file: (ym) => fileAt('wg', ym), type: 'flow' },
-    { key: 'bank', label: 'Bank financing', get: bank, file: (ym) => fileAt('bank', ym), type: 'flow' },
-    { key: 'net_move', label: 'Net movement', get: netMove, file: fNetMove, type: 'net' },
+    { key: 'net_move', label: 'Net movement (cash)', get: netMove, file: fNetMove, type: 'net' },
     { key: 'ending', label: 'Ending balance', get: ending, file: fEnding, type: 'boundary' },
+    // financing — shown for reconciliation, but NOT part of the liquid-funds balance above
+    { key: 'bank', label: 'Bank financing', get: bank, file: (ym) => fileAt('bank', ym), type: 'flow' },
     { key: 'accum_loans', label: 'Accumulated loans', get: accumL, file: (ym) => fileAt('accum_loans', ym), type: 'stock' },
     { key: 'accum_od', label: 'Overdraft balance', get: accumO, file: (ym) => fileAt('accum_od', ym), type: 'stock' },
   ]

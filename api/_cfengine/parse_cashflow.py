@@ -329,9 +329,20 @@ SECTION_MAP = [
     ('WITHINGROUP', 'Within Group'),
     ('TRANSFERS', 'Within Group'),
     ('TRANSFER', 'Within Group'),
+    ('BANKFINANCING', 'Bank Financing'),
     ('BANKING', 'Bank Financing'),
     ('NEWSALES', 'New Sales'),
 ]
+# Exact label-column banner phrases that start a section (matched regardless of any
+# subtotal the banner row carries — unlike the section column, these banners can sit
+# in the label column with no section tag, e.g. KSA 'WITHIN GROUP' / 'BANK FINANCING').
+SECTION_BANNERS = {
+    'OPERATION': 'Operation', 'OPERATIONS': 'Operation',
+    'NONOPERATIONAL': 'Non Operational', 'NONOPERATION': 'Non Operational',
+    'INTEREST': 'Interest', 'WITHINGROUP': 'Within Group',
+    'BANKFINANCING': 'Bank Financing', 'BANKING': 'Bank Financing',
+    'NEWSALES': 'New Sales',
+}
 SKIP_LABELS = {'TOTAL', 'NET', 'NETFUNDS', 'NETBANKINGFINANCE', 'NETBALANCEATSTART',
                'NETTRANSFERS', 'NETTRANSFERSWITHINAREA', 'NETTRANSFEROUTSIDEAREA',
                'NETTRANSFERSWITHINAREAOUTSIDE', 'NETTRANSFERMOA', 'DESCRIPTION',
@@ -425,10 +436,12 @@ def resolve_line(label, section, direction, post_ending, resolver, area):
     # --- Bank Financing ---
     if section == 'Bank Financing':
         d = direction
-        if lt.startswith('IN') and 'LOAN' in lt:
-            d = 'Receipts'
-        elif lt.startswith('OUT') and 'LOAN' in lt:
+        # direction can lead or trail the label: 'IN LOANS' / 'TOTAL LOANS IN',
+        # 'OUT LOAN' / 'LOAN OUT' / 'Overdraft Out'.
+        if lt.startswith('OUT') or lt.endswith('OUT'):
             d = 'Payments'
+        elif lt.startswith('IN') or lt.endswith('IN'):
+            d = 'Receipts'
         elif lt.startswith('RECEIPT'):
             d = 'Receipts'
         elif lt.startswith('PAY'):
@@ -555,15 +568,20 @@ def parse_sheet(ws, area, sheet_name, resolver, as_of, verbose=False):
         if not label or not label.strip():
             continue
         lt = tight(label)
-        # A section banner can sit in the LABEL column (not the section column) —
-        # e.g. a 'WITHIN GROUP' header with no section-column tag. Flip the section
-        # when the label names one AND the row carries no period values (a pure
-        # header). Without this, the section stays on the prior one (Non
-        # Operational), and the within-group RECEIPTS/PAYMENTS rows get swallowed
-        # as nonop_recpt/nonop_pay.
-        lab_sec = section_of(lt)
-        if lab_sec and not any(isinstance(r[ci], (int, float)) and r[ci] not in (0, None)
-                               for ci in periods if ci < len(r)):
+        # A section banner can sit in the LABEL column (no section-column tag) —
+        # e.g. 'WITHIN GROUP' / 'BANK FINANCING'. An EXACT banner phrase flips the
+        # section even if the banner row also carries a subtotal (its value is
+        # skipped); a longer header phrase flips only when it carries no period
+        # values, so a data row like 'OPERATION & MAINTENANCE' is never mistaken
+        # for a header. Without this the section stays on the prior one and the
+        # whole block (within-group / banking) is swallowed or dropped.
+        lab_sec = SECTION_BANNERS.get(lt)
+        if not lab_sec:
+            cand = section_of(lt)
+            if cand and not any(isinstance(r[ci], (int, float)) and r[ci] not in (0, None)
+                                for ci in periods if ci < len(r)):
+                lab_sec = cand
+        if lab_sec:
             section = lab_sec
             direction = None
             continue
