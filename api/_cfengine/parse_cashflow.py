@@ -402,9 +402,11 @@ def resolve_line(label, section, direction, post_ending, resolver, area):
     if ('ENDING' in lt or 'CLOSING' in lt) and 'BALANCE' in lt:
         return 'ending_balance', direction
     if post_ending:
-        if lt.startswith('LOAN') or lt == 'TREASURYLOANS':
+        if lt.startswith('LOAN') or lt == 'TREASURYLOANS' \
+                or 'ACCUMULATEDLOAN' in lt or 'ACCOUMULATEDLOAN' in lt:
             return 'accum_loans', direction
-        if lt.startswith('OVERDRAFT'):
+        if lt.startswith('OVERDRAFT') \
+                or 'ACCUMULATEDOVERDRAFT' in lt or 'ACCOUMULATEDOVERDRAFT' in lt:
             return 'accum_od', direction
         if lt in ('NETFUNDS',):
             return None, direction
@@ -435,6 +437,11 @@ def resolve_line(label, section, direction, post_ending, resolver, area):
 
     # --- Bank Financing ---
     if section == 'Bank Financing':
+        # 'TOTAL LOANS IN' / 'TOTAL OVERDRAFT' / 'TOTAL LOANS OUT' are subtotals of
+        # the detail rows (LOAN IN/OUT, Overdraft In/Out) — skip so the section sums
+        # to the true NET banking finance, not double.
+        if lt.startswith('TOTAL'):
+            return None, direction
         d = direction
         # direction can lead or trail the label: 'IN LOANS' / 'TOTAL LOANS IN',
         # 'OUT LOAN' / 'LOAN OUT' / 'Overdraft Out'.
