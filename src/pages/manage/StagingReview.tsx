@@ -1,5 +1,6 @@
 import { useState, useEffect, Fragment } from 'react'
 import { supabase } from '@/lib/supabase'
+import { usePersistedState } from '@/lib/persist'
 
 /* StagingReview — the confidence check a Treasury user reads BEFORE pushing a
    staged import run. Balances first, then per-line movement (with per-month
@@ -154,8 +155,10 @@ const MON = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 
 
 function CashflowGrid({ runId, currency, nonce }: { runId: string; currency: string; nonce?: number }) {
   const [data, setData] = useState<GridData | null>(null)
-  const [year, setYear] = useState<number | null>(null)
-  const [compare, setCompare] = useState(false)   // Values vs Variance-vs-file mode
+  // Year + compare mode persist per run, so leaving the tab and coming back keeps
+  // the chosen year and Values/Compare-to-file view instead of resetting.
+  const [year, setYear] = usePersistedState<number | null>(`cfm.grid.year.${runId}`, null)
+  const [compare, setCompare] = usePersistedState<boolean>(`cfm.grid.compare.${runId}`, false)
   const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {

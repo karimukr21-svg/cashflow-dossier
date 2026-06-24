@@ -98,24 +98,56 @@ MAIN_SHEET = {
 }
 
 
+# Currency word-forms -> canonical token. Header cells say "Currency US$" /
+# "(Currency US Dollar)" / "QR '000" / "Dirhams" — normalise them to a CCY token.
+# Checked before the bare CCY_TOKENS so 'US$'/'DOLLAR' resolve to USD, not a stray
+# letter match. A bare '$' near 'CURRENCY' is treated as USD as a last resort.
+CCY_SYNONYMS = (
+    ('US$', 'USD'), ('US $', 'USD'), ('U.S', 'USD'), ('US DOLLAR', 'USD'),
+    ('USDOLLAR', 'USD'), ('DOLLAR', 'USD'), ('EURO', 'EUR'), ('DIRHAM', 'AED'),
+    ('RIYAL', 'SAR'), ('TENGE', 'KZT'), ('DINAR', 'JOD'),
+)
+
+
+def _ccy_from_header(up):
+    """Map an uppercased header cell to a currency token, or None."""
+    for word, tok in CCY_SYNONYMS:
+        if word in up:
+            return tok
+    for tok in CCY_TOKENS:
+        if tok in up:
+            return tok
+    if '$' in up:
+        return 'USD'
+    return None
+
+
 def detect_currency(wb, sheets):
-    """Majority currency across the project sheets, read from the 'Currency XXX'
-    header line (row 1-2). Falls back to '?' if none found."""
-    votes = Counter()
-    for n in sheets[:8]:
-        try:
-            ws = wb[n]
-        except KeyError:
-            continue
-        for row in ws.iter_rows(min_row=1, max_row=3, max_col=4, values_only=True):
-            for v in row:
-                if isinstance(v, str):
+    """Majority currency read from a 'Currency XXX' / "'000" header line (rows 1-3).
+    Recognises word-forms (US$, US Dollar, Dirham, QR…) as well as the bare tokens.
+    Scans the given project sheets first; if none vote, falls back to scanning EVERY
+    sheet — the currency is often declared only on the consolidated rollup (e.g.
+    Kazakhstan: 'CASH FLOW With Claims (Currency US$)' lives on CONSOLIDATED)."""
+    def vote_over(names):
+        votes = Counter()
+        for n in names:
+            try:
+                ws = wb[n]
+            except KeyError:
+                continue
+            for row in ws.iter_rows(min_row=1, max_row=3, max_col=6, values_only=True):
+                for v in row:
+                    if not isinstance(v, str):
+                        continue
                     up = v.upper()
-                    if 'CURRENCY' in up or "'000" in up or '"000"' in up:
-                        for tok in CCY_TOKENS:
-                            if tok in up:
-                                votes[tok] += 1
-                                break
+                    if 'CURRENCY' in up or "'000" in up or '"000"' in up or "000)" in up:
+                        tok = _ccy_from_header(up)
+                        if tok:
+                            votes[tok] += 1
+        return votes
+    votes = vote_over(sheets[:8])
+    if not votes:
+        votes = vote_over(wb.sheetnames)
     return votes.most_common(1)[0][0] if votes else '?'
 
 def detect_target_sheet(wb, native_ccy):

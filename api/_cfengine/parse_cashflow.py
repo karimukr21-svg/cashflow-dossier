@@ -129,7 +129,10 @@ ROLLUP_TOKENS = ['CONSOLIDAT', 'CONSOL', 'AREA TOTAL', 'AREA OFF', 'AREA WLL',
                  'AREA TCC', 'AREA QAR', 'PROJECTS TOTAL', 'NEW CCG', 'LEGACY',
                  'CHECK', 'BREAKDOWN', 'PLAN ', 'PREV', 'SUMMERY', 'SUMMARY',
                  "JV'S 100", 'PJTS', 'TRANSFER OUTSIDE', 'RECEIPTS FROM',
-                 'PAYMENTS TO', 'PAYMENT TERMS', 'PROJECT VALUE', 'SHEET']
+                 'PAYMENTS TO', 'PAYMENT TERMS', 'PROJECT VALUE', 'SHEET',
+                 # stale / reference tabs kept in the workbook for history — not a
+                 # live project, so never sum them (e.g. 'KSA_for records').
+                 'FOR RECORD', 'RECORDS', 'BACKUP', 'OBSOLETE', 'DO NOT USE']
 AREA_ROLLUP_EXACT = {'AREA', 'NEW', 'CCG', 'CCG D', 'TCC', 'MORG', 'CONSOLIDATED',
                      'OFFSHORE', 'CCIC', 'CCCE', 'CCC RE', 'PJTS', 'A2','A3','A4',
                      'A5','A6','A7','A8','A9','AA','CC','DD','EE','FF','GG','D','E',
@@ -482,6 +485,17 @@ def resolve_line(label, section, direction, post_ending, resolver, area):
         if lt.startswith('PAYMENT'):
             code = 'interest_pay' if section == 'Interest' else 'nonop_pay'
             return code, 'Payments'
+
+    # --- Interest embedded in Operation -> its own Interest section ---
+    # Some area files list INTEREST as an operation receipt/payment line rather than
+    # under a dedicated INTEREST banner (e.g. Kazakhstan). Pull it into the canonical
+    # Interest section by label + direction, symmetrically on the rollup and the
+    # project sheets, so the section total is consistent and the ending balance still
+    # ties. Scoped to Operation/None so New Sales interest and the dedicated Interest
+    # section (handled above) are left alone.
+    if section in ('Operation', None) and lt.startswith('INTEREST'):
+        return ('interest_recpt' if (direction or 'Receipts') == 'Receipts'
+                else 'interest_pay'), direction
 
     # --- dictionary lookup for Operation / New Sales / misc ---
     nat = direction or 'Receipts'

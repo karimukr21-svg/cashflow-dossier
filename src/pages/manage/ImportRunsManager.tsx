@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import { usePersistedState } from '@/lib/persist'
 import StagingReview from './StagingReview'
 
 const STATUS_LABEL: Record<string, string> = {
@@ -26,8 +27,10 @@ function cycleKeyOf(year: any, month: any) {
 export default function ImportRunsManager({ canManage }: { canManage: boolean }) {
   const [runs, setRuns] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('unassigned')
-  const [expanded, setExpanded] = useState<string | null>(null)
+  // Persisted across unmount so leaving the tab/module and returning keeps the
+  // reviewer's place (the panel unmounts this component on sub-tab switch).
+  const [filter, setFilter] = usePersistedState<string>('cfm.runs.filter', 'unassigned')
+  const [expanded, setExpanded] = usePersistedState<string | null>('cfm.runs.expanded', null)
   const [busy, setBusy] = useState<string | null>(null)          // run_id currently pushing/discarding
   const [upload, setUpload] = useState<any>({ name: '', state: 'idle', msg: '' }) // idle|busy|ok|err
   const [reapplyTok, setReapplyTok] = useState<Record<string, number>>({})  // run_id -> remount nonce
