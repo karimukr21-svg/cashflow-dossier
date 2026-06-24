@@ -242,12 +242,19 @@ function CashflowGrid({ runId, currency, nonce }: { runId: string; currency: str
   }
   const opening = (ym: string) => derivedOpen[ym] ?? 0
   const ending = (ym: string) => derivedEnd[ym] ?? 0
-  const accumL = (ym: string) => derivedLoans[ym] ?? 0
-  const accumO = (ym: string) => derivedOd[ym] ?? 0
 
   // The file's OWN stated figures (the rollup), for the variance comparison.
   const fsec = yd.file_sections || {}
   const fileAt = (key: string, ym: string) => at(fsec[key], ym)
+  // Debt stocks (accumulated loans / overdraft): if the rollup maintains a stated
+  // running balance per period, that's authoritative — show it verbatim. Only
+  // derive it (anchor + bank movement) when the file carries no per-period stock.
+  // This fixes files whose opening anchor isn't where the layout expects (the
+  // derived series would otherwise wrongly start from 0 at the first month).
+  const hasFileLoans = !!fsec.accum_loans && ymKeys.some(ym => fsec.accum_loans?.[ym] != null)
+  const hasFileOd = !!fsec.accum_od && ymKeys.some(ym => fsec.accum_od?.[ym] != null)
+  const accumL = (ym: string) => hasFileLoans ? fileAt('accum_loans', ym) : (derivedLoans[ym] ?? 0)
+  const accumO = (ym: string) => hasFileOd ? fileAt('accum_od', ym) : (derivedOd[ym] ?? 0)
   const fOperRec = (ym: string) => fileAt('oper_rec', ym)
   const fOperPay = (ym: string) => fileAt('oper_pay', ym)
   const fOpening = (ym: string) => at(yd.opening, ym)

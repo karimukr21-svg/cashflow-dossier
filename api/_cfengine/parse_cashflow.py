@@ -99,6 +99,9 @@ class Resolver:
         self.by_full = {}      # (tight_desc, nature, category) -> code
         self.by_nat = {}       # (tight_desc, nature) -> code  (only if unique)
         self.gacc = ref['gacc_index']
+        # line_code -> category / nature, for sign normalisation in parse_sheet
+        self.cat_by_code = {L['line_code']: L['category'] for L in ref['lines']}
+        self.nat_by_code = {L['line_code']: L['nature'] for L in ref['lines']}
         nat_keys = defaultdict(set)
         for L in ref['lines']:
             if not L['is_active']:
@@ -662,8 +665,30 @@ def parse_sheet(ws, area, sheet_name, resolver, as_of, verbose=False):
             out_rows.append({'area': area, 'project_code': project_code,
                              'line_code': code, 'year': yy, 'month': mm,
                              'value': round(float(v), 4), 'kind': kind})
+
+    # Sign normalisation — outflows must be stored NEGATIVE so a section nets by
+    # summing. Area files are inconsistent: some list operation/interest/non-op
+    # PAYMENTS as positive magnitudes (e.g. Kazakhstan), others store them already
+    # signed (e.g. Saudi). Within Group / Bank Financing are signed in every file
+    # (their detail rows carry the minus), so they're excluded. Detect per sheet
+    # from the signed sum of the flippable payment lines: if it's positive the file
+    # used gross magnitudes, so negate them — multiplying by -1 (not -abs) keeps a
+    # genuine negative refund flipping to a positive inflow. Applied identically to
+    # project sheets and the rollup, so Σ-projects vs rollup still reconciles.
+    flip_cats = {'Operation', 'New Sales', 'Interest', 'Non Operational'}
+
+    def _flip_pay(c):
+        return (resolver.nat_by_code.get(c) == 'Payments'
+                and resolver.cat_by_code.get(c) in flip_cats)
+    pay_sum = sum(rr['value'] for rr in out_rows if _flip_pay(rr['line_code']))
+    if pay_sum > 0:
+        for rr in out_rows:
+            if _flip_pay(rr['line_code']):
+                rr['value'] = round(-rr['value'], 4)
+
     meta = {'sheet': sheet_name, 'project_code': project_code, 'mode': hdr['mode'],
-            'label_col': lc, 'n_rows': len(out_rows), 'unmatched': dict(unmatched)}
+            'label_col': lc, 'n_rows': len(out_rows), 'unmatched': dict(unmatched),
+            'pay_flipped': pay_sum > 0}
     return out_rows, meta
 
 # ---- per-workbook parse -----------------------------------------------------
