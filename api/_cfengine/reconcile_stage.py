@@ -171,12 +171,15 @@ def extract_rollup_balances(ws, as_of):
     each {'YYYY-MM': v}."""
     rows = list(ws.iter_rows(min_row=1, max_row=90, max_col=120, values_only=True))
     hdr = detect_header(rows, as_of)
-    empty = {'opening': {}, 'ending': {}, 'accum_loans': {}, 'accum_od': {}}
+    empty = {'opening': {}, 'ending': {}, 'accum_loans': {}, 'accum_od': {},
+             'accum_loans_open': None, 'accum_od_open': None}
     if not hdr:
         return empty
     lc = hdr['label_col']
     periods = hdr['periods']
+    first_ci = min(periods.keys()) if periods else None
     opening, ending, accum_loans, accum_od = {}, {}, {}, {}
+    accum_loans_open = accum_od_open = None
     got_open = got_end = got_accl = got_accod = False
 
     def series(r):
@@ -186,7 +189,18 @@ def extract_rollup_balances(ws, as_of):
                 out[f'{y:04d}-{m:02d}'] = round(float(r[ci]), 4)
         return out
 
-    for r in rows[hdr['header_row'] + 1:]:
+    # the debt-stock OPENING (before the first month) sits one row BELOW the stock
+    # label, in the column just left of the first month (Karim's layout note). The
+    # accumulated balance then rolls forward from there by the bank-financing movement.
+    def open_below(i):
+        if first_ci is None or i + 1 >= len(rows):
+            return None
+        nb = rows[i + 1]
+        v = nb[first_ci - 1] if 0 <= first_ci - 1 < len(nb) else None
+        return round(float(v), 4) if isinstance(v, (int, float)) else None
+
+    body = list(enumerate(rows))[hdr['header_row'] + 1:]
+    for i, r in body:
         label = r[lc] if lc < len(r) and isinstance(r[lc], str) else None
         if not label or not label.strip():
             continue
@@ -197,11 +211,12 @@ def extract_rollup_balances(ws, as_of):
             ending = series(r); got_end = True
         # debt stocks sit BELOW the ending balance (the closing-debt block)
         elif got_end and not got_accl and ('ACCOUMULATEDLOAN' in lt or 'ACCUMULATEDLOAN' in lt):
-            accum_loans = series(r); got_accl = True
+            accum_loans = series(r); accum_loans_open = open_below(i); got_accl = True
         elif got_end and not got_accod and lt.startswith('OVERDRAFT'):
-            accum_od = series(r); got_accod = True
+            accum_od = series(r); accum_od_open = open_below(i); got_accod = True
     return {'opening': opening, 'ending': ending,
-            'accum_loans': accum_loans, 'accum_od': accum_od}
+            'accum_loans': accum_loans, 'accum_od': accum_od,
+            'accum_loans_open': accum_loans_open, 'accum_od_open': accum_od_open}
 
 
 def section_key(category, nature):

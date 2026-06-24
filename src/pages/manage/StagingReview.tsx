@@ -144,6 +144,8 @@ type GridYear = {
 }
 type GridData = {
   area: string; currency: string
+  accum_loans_open?: number | null
+  accum_od_open?: number | null
   years: number[]
   by_year: Record<string, GridYear>
 }
@@ -196,11 +198,12 @@ function CashflowGrid({ runId, currency, nonce }: { runId: string; currency: str
   // stocks), so this is the real cash impact, not the gross loan turnover.
   const netMove = (ym: string) => operNet(ym) + interest(ym) + nonop(ym) + wg(ym) + bank(ym)
 
-  // All balances are DERIVED running balances: only the very FIRST value of the
-  // whole series is taken from the file (the anchor), then each is rolled forward
-  // by its movements. Cash: ending = opening + net movement (next month opens where
-  // the prior closed). Loans / overdraft: anchored at the first rollup stock, then
-  // moved by the bank-financing loan-in/out and overdraft-in/out flows. Chained
+  // All balances are DERIVED running balances. Cash: ending = opening + net
+  // movement (next month opens where the prior closed); the cash opening anchor is
+  // the file's stated opening. Debt stocks (loans / overdraft): anchored at the
+  // OPENING below the stock label (the cell before the first month), then rolled
+  // forward EVERY month by the bank-financing movement — loans by net loans + net
+  // discounted invoices (bf_loans), overdraft by net overdraft (bf_od). Chained
   // across all years so this year continues from the last.
   const secAt = (g: GridYear, key: string, ym: string) => at(g.sections?.[key], ym)
   // cash movement includes the NET bank financing (see netMove above)
@@ -216,9 +219,8 @@ function CashflowGrid({ runId, currency, nonce }: { runId: string; currency: str
     const firstG = data.by_year[String(data.years[0])]
     const firstYm = firstG?.months?.[0]?.ym
     let bal = firstG && firstYm ? at(firstG.opening, firstYm) : 0
-    let loanBal = firstG && firstYm ? secAt(firstG, 'accum_loans', firstYm) : 0
-    let odBal = firstG && firstYm ? secAt(firstG, 'accum_od', firstYm) : 0
-    let first = true
+    let loanBal = Number(data.accum_loans_open ?? 0)
+    let odBal = Number(data.accum_od_open ?? 0)
     for (const yy of data.years) {
       const g = data.by_year[String(yy)]
       if (!g) continue
@@ -226,13 +228,12 @@ function CashflowGrid({ runId, currency, nonce }: { runId: string; currency: str
         derivedOpen[mo.ym] = bal
         bal = bal + netMoveOf(g, mo.ym)
         derivedEnd[mo.ym] = bal
-        if (!first) {
-          loanBal = loanBal + secAt(g, 'bf_loans', mo.ym)
-          odBal = odBal + secAt(g, 'bf_od', mo.ym)
-        }
+        // stocks roll every month, including the first (the anchor is the opening
+        // BEFORE the first month, not the first month's balance)
+        loanBal = loanBal + secAt(g, 'bf_loans', mo.ym)
+        odBal = odBal + secAt(g, 'bf_od', mo.ym)
         derivedLoans[mo.ym] = loanBal
         derivedOd[mo.ym] = odBal
-        first = false
       }
     }
   }
