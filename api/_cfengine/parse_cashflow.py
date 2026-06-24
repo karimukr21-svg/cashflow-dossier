@@ -375,6 +375,13 @@ def is_ending_label(lt):
         or (('ENDING' in lt or 'CLOSING' in lt) and 'BALANCE' in lt)
 
 
+# Sentinel for an INTENTIONAL skip (a subtotal/memo row we deliberately don't map),
+# as distinct from None (a genuine miss worth flagging in "Lines that didn't map").
+# resolve_line returns this for rows like the Bank Financing 'TOTAL …' subtotals; the
+# parse loop drops them silently instead of listing them as unmatched.
+SKIP = object()
+
+
 def section_of(label_tight):
     for key, cat in SECTION_MAP:
         if label_tight.startswith(key) or label_tight == key:
@@ -439,9 +446,10 @@ def resolve_line(label, section, direction, post_ending, resolver, area):
     if section == 'Bank Financing':
         # 'TOTAL LOANS IN' / 'TOTAL OVERDRAFT' / 'TOTAL LOANS OUT' are subtotals of
         # the detail rows (LOAN IN/OUT, Overdraft In/Out) — skip so the section sums
-        # to the true NET banking finance, not double.
+        # to the true NET banking finance, not double. Returned as SKIP (not None) so
+        # the parse loop drops them silently rather than flagging them as unmatched.
         if lt.startswith('TOTAL'):
-            return None, direction
+            return SKIP, direction
         d = direction
         # direction can lead or trail the label: 'IN LOANS' / 'TOTAL LOANS IN',
         # 'OUT LOAN' / 'LOAN OUT' / 'Overdraft Out'.
@@ -615,6 +623,10 @@ def parse_sheet(ws, area, sheet_name, resolver, as_of, verbose=False):
                                        resolver, area)
         if lt in ENDING or (('ENDING' in lt or 'CLOSING' in lt) and 'BALANCE' in lt):
             post_ending = True
+        # Intentional skip (e.g. a Bank Financing 'TOTAL …' subtotal) — drop it
+        # silently; it's not a genuine miss, so it doesn't belong in the unmatched list.
+        if code is SKIP:
+            continue
         if code is None:
             # only report labels that actually carry data (ignore stray text)
             has_val = any(isinstance(r[ci], (int, float)) and r[ci] not in (0, None)
