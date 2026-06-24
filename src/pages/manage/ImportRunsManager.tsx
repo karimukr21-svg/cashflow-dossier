@@ -400,6 +400,16 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
                         >
                           Discard
                         </button>
+                        {run.status === 'open' && (
+                          <button
+                            className="cfm-btn cfm-btn-ghost cfm-reapply"
+                            disabled={busy === run.run_id}
+                            title="Re-parse the original file, applying any line mappings you've added. Keeps your Included/Ignored sheet selection."
+                            onClick={() => handleReapply(run)}
+                          >
+                            {busy === run.run_id ? 'Re-applying…' : '↻ Re-apply mappings'}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -408,16 +418,6 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
                       ? <span>Unassigned — pick a cycle + version, then Push. Area detected from the filename — Edit if wrong.</span>
                       : <span>In <strong>{run.pushed_version_code || '—'}</strong> · {stampedCycle?.name || cycleKeyOf(run.cycle_year, run.cycle_month)}</span>}
                     <span className="cfm-rhb-meta-stat">{fmtNum(total)} rows · staged {fmtDate(run.created_at)}</span>
-                    {canManage && run.status === 'open' && (
-                      <button
-                        className="cfm-btn cfm-btn-ghost cfm-btn-sm cfm-reapply"
-                        disabled={busy === run.run_id}
-                        title="Re-parse the original file, applying any line mappings you've added. Keeps your Included/Ignored sheet selection."
-                        onClick={() => handleReapply(run)}
-                      >
-                        {busy === run.run_id ? 'Re-applying…' : '↻ Re-apply mappings'}
-                      </button>
-                    )}
                     {run.status === 'pushed' && run.pushed_version_code && (
                       <span className="cfm-pushed-note">Loaded — publish it in Cycles &amp; versions.</span>
                     )}

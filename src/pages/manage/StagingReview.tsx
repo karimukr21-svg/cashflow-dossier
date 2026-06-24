@@ -368,7 +368,6 @@ function SheetsPanel({ sheets, included, compareTarget, onToggle }: {
 }) {
   if (!sheets?.length) return null
   const toggleable = sheets.filter(s => !s.is_jv)
-  const jv = sheets.filter(s => s.is_jv)
   const inc = toggleable.filter(s => included.has(s.sheet))
   const ign = toggleable.filter(s => !included.has(s.sheet))
 
@@ -416,11 +415,6 @@ function SheetsPanel({ sheets, included, compareTarget, onToggle }: {
           </div>
         </div>
       </div>
-      {jv.length > 0 && (
-        <div className="cfm-shx-jv">
-          JV — equity-accounted, never summed: {jv.map(s => s.sheet).join(' · ')}
-        </div>
-      )}
     </div>
   )
 }
