@@ -418,6 +418,7 @@
 .cfm-sr-actuals { margin-top: 12px; }
 .cfm-sr-toggle.is-warn { color: #b45309; font-weight: 600; }
 .cfm-sr-actuals-body { margin-top: 6px; }
+.cfm-cfg-actuals { margin-top: 6px; }
 
 /* ---- unmatched labels, now mappable ---- */
 .cfm-unmatched { display: block; margin-bottom: 12px; }

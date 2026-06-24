@@ -21,16 +21,16 @@ type SheetClassification = {
   area_items?: SheetEntry[]
   ignored: string[]
 } | null
-type ActualsChange = {
-  line_code: string; category: string | null; nature: string | null
-  year: number; month: number
-  old_value: number | null; new_value: number | null; diff: number | null
-  source_version: string | null
+type ActualsDiffYear = {
+  months: { ym: string; m: number; kind: 'actual' | 'forecast' }[]
+  staged: Record<string, Record<string, number> | null>
+  stored: Record<string, Record<string, number> | null>
 }
 type ActualsDiffData = {
   area: string; currency: string
-  n_changed: number; n_staged_actual_keys: number; n_existing_actual_keys: number
-  changes: ActualsChange[]
+  n_changed: number; has_stored: boolean
+  years: number[]
+  by_year: Record<string, ActualsDiffYear>
 }
 // Subset of the cf_import_runs row passed from ImportRunsManager.
 type RunSummary = {
@@ -419,48 +419,117 @@ function SheetsPanel({ sheets, included, compareTarget, onToggle }: {
   )
 }
 
-/* Actuals integrity drill — the periods this file would overwrite in cf_actuals
-   with a different value. Only renders when there's something to flag. */
+/* Actuals integrity — what a push would restate, as a grid mirroring the cash-flow
+   statement above: months as columns, sections as rows, comparing the stored actual
+   against this file's would-be figure. Cells a push would restate (a stored actual
+   already exists and differs) are highlighted. Only renders when there are stored
+   actuals to compare against. */
+type AdRow = { key: string; label: string; comp?: string[]; type: 'flow' | 'net' }
+const AD_ROWS: AdRow[] = [
+  { key: 'oper_rec', label: 'Receipts — operations', type: 'flow' },
+  { key: 'oper_pay', label: 'Payments — operations', type: 'flow' },
+  { key: 'oper_net', label: 'Net — operations', comp: ['oper_rec', 'oper_pay'], type: 'net' },
+  { key: 'interest', label: 'Interest', type: 'flow' },
+  { key: 'nonop', label: 'Non-operational', type: 'flow' },
+  { key: 'wg', label: 'Within group', type: 'flow' },
+  { key: 'bank', label: 'Bank financing', type: 'flow' },
+  { key: 'net_move', label: 'Net movement', comp: ['oper_rec', 'oper_pay', 'interest', 'nonop', 'wg', 'bank'], type: 'net' },
+]
+
 function ActualsDiff({ data, cur }: { data: ActualsDiffData | null; cur: string }) {
   const [open, setOpen] = useState(false)
-  if (!data || data.n_changed === 0) return null
-  const shown = data.changes || []
-  const ratio = data.n_staged_actual_keys ? data.n_changed / data.n_staged_actual_keys : 0
+  const [year, setYear] = useState<number | null>(null)
+  const [mode, setMode] = useState<'delta' | 'staged' | 'stored'>('delta')
+
+  useEffect(() => {
+    if (!data?.years?.length) return
+    setYear(prev => (prev != null && data.years.includes(prev)) ? prev : data.years[data.years.length - 1])
+  }, [data])
+
+  if (!data || !data.has_stored) return null
+  const MAT = 0.5
+  const yd = year != null ? data.by_year[String(year)] : null
+  const months = yd?.months || []
+  const ymKeys = months.map(m => m.ym)
+  const at = (m: Record<string, number> | null | undefined, ym: string) => Number(m?.[ym] ?? 0)
+  const has = (set: Record<string, Record<string, number> | null>, key: string, ym: string) =>
+    set?.[key]?.[ym] != null
+  // section value for a row (sum its components for derived rows)
+  const valOf = (set: Record<string, Record<string, number> | null>, r: AdRow, ym: string) =>
+    (r.comp ?? [r.key]).reduce((s, k) => s + at(set?.[k], ym), 0)
+  // a cell "would restate" if a stored actual exists for it and it differs materially
+  const isRestate = (r: AdRow, ym: string) => {
+    if (!yd) return false
+    const keys = r.comp ?? [r.key]
+    const storedExists = keys.some(k => has(yd.stored, k, ym))
+    return storedExists && Math.abs(valOf(yd.staged, r, ym) - valOf(yd.stored, r, ym)) > MAT
+  }
+  const cellVal = (r: AdRow, ym: string) => {
+    if (!yd) return 0
+    const sg = valOf(yd.staged, r, ym), st = valOf(yd.stored, r, ym)
+    return mode === 'staged' ? sg : mode === 'stored' ? st : sg - st
+  }
+  const rowTotal = (r: AdRow) => ymKeys.reduce((s, ym) => s + cellVal(r, ym), 0)
+
   return (
     <div className="cfm-sr-actuals">
       <button className="cfm-sr-toggle is-warn" onClick={() => setOpen(o => !o)}>
         <span className="cfm-sr-caret">{open ? '▾' : '▸'}</span>
         Actuals that would change ({fmt(data.n_changed)})
       </button>
-      {open && (
-        <div className="cfm-sr-actuals-body">
-          <div className="cfm-sr-cap cfm-sr-cap-sm">
-            A push overwrites elapsed periods into actuals. These already have a stored
-            actual that differs from this file
-            {ratio > 0.5 ? ' — most lines differ, which usually means a currency/basis mismatch with the stored actuals, not real restatements' : ''}. {cur}.
-          </div>
-          <table className="cfm-sr-table">
-            <thead>
-              <tr>
-                <th>Line</th><th>Period</th>
-                <th className="num">Stored</th><th className="num">This file</th><th className="num">Δ</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((c, i) => (
-                <tr key={i}>
-                  <td><span className="mono">{c.line_code}</span></td>
-                  <td>{c.year}-{String(c.month).padStart(2, '0')}</td>
-                  <td className="num">{fmt(c.old_value)}</td>
-                  <td className="num">{fmt(c.new_value)}</td>
-                  <td className={`num ${Number(c.diff) < 0 ? 'neg' : ''}`}>{fmt(c.diff)}</td>
-                </tr>
+      {open && yd && (
+        <div className="cfm-cfg cfm-cfg-actuals">
+          <div className="cfm-cfg-head">
+            <div className="cfm-cfg-years">
+              {data.years.map(y => (
+                <button key={y} className={`cfm-cfg-year ${y === year ? 'is-on' : ''}`} onClick={() => setYear(y)}>{y}</button>
               ))}
-            </tbody>
-          </table>
-          {data.n_changed > shown.length && (
-            <div className="cfm-sr-cap cfm-sr-cap-sm">Showing the {shown.length} largest of {fmt(data.n_changed)}.</div>
-          )}
+            </div>
+            <div className="cfm-cfg-head-right">
+              <div className="cfm-cfg-modes">
+                <button className={`cfm-cfg-mode ${mode === 'delta' ? 'is-on' : ''}`} onClick={() => setMode('delta')}>Δ restate</button>
+                <button className={`cfm-cfg-mode ${mode === 'staged' ? 'is-on' : ''}`} onClick={() => setMode('staged')}>This file</button>
+                <button className={`cfm-cfg-mode ${mode === 'stored' ? 'is-on' : ''}`} onClick={() => setMode('stored')}>Stored</button>
+              </div>
+              <span className="cfm-cfg-cur">{data.area} · {cur}</span>
+            </div>
+          </div>
+          <div className="cfm-cfg-note">
+            A push promotes elapsed periods to actuals. Highlighted cells already hold a
+            different stored actual and would be <b>restated</b>. {mode === 'delta'
+              ? 'Showing this file minus the stored actual.'
+              : mode === 'staged' ? "Showing this file's figures." : 'Showing the stored actuals.'}
+            {data.n_changed > 8 ? ' Most cells differing usually means a currency/basis mismatch with the stored actuals, not real restatements.' : ''}
+          </div>
+          <div className="cfm-cfg-scroll">
+            <table className="cfm-cfg-table">
+              <thead>
+                <tr>
+                  <th className="cfm-cfg-rowhead">Section</th>
+                  {months.map(m => <th key={m.ym} className="num">{MON[m.m]}</th>)}
+                  <th className="num cfm-cfg-total">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {AD_ROWS.map(r => (
+                  <tr key={r.key} className={`cfm-cfg-row is-${r.type}`}>
+                    <td className="cfm-cfg-rowhead">{r.label}</td>
+                    {months.map(m => {
+                      const v = cellVal(r, m.ym)
+                      const restate = isRestate(r, m.ym)
+                      return (
+                        <td key={m.ym} className={`num ${v < 0 ? 'neg' : ''} ${restate ? 'is-var' : ''}`}>
+                          {v === 0 && !restate ? '·' : fmtAcct(v)}
+                        </td>
+                      )
+                    })}
+                    {(() => { const t = rowTotal(r)
+                      return <td className={`num cfm-cfg-total ${t < 0 ? 'neg' : ''}`}>{t === 0 ? '·' : fmtAcct(t)}</td> })()}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
