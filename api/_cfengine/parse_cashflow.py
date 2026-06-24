@@ -326,6 +326,7 @@ SECTION_MAP = [
     ('OPERATION', 'Operation'),
     ('OPERATIONS', 'Operation'),
     ('INTEREST', 'Interest'),
+    ('WITHINGROUP', 'Within Group'),
     ('TRANSFERS', 'Within Group'),
     ('TRANSFER', 'Within Group'),
     ('BANKING', 'Bank Financing'),
@@ -554,6 +555,18 @@ def parse_sheet(ws, area, sheet_name, resolver, as_of, verbose=False):
         if not label or not label.strip():
             continue
         lt = tight(label)
+        # A section banner can sit in the LABEL column (not the section column) —
+        # e.g. a 'WITHIN GROUP' header with no section-column tag. Flip the section
+        # when the label names one AND the row carries no period values (a pure
+        # header). Without this, the section stays on the prior one (Non
+        # Operational), and the within-group RECEIPTS/PAYMENTS rows get swallowed
+        # as nonop_recpt/nonop_pay.
+        lab_sec = section_of(lt)
+        if lab_sec and not any(isinstance(r[ci], (int, float)) and r[ci] not in (0, None)
+                               for ci in periods if ci < len(r)):
+            section = lab_sec
+            direction = None
+            continue
         # pure direction sub-headers
         if lt in ('RECEIPTS', 'RECEIPT') and section in ('Operation', 'New Sales', None):
             direction = 'Receipts'; continue
