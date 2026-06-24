@@ -613,6 +613,19 @@ def parse_sheet(ws, area, sheet_name, resolver, as_of, verbose=False):
             if cand and not any(isinstance(r[ci], (int, float)) and r[ci] not in (0, None)
                                 for ci in periods if ci < len(r)):
                 lab_sec = cand
+        # 'INTEREST' doubles as a section header AND an Operation line item — some
+        # files list an INTEREST receipt line and an INTEREST payment line INSIDE the
+        # Operation block (e.g. Kazakhstan), rather than a dedicated Interest section.
+        # When we're already inside an Operation / New Sales flow (a direction is set),
+        # treat INTEREST as a data line, NOT a header: don't let it flip the section
+        # (which would mis-bucket every following line and drop the interest itself).
+        # resolve_line then maps it to interest_recpt / interest_pay by direction.
+        # A genuine dedicated Interest section is marked in the section column, so it
+        # still flips correctly. Applies to the empty receipt line too, so it doesn't
+        # hijack the section before the payment line is reached.
+        if lab_sec == 'Interest' and lt == 'INTEREST' \
+                and section in ('Operation', 'New Sales') and direction:
+            lab_sec = None
         if lab_sec:
             section = lab_sec
             direction = None
