@@ -289,7 +289,7 @@ export default function BankPosition() {
       period, tree, vals, summary,
       cashSeries: series.map(s => ({ period: s.period, val: s.cash })),
       debtSeries: series.map(s => ({ period: s.period, val: s.debt, mtb: s.mtb })),
-      treasury, narrative,
+      narrative,
       priorVals,
       generatedAt: new Date().toLocaleString('en-GB'),
       logoUrl: window.location.origin + '/ccc-logo.png',

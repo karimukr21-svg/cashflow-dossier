@@ -2,9 +2,9 @@
  * KPI cards, two 12-month movement charts (Cash; Overdrafts & Loans with the
  * MTB facility segregated and a labelled y-axis), the summary area table in
  * Rasha's order (MTB before the group total, included; Palestine as a memo),
- * the treasury receipts/payments, and the narrative. No dependencies. */
+ * and the narrative. Summary grain (Cash/OD/Loans/Net/Δ). No dependencies. */
 import {
-  FIELDS, type Field, type LineValues, type TreasuryRow,
+  type LineValues,
   type BpEntity, type AreaNode,
   ccNet, fmtNum, fmtPeriodLabel, zeroLine,
 } from './lib'
@@ -28,7 +28,6 @@ export interface ReportData {
   summary: Summary
   cashSeries: Series[]
   debtSeries: Series[]
-  treasury: TreasuryRow[]
   narrative: string
   priorVals: Map<string, LineValues>
   generatedAt: string
@@ -129,18 +128,18 @@ export function buildReportHtml(d: ReportData): string {
   const s = d.summary
   // area table rows (summary grain): each area net, prior net, Δ
   const priorNet = (eid: string) => { const p = d.priorVals.get(eid); return p ? ccNet(p) : null }
+  // summary print: Cash / OD / Loans / Net / Δ (Free·Blocked·JV Monies live in the waterfall cards)
   const areaRow = (name: string, v: LineValues, priorN: number | null, special = false) => {
     const net = ccNet(v)
     const dl = priorN == null ? null : net - priorN
     return `<tr class="${special ? 'special' : ''}"><td class="l">${esc(name)}</td>
       <td class="r">${fig(v.cc_cash)}</td><td class="r">${fig(v.cc_overdraft)}</td><td class="r">${fig(v.cc_loans)}</td>
-      <td class="r">${fig(net)}</td><td class="r">${fig(v.free)}</td><td class="r">${fig(v.blocked)}</td><td class="r">${fig(v.jv_monies)}</td>
-      <td class="r">${delta(dl)}</td></tr>`
+      <td class="r">${fig(net)}</td><td class="r">${delta(dl)}</td></tr>`
   }
   const subRow = (name: string, v: LineValues, strong = false) =>
     `<tr class="sub ${strong ? 'strong' : ''}"><td class="l">${esc(name)}</td>
       <td class="r">${fig(v.cc_cash)}</td><td class="r">${fig(v.cc_overdraft)}</td><td class="r">${fig(v.cc_loans)}</td>
-      <td class="r">${fig(ccNet(v))}</td><td class="r">${fig(v.free)}</td><td class="r">${fig(v.blocked)}</td><td class="r">${fig(v.jv_monies)}</td><td class="r"></td></tr>`
+      <td class="r">${fig(ccNet(v))}</td><td class="r"></td></tr>`
 
   // prior area net via rolled children: approximate using the same area's own+children prior is complex;
   // for the summary print we show prior net at area level using rolled prior values.
@@ -172,12 +171,6 @@ export function buildReportHtml(d: ReportData): string {
     cardHtml('Money under CCC control', s.moneyControl, 'free', 'free') +
     cardHtml('Blocked Cash', s.blocked, 'free') +
     cardHtml("CCC's Free Usable Cash", s.freeUsable, 'free', 'free')
-
-  const treRow = (t: TreasuryRow) =>
-    `<tr><td class="l">${esc(t.label)}</td><td class="r">${t.flow === 'receipt' ? fmtNum(t.amount) : ''}</td><td class="r neg">${t.flow === 'payment' ? fmtNum(-t.amount) : ''}</td></tr>`
-  const treRows = d.treasury.length
-    ? d.treasury.map(treRow).join('')
-    : '<tr><td class="l muted" colspan="3">No treasury detail recorded.</td></tr>'
 
   return `<!doctype html>
 <html><head><meta charset="utf-8"/>
@@ -248,16 +241,11 @@ export function buildReportHtml(d: ReportData): string {
     <div class="tbl">
       <h2>By area</h2>
       <table>
-        <thead><tr><th class="l">Area</th><th>Cash</th><th>OD</th><th>Loans</th><th>CC Net</th><th>Free</th><th>Blocked</th><th>JV Monies</th><th>Δ</th></tr></thead>
+        <thead><tr><th class="l">Area</th><th>Cash</th><th>OD</th><th>Loans</th><th>CC Net</th><th>Δ</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
     <div class="side">
-      <h2>Treasury details</h2>
-      <table>
-        <thead><tr><th class="l">Source</th><th>Receipts</th><th>Payments</th></tr></thead>
-        <tbody>${treRows}</tbody>
-      </table>
       <h2>Narrative</h2>
       <div class="narbox">${narrativeHtml(d.narrative)}</div>
     </div>
