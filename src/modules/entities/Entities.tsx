@@ -15,12 +15,10 @@ import {
 import './entities.css'
 
 type Status = { kind: 'ok' | 'err'; msg: string } | null
-type MainView = 'ap' | 'bp'
 
 export default function Entities() {
   const role = useRole()
   const canMap = canManageCashFlow(role) // admin | treasury — may edit aliases here
-  const [mainView, setMainView] = useState<MainView>('ap')
 
   const [nodes, setNodes] = useState<CanonicalNode[]>([])
   const [aliases, setAliases] = useState<Alias[]>([])
@@ -146,23 +144,23 @@ export default function Entities() {
     <div className="ent-shell">
       {status && <div className={`ent-toast ${status.kind}`}>{status.msg}</div>}
 
-      <div className="ent-viewtabs">
-        <button className={`ent-viewtab ${mainView === 'ap' ? 'is-active' : ''}`} onClick={() => setMainView('ap')}>
-          Areas &amp; Projects
-        </button>
-        <button className={`ent-viewtab ${mainView === 'bp' ? 'is-active' : ''}`} onClick={() => setMainView('bp')}>
-          Bank position areas
-        </button>
-      </div>
-
-      {mainView === 'ap' ? (
-        <div className="ent-panes">
-          <CanonicalPane
-            topAreas={topAreas}
-            subAreasByParent={subAreasByParent}
-            projectsByArea={projectsByArea}
-            totalAreas={areas.length}
+      <div className="ent-panes">
+        <CanonicalPane
+          topAreas={topAreas}
+          subAreasByParent={subAreasByParent}
+          projectsByArea={projectsByArea}
+          totalAreas={areas.length}
+        />
+        {sourceKey === BANK_POSITION_SOURCE ? (
+          <BankPositionPane
+            nodes={nodes}
+            canMap={canMap}
+            sourceKey={sourceKey}
+            onSourceChange={setSourceKey}
+            onChanged={refresh}
+            onErr={m => flash('err', m)}
           />
+        ) : (
           <MappingPane
             sourceKey={sourceKey}
             onSourceChange={setSourceKey}
@@ -176,11 +174,20 @@ export default function Entities() {
             onMap={doMap}
             onUnmap={doUnmap}
           />
-        </div>
-      ) : (
-        <BankPositionPane nodes={nodes} canMap={canMap} onChanged={refresh} onErr={m => flash('err', m)} />
-      )}
+        )}
+      </div>
     </div>
+  )
+}
+
+/* The right-pane source selector — the mapping sources plus a Bank Position mode. */
+export const BANK_POSITION_SOURCE = 'bank_position'
+function SourceSelect({ value, onChange }: { value: string; onChange: (k: string) => void }) {
+  return (
+    <select className="ent-source-select" value={value} onChange={e => onChange(e.target.value)}>
+      {SOURCE_SYSTEMS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+      <option value={BANK_POSITION_SOURCE}>Bank Position</option>
+    </select>
   )
 }
 
@@ -189,10 +196,12 @@ export default function Entities() {
  * ================================================================== */
 
 function BankPositionPane({
-  nodes, canMap, onChanged, onErr,
+  nodes, canMap, sourceKey, onSourceChange, onChanged, onErr,
 }: {
   nodes: CanonicalNode[]
   canMap: boolean
+  sourceKey: string
+  onSourceChange: (k: string) => void
   onChanged: () => Promise<void> | void
   onErr: (msg: string) => void
 }) {
@@ -236,6 +245,10 @@ function BankPositionPane({
     try { await updateNode(id, { parent_id: parentId }); await onChanged() }
     catch (e) { onErr((e as Error).message) }
   }
+  async function rename(id: string, name: string) {
+    try { await updateNode(id, { name }); await onChanged() }
+    catch (e) { onErr((e as Error).message) }
+  }
   async function addGrouping() {
     const name = newName.trim()
     if (!name) return
@@ -258,29 +271,31 @@ function BankPositionPane({
   )
 
   return (
-    <section className="ent-pane ent-pane-full ent-bp">
+    <section className="ent-pane ent-bp">
       <header className="ent-pane-head">
         <div>
           <h2>Bank position areas</h2>
           <p className="ent-sub">
             {topOperating.length} summary areas · {lineCount} lines · the Bank Position tool rolls these up.
-            {canMap ? ' Set what a line rolls into, or add a grouping.' : ' Read-only'}
+            {canMap ? ' Rename inline, set what a line rolls into, or add a grouping.' : ' Read-only'}
           </p>
         </div>
-        <div className="ent-bp-head-actions">
-          <button className="ent-bp-collapse" onClick={() => setCollapsed(allCollapsed ? new Set() : new Set(groupings.map(g => g.id)))}>
-            {allCollapsed ? 'Expand all' : 'Collapse all'}
-          </button>
-          {canMap && (
-            <div className="ent-bp-add">
-              <input placeholder="New grouping…" value={newName}
-                onChange={e => setNewName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') addGrouping() }} />
-              <button className="ent-bp-addbtn" onClick={addGrouping}>Add</button>
-            </div>
-          )}
-        </div>
+        <SourceSelect value={sourceKey} onChange={onSourceChange} />
       </header>
+
+      <div className="ent-bp-bar">
+        <button className="ent-bp-collapse" onClick={() => setCollapsed(allCollapsed ? new Set() : new Set(groupings.map(g => g.id)))}>
+          {allCollapsed ? 'Expand all' : 'Collapse all'}
+        </button>
+        {canMap && (
+          <div className="ent-bp-add">
+            <input placeholder="New grouping…" value={newName}
+              onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') addGrouping() }} />
+            <button className="ent-bp-addbtn" onClick={addGrouping}>Add</button>
+          </div>
+        )}
+      </div>
 
       <div className="ent-bp-tree">
         {topOperating.map(item => {
@@ -289,7 +304,7 @@ function BankPositionPane({
             return (
               <div key={item.id} className="ent-bp-card ent-bp-direct">
                 <div className="ent-bp-row ent-bp-toprow">
-                  <span className="ent-bp-name">{item.name}</span>
+                  <EditableName value={item.name} canEdit={canMap} onSave={n => rename(item.id, n)} />
                   <span className="ent-bp-pill direct">Direct</span>
                   <span className="ent-bp-spacer" />
                   {picker(item)}
@@ -302,21 +317,21 @@ function BankPositionPane({
           const isOpen = !collapsed.has(item.id)
           return (
             <div key={item.id} className="ent-bp-card ent-bp-grp">
-              <button type="button" className="ent-bp-grphead" onClick={() => toggle(item.id)}>
+              <div className="ent-bp-grphead" onClick={() => toggle(item.id)}>
                 <svg viewBox="0 0 24 24" className={`ent-bp-tw ${isOpen ? 'open' : ''}`} aria-hidden="true">
                   <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth={2} />
                 </svg>
-                <span className="ent-bp-name">{item.name}</span>
+                <EditableName value={item.name} canEdit={canMap} onSave={n => rename(item.id, n)} strong />
                 <span className="ent-bp-pill group">Grouping</span>
                 <span className="ent-bp-spacer" />
                 <span className="ent-bp-count">{kids.length} {kids.length === 1 ? 'line' : 'lines'}</span>
-              </button>
+              </div>
               {isOpen && (
                 <div className="ent-bp-children">
                   {kids.map(line => (
                     <div key={line.id} className="ent-bp-row ent-bp-childrow">
                       <span className="ent-bp-guide" />
-                      <span className="ent-bp-name">{line.name}</span>
+                      <EditableName value={line.name} canEdit={canMap} onSave={n => rename(line.id, n)} />
                       <span className="ent-bp-spacer" />
                       {picker(line)}
                     </div>
@@ -334,7 +349,7 @@ function BankPositionPane({
             <div className="ent-bp-card">
               {memoLines.map(line => (
                 <div key={line.id} className="ent-bp-row ent-bp-toprow">
-                  <span className="ent-bp-name">{line.name}</span>
+                  <EditableName value={line.name} canEdit={canMap} onSave={n => rename(line.id, n)} />
                   <span className={`ent-bp-pill ${line.area_group === 'mtb' ? 'mtb' : 'memo'}`}>{line.area_group === 'mtb' ? 'MTB' : 'Memo'}</span>
                 </div>
               ))}
@@ -343,6 +358,37 @@ function BankPositionPane({
         )}
       </div>
     </section>
+  )
+}
+
+/* Inline-rename a bank-position entity (reflects in the Bank Position tool). */
+function EditableName({ value, canEdit, onSave, strong }: {
+  value: string; canEdit: boolean; onSave: (name: string) => void; strong?: boolean
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+  useEffect(() => { setDraft(value) }, [value])
+  if (!canEdit) return <span className={`ent-bp-name ${strong ? 'strong' : ''}`}>{value}</span>
+  if (editing) {
+    return (
+      <input
+        className="ent-bp-nameedit" value={draft} autoFocus
+        onClick={e => e.stopPropagation()}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={() => { setEditing(false); const t = draft.trim(); if (t && t !== value) onSave(t); else setDraft(value) }}
+        onKeyDown={e => {
+          if (e.key === 'Enter') e.currentTarget.blur()
+          else if (e.key === 'Escape') { setDraft(value); setEditing(false) }
+        }}
+      />
+    )
+  }
+  return (
+    <button type="button" className={`ent-bp-name ent-bp-name-btn ${strong ? 'strong' : ''}`}
+      title="Click to rename"
+      onClick={e => { e.stopPropagation(); setEditing(true) }}>
+      {value}
+    </button>
   )
 }
 
@@ -669,11 +715,7 @@ function MappingPane({
             {canMap ? '' : ' · read-only'}
           </p>
         </div>
-        <select className="ent-source-select" value={sourceKey} onChange={e => onSourceChange(e.target.value)}>
-          {SOURCE_SYSTEMS.map(s => (
-            <option key={s.key} value={s.key}>{s.label}</option>
-          ))}
-        </select>
+        <SourceSelect value={sourceKey} onChange={onSourceChange} />
       </header>
 
       <div className="ent-search">
