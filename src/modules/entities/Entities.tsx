@@ -198,30 +198,39 @@ function BankPositionPane({
 }) {
   const byOrder = (a: CanonicalNode, b: CanonicalNode) =>
     a.sort_order - b.sort_order || a.name.localeCompare(b.name)
+
   const groupings = useMemo(
     () => nodes.filter(n => n.entity_type === 'bp_area').sort(byOrder),
     [nodes],
   )
-  const lines = useMemo(
-    () => nodes.filter(n => n.entity_type === 'bp_line').sort(byOrder),
-    [nodes],
-  )
   const childrenOf = useMemo(() => {
     const m = new Map<string, CanonicalNode[]>()
-    for (const l of lines) if (l.parent_id) { const a = m.get(l.parent_id) ?? []; a.push(l); m.set(l.parent_id, a) }
+    for (const n of nodes) {
+      if (n.entity_type === 'bp_line' && n.parent_id) {
+        const a = m.get(n.parent_id) ?? []; a.push(n); m.set(n.parent_id, a)
+      }
+    }
     for (const a of m.values()) a.sort(byOrder)
     return m
-  }, [lines])
-  const directLines = useMemo(
-    () => lines.filter(l => !l.parent_id && l.area_group === 'operating').sort(byOrder),
-    [lines],
+  }, [nodes])
+  // top level in their proper order — direct lines and groupings INTERLEAVED by sort_order
+  const topOperating = useMemo(
+    () => nodes
+      .filter(n => !n.parent_id && n.area_group === 'operating' && (n.entity_type === 'bp_area' || n.entity_type === 'bp_line'))
+      .sort(byOrder),
+    [nodes],
   )
   const memoLines = useMemo(
-    () => lines.filter(l => !l.parent_id && l.area_group !== 'operating').sort(byOrder),
-    [lines],
+    () => nodes.filter(n => n.entity_type === 'bp_line' && !n.parent_id && n.area_group !== 'operating').sort(byOrder),
+    [nodes],
   )
+  const lineCount = useMemo(() => nodes.filter(n => n.entity_type === 'bp_line').length, [nodes])
 
   const [newName, setNewName] = useState('')
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const toggle = (id: string) =>
+    setCollapsed(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const allCollapsed = groupings.length > 0 && collapsed.size >= groupings.length
 
   async function reparent(id: string, parentId: string | null) {
     try { await updateNode(id, { parent_id: parentId }); await onChanged() }
@@ -231,94 +240,106 @@ function BankPositionPane({
     const name = newName.trim()
     if (!name) return
     try {
-      const maxSort = Math.max(0, ...groupings.map(g => g.sort_order))
+      const maxSort = Math.max(0, ...nodes.filter(n => n.area_group === 'operating').map(g => g.sort_order))
       await createBpGrouping(name, maxSort + 1)
       setNewName(''); await onChanged()
     } catch (e) { onErr((e as Error).message) }
   }
 
-  const parentPicker = (line: CanonicalNode) => (
-    <select
-      className="ent-bp-select"
-      value={line.parent_id ?? ''}
-      disabled={!canMap}
-      onChange={e => reparent(line.id, e.target.value || null)}
-    >
-      <option value="">— direct line (no grouping) —</option>
-      {groupings.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-    </select>
+  const picker = (line: CanonicalNode) => (
+    <label className="ent-bp-pick">
+      <span className="ent-bp-pick-lbl">Rolls into</span>
+      <select className="ent-bp-select" value={line.parent_id ?? ''} disabled={!canMap}
+        onChange={e => reparent(line.id, e.target.value || null)}>
+        <option value="">Its own summary area</option>
+        {groupings.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+      </select>
+    </label>
   )
 
   return (
-    <section className="ent-pane ent-pane-full">
+    <section className="ent-pane ent-pane-full ent-bp">
       <header className="ent-pane-head">
         <div>
           <h2>Bank position areas</h2>
           <p className="ent-sub">
-            {groupings.length} groupings · {lines.length} lines · the summary areas in the Bank Position tool
-            are a rollup of these. {canMap ? 'Reassign a line to change which grouping it rolls into.' : 'Read-only'}
+            {topOperating.length} summary areas · {lineCount} lines · the Bank Position tool rolls these up.
+            {canMap ? ' Set what a line rolls into, or add a grouping.' : ' Read-only'}
           </p>
         </div>
-        {canMap && (
-          <div className="ent-bp-add">
-            <input placeholder="New grouping name…" value={newName}
-              onChange={e => setNewName(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') addGrouping() }} />
-            <button className="ent-picker-trigger primary" onClick={addGrouping}>Add grouping</button>
-          </div>
-        )}
+        <div className="ent-bp-head-actions">
+          <button className="ent-bp-collapse" onClick={() => setCollapsed(allCollapsed ? new Set() : new Set(groupings.map(g => g.id)))}>
+            {allCollapsed ? 'Expand all' : 'Collapse all'}
+          </button>
+          {canMap && (
+            <div className="ent-bp-add">
+              <input placeholder="New grouping…" value={newName}
+                onChange={e => setNewName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') addGrouping() }} />
+              <button className="ent-bp-addbtn" onClick={addGrouping}>Add</button>
+            </div>
+          )}
+        </div>
       </header>
 
       <div className="ent-bp-tree">
-        {groupings.map(g => {
-          const kids = childrenOf.get(g.id) ?? []
+        {topOperating.map(item => {
+          if (item.entity_type === 'bp_line') {
+            // a direct line — its own summary area
+            return (
+              <div key={item.id} className="ent-bp-card ent-bp-direct">
+                <div className="ent-bp-row ent-bp-toprow">
+                  <span className="ent-bp-name">{item.name}</span>
+                  <span className="ent-bp-pill direct">Direct</span>
+                  <span className="ent-bp-spacer" />
+                  {picker(item)}
+                </div>
+              </div>
+            )
+          }
+          // a virtual grouping — collapsible, with its children
+          const kids = childrenOf.get(item.id) ?? []
+          const isOpen = !collapsed.has(item.id)
           return (
-            <div key={g.id} className="ent-bp-group">
-              <div className="ent-node ent-node-virtual">
-                <span className="ent-kind ent-kind-group">Group</span>
-                <span className="ent-name ent-name-static">{g.name}</span>
-                <span className="ent-count">{kids.length}</span>
-              </div>
-              <div className="ent-kids">
-                {kids.map(line => (
-                  <div key={line.id} className="ent-bp-line">
-                    <span className="ent-bp-linename">{line.name}</span>
-                    {parentPicker(line)}
-                  </div>
-                ))}
-                {kids.length === 0 && <div className="ent-empty">No lines</div>}
-              </div>
+            <div key={item.id} className="ent-bp-card ent-bp-grp">
+              <button type="button" className="ent-bp-grphead" onClick={() => toggle(item.id)}>
+                <svg viewBox="0 0 24 24" className={`ent-bp-tw ${isOpen ? 'open' : ''}`} aria-hidden="true">
+                  <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth={2} />
+                </svg>
+                <span className="ent-bp-name">{item.name}</span>
+                <span className="ent-bp-pill group">Grouping</span>
+                <span className="ent-bp-spacer" />
+                <span className="ent-bp-count">{kids.length} {kids.length === 1 ? 'line' : 'lines'}</span>
+              </button>
+              {isOpen && (
+                <div className="ent-bp-children">
+                  {kids.map(line => (
+                    <div key={line.id} className="ent-bp-row ent-bp-childrow">
+                      <span className="ent-bp-guide" />
+                      <span className="ent-bp-name">{line.name}</span>
+                      <span className="ent-bp-spacer" />
+                      {picker(line)}
+                    </div>
+                  ))}
+                  {kids.length === 0 && <div className="ent-bp-emptyline">No lines yet — set a line to roll into {item.name}.</div>}
+                </div>
+              )}
             </div>
           )
         })}
 
-        <div className="ent-bp-group">
-          <div className="ent-node"><span className="ent-kind">Direct</span>
-            <span className="ent-name ent-name-static">Direct lines (their own summary area)</span>
-            <span className="ent-count">{directLines.length}</span></div>
-          <div className="ent-kids">
-            {directLines.map(line => (
-              <div key={line.id} className="ent-bp-line">
-                <span className="ent-bp-linename">{line.name}</span>
-                {parentPicker(line)}
-              </div>
-            ))}
-          </div>
-        </div>
-
         {memoLines.length > 0 && (
-          <div className="ent-bp-group">
-            <div className="ent-node"><span className="ent-kind">Memo</span>
-              <span className="ent-name ent-name-static">Below-the-line (MTB, Palestine)</span>
-              <span className="ent-count">{memoLines.length}</span></div>
-            <div className="ent-kids">
+          <>
+            <div className="ent-bp-memohead">Below the line · not in the group total</div>
+            <div className="ent-bp-card">
               {memoLines.map(line => (
-                <div key={line.id} className="ent-bp-line">
-                  <span className="ent-bp-linename">{line.name} <em className="ent-bp-tag">{line.area_group}</em></span>
+                <div key={line.id} className="ent-bp-row ent-bp-toprow">
+                  <span className="ent-bp-name">{line.name}</span>
+                  <span className={`ent-bp-pill ${line.area_group === 'mtb' ? 'mtb' : 'memo'}`}>{line.area_group === 'mtb' ? 'MTB' : 'Memo'}</span>
                 </div>
               ))}
             </div>
-          </div>
+          </>
         )}
       </div>
     </section>
