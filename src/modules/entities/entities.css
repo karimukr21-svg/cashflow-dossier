@@ -689,3 +689,7 @@
 .ent-bp-tag { font-style: normal; font-size: 10.5px; color: var(--mute, #9ca3af); text-transform: uppercase; letter-spacing: 0.04em; margin-left: 6px; }
 .ent-bp-select { height: 30px; border: 1px solid var(--border, #e5e7eb); border-radius: 6px; padding: 0 8px; font-size: 12.5px; background: var(--surface, #fff); min-width: 230px; }
 .ent-bp-select:disabled { opacity: 0.6; }
+
+/* Bank-position pane must fill the shell and scroll its tree (was clipped). */
+.ent-pane-full { flex: 1 1 auto; min-height: 0; }
+.ent-bp-tree { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 8px 14px 40px; }

@@ -593,3 +593,47 @@
 .bp-tre-del:hover { background: var(--surface-alt); color: var(--bad); }
 .bp-tre-add { margin-top: 6px; font-size: 12px; }
 .bp-tre-total { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 12.5px; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* ── view toggle (Summary / Detailed) ───────────────────────────── */
+.bp-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-right: 4px; }
+.bp-seg-btn { padding: 0 13px; height: 34px; border: none; background: var(--surface); color: var(--mute); font-size: 12.5px; font-weight: 500; cursor: pointer; }
+.bp-seg-btn + .bp-seg-btn { border-left: 1px solid var(--border); }
+.bp-seg-btn.is-active { background: #141414; color: #fff; }
+
+.bp-grid-actions { display: flex; justify-content: flex-end; margin: 4px 2px 2px; }
+.bp-link-btn { background: none; border: none; color: var(--crimson); font-size: 12px; font-weight: 500; cursor: pointer; padding: 4px 6px; }
+.bp-link-btn:hover { text-decoration: underline; }
+
+/* ── collapse twisty on grouping subtotal rows ──────────────────── */
+.bp-twisty { background: none; border: none; padding: 0; margin-right: 6px; cursor: pointer; color: var(--mute); vertical-align: middle; display: inline-flex; }
+.bp-twisty svg { width: 13px; height: 13px; transition: transform 0.15s ease; }
+.bp-twisty svg.open { transform: rotate(90deg); }
+
+/* ── column-group separators (CC | JV | Availability | Net) ─────── */
+.bp-wide th.grp-start, .bp-wide td.grp-start { border-left: 1px solid var(--border); }
+.bp-wide .bp-grouphead .bp-grp { border-left: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--surface-alt); }
+.bp-wide thead .bp-fieldhead th { background: var(--surface); }
+.bp-wide td.bp-netcol, .bp-wide th:nth-last-child(2) { border-left: 1px solid var(--border); }
+
+/* ── row distinction ────────────────────────────────────────────── */
+.bp-wide tr.bp-line-row td { border-bottom: 1px solid #f1f1f1; }
+.bp-wide tr.bp-child td.label.indent { color: var(--mute); }
+.bp-wide tr.bp-child td.label.indent::before {
+  content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 7px;
+  border-left: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  vertical-align: middle; position: relative; top: -2px;
+}
+.bp-wide tr.bp-readonly td { background: transparent; }
+.bp-wide tr.bp-readonly:hover td { background: var(--surface-alt); }
+
+/* grouping subtotal (collapsible) — crimson left accent, medium emphasis */
+.bp-wide tr.bp-grouphead-row td { background: #faf3f4; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.bp-wide tr.bp-grouphead-row td.label { box-shadow: inset 3px 0 0 var(--crimson); font-weight: 600; color: var(--charcoal); text-transform: none; font-size: 12.5px; letter-spacing: 0; }
+.bp-wide tr.bp-grouphead-row:hover td { background: #f6e9eb; }
+
+/* grand subtotals (CC Group Total Actual / Total) — strongest */
+.bp-wide tr.bp-subtotal-strong td { background: #ededed; border-top: 2px solid var(--charcoal); border-bottom: 1px solid var(--charcoal); }
+.bp-wide tr.bp-subtotal-strong td.label { font-weight: 600; }
+
+/* summary mode: a touch more air */
+.bp-summary-mode td { padding-top: 6px; padding-bottom: 6px; }
