@@ -1,165 +1,115 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRole, canManageCashFlow } from '@/lib/role'
 import {
-  AREA_ACCOUNTS,
-  GROUP_ACCOUNTS,
-  GROUP_AREA,
-  BANK_SECTION,
-  type BankRow,
-  type Grid,
-  cellKey,
-  num,
-  fmtNum,
-  areaNet,
-  ccGroupNet,
-  operatingAreas,
-  cashDebtByPeriod,
-  orderAreas,
-  fmtPeriodLabel,
-  monthInputToPeriod,
-  priorPeriod,
+  FIELDS, FIELD_GROUPS, FIELD_LABEL, BANK_SECTION,
+  type Field, type BpEntity, type BpLine, type LineValues, type TreasuryRow, type AreaNode,
+  num, fmtNum, zeroLine, ccNet, sumValues, areaValues,
+  loadEntities, loadLines, loadTreasury, loadPeriods, indexLines, buildTree,
+  fmtPeriodLabel, monthInputToPeriod, priorPeriod,
 } from './lib'
 import { buildReportHtml } from './printReport'
 import './bankposition.css'
 
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
 type Status = { kind: 'ok' | 'err' | 'busy'; msg: string } | null
-
-/* Original DB cell (by cellKey) so we can diff on save. */
-type OrigCell = { id: number; balance: number }
+/** grid state: entity_id -> field -> raw input string */
+type Grid = Record<string, Partial<Record<Field, string>>>
 
 export default function BankPosition() {
   const role = useRole()
   const canManage = canManageCashFlow(role)
 
-  const [periods, setPeriods] = useState<string[]>([]) // real DB periods, desc
+  const [entities, setEntities] = useState<BpEntity[]>([])
+  const [periods, setPeriods] = useState<string[]>([])
   const [period, setPeriod] = useState('')
-  const [draftPeriod, setDraftPeriod] = useState<string | null>(null) // new month, not yet saved
+  const [draftPeriod, setDraftPeriod] = useState<string | null>(null)
 
   const [grid, setGrid] = useState<Grid>({})
-  const [areas, setAreas] = useState<string[]>([])
-  const [groupItems, setGroupItems] = useState<Record<string, string>>({})
-  const orig = useRef<Map<string, OrigCell>>(new Map())
+  const origLines = useRef<Map<string, BpLine>>(new Map()) // entity_id -> stored row
+  const [treasury, setTreasury] = useState<TreasuryRow[]>([])
+  const treasuryOrig = useRef<TreasuryRow[]>([])
+  const [priorVals, setPriorVals] = useState<Map<string, LineValues>>(new Map())
 
-  const [priorNet, setPriorNet] = useState<Record<string, number>>({})
   const [narrative, setNarrative] = useState('')
   const narrativeOrig = useRef<{ id: number; content: string } | null>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
-  const [focusKey, setFocusKey] = useState<string | null>(null) // cell being edited (shows raw)
+  const [focusKey, setFocusKey] = useState<string | null>(null)
 
   const [viewYear, setViewYear] = useState<number>(() => new Date().getUTCFullYear())
-
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [status, setStatus] = useState<Status>(null)
-
   const [showNarrative, setShowNarrative] = useState(false)
-
-  // new-month form
+  const [showTreasury, setShowTreasury] = useState(false)
   const [showNew, setShowNew] = useState(false)
   const [newMonth, setNewMonth] = useState('')
   const [cloneFrom, setCloneFrom] = useState('')
 
+  const tree = useMemo(() => buildTree(entities), [entities])
   const allPeriods = useMemo(
     () => (draftPeriod ? [draftPeriod, ...periods] : periods),
     [draftPeriod, periods],
   )
-
-  // year-button row bounds: span the available data (plus a draft year)
   const yearBounds = useMemo(() => {
-    const years = allPeriods.map(p => Number(p.slice(0, 4)))
-    if (!years.length) return { min: viewYear, max: viewYear }
-    return { min: Math.min(...years), max: Math.max(...years) }
+    const ys = allPeriods.map(p => Number(p.slice(0, 4)))
+    return ys.length ? { min: Math.min(...ys), max: Math.max(...ys) } : { min: viewYear, max: viewYear }
   }, [allPeriods, viewYear])
 
-  // keep the visible year in step with the selected month
-  useEffect(() => {
-    if (period) setViewYear(Number(period.slice(0, 4)))
-  }, [period])
+  useEffect(() => { if (period) setViewYear(Number(period.slice(0, 4))) }, [period])
 
-  // ── initial period list ───────────────────────────────────────────
+  // ── boot: entities + period list ──────────────────────────────────
   useEffect(() => {
-    supabase
-      .from('bank_position')
-      .select('period')
-      .order('period', { ascending: false })
-      .then(({ data, error }) => {
-        if (error) {
-          setStatus({ kind: 'err', msg: error.message })
-          setLoading(false)
-          return
-        }
-        const uniq = Array.from(new Set((data || []).map((r: any) => r.period as string)))
-        setPeriods(uniq)
-        if (uniq.length) setPeriod(uniq[0])
+    Promise.all([loadEntities(), loadPeriods()])
+      .then(([ents, pers]) => {
+        setEntities(ents)
+        setPeriods(pers)
+        if (pers.length) setPeriod(pers[0])
         else setLoading(false)
       })
+      .catch(e => { setStatus({ kind: 'err', msg: e.message }); setLoading(false) })
   }, [])
 
-  const buildFromRows = useCallback((rows: BankRow[]) => {
+  const gridFromLines = useCallback((lines: BpLine[]) => {
     const g: Grid = {}
-    const group: Record<string, string> = {}
-    const o = new Map<string, OrigCell>()
-    const areaSet = new Set<string>()
-    for (const r of rows) {
-      const bal = Number(r.balance)
-      if (r.area === GROUP_AREA) {
-        if ((GROUP_ACCOUNTS as readonly string[]).includes(r.account)) {
-          group[r.account] = String(bal)
-          if (r.id != null) o.set(cellKey(r.area, r.account), { id: r.id, balance: bal })
-        }
-        continue
+    const o = new Map<string, BpLine>()
+    for (const l of lines) {
+      o.set(l.entity_id, l)
+      const row: Partial<Record<Field, string>> = {}
+      for (const f of FIELDS) {
+        const v = Number(l[f] ?? 0)
+        if (v !== 0) row[f] = String(v)
       }
-      areaSet.add(r.area)
-      g[r.area] = g[r.area] || {}
-      g[r.area][r.account] = String(bal)
-      if (r.id != null) o.set(cellKey(r.area, r.account), { id: r.id, balance: bal })
+      g[l.entity_id] = row
     }
-    orig.current = o
+    origLines.current = o
     setGrid(g)
-    setGroupItems(group)
-    setAreas(orderAreas(Array.from(areaSet)))
   }, [])
 
-  // ── load a real period from the DB ────────────────────────────────
-  const openPeriod = useCallback(
-    async (p: string) => {
-      setLoading(true)
-      setStatus(null)
-      const [{ data: rows, error }, { data: rem }, { data: prior }] = await Promise.all([
-        supabase.from('bank_position').select('*').eq('period', p),
-        supabase
-          .from('report_remarks')
-          .select('*')
-          .eq('period', p)
-          .eq('section', BANK_SECTION)
-          .maybeSingle(),
-        supabase.from('bank_position').select('area,account,balance').eq('period', priorPeriod(p)),
+  const openPeriod = useCallback(async (p: string) => {
+    setLoading(true); setStatus(null)
+    try {
+      const [lines, tre, prior, rem] = await Promise.all([
+        loadLines(p), loadTreasury(p), loadLines(priorPeriod(p)),
+        supabase.from('report_remarks').select('*').eq('period', p).eq('section', BANK_SECTION).maybeSingle(),
       ])
-      if (error) {
-        setStatus({ kind: 'err', msg: error.message })
-        setLoading(false)
-        return
-      }
-      buildFromRows((rows || []) as BankRow[])
-      setNarrative(rem?.content || '')
-      narrativeOrig.current = rem ? { id: rem.id, content: rem.content } : null
-      setPriorNet(computeNet((prior || []) as BankRow[]))
+      gridFromLines(lines)
+      setTreasury(tre)
+      treasuryOrig.current = tre
+      setPriorVals(indexLines(prior))
+      setNarrative(rem.data?.content || '')
+      narrativeOrig.current = rem.data ? { id: rem.data.id, content: rem.data.content } : null
       setDirty(false)
+    } catch (e: any) {
+      setStatus({ kind: 'err', msg: e.message })
+    } finally {
       setLoading(false)
-    },
-    [buildFromRows],
-  )
-
-  // selecting a real period loads it; a draft is already in memory
-  useEffect(() => {
-    if (!period || period === draftPeriod) {
-      setLoading(false)
-      return
     }
+  }, [gridFromLines])
+
+  useEffect(() => {
+    if (!period || period === draftPeriod) { setLoading(false); return }
     openPeriod(period)
   }, [period, draftPeriod, openPeriod])
 
@@ -170,205 +120,105 @@ export default function BankPosition() {
     setPeriod(p)
   }
 
+  // ── current parsed values per entity ──────────────────────────────
+  const vals = useMemo(() => {
+    const m = new Map<string, LineValues>()
+    for (const [eid, row] of Object.entries(grid)) {
+      const v = zeroLine()
+      let any = false
+      for (const f of FIELDS) { const n = num(row[f]); if (n != null) { v[f] = n; any = true } }
+      if (any) m.set(eid, v)
+    }
+    return m
+  }, [grid])
+
+  // ── derived summary ───────────────────────────────────────────────
+  const summary = useMemo(() => {
+    const areaVals = tree.operating.map(node => ({ node, v: areaValues(node, vals) }))
+    const operatingSum = sumValues(areaVals.map(a => a.v))
+    const mtbV = (tree.mtb && vals.get(tree.mtb.id)) || zeroLine()
+    const groupTotal = sumValues([operatingSum, mtbV]) // CC Group Total Actual incl MTB
+    const palV = tree.memo.map(m => vals.get(m.id) || zeroLine())
+    const palSum = sumValues(palV)
+    const total = sumValues([groupTotal, palSum])
+    // waterfall (ties to Rasha's file)
+    const totalCash = groupTotal.cc_cash + groupTotal.jv_cash
+    const jvMoney = groupTotal.jv_monies
+    const moneyControl = totalCash - jvMoney
+    const blocked = groupTotal.blocked
+    const freeUsable = moneyControl - blocked
+    return { areaVals, operatingSum, mtbV, groupTotal, palSum, total, totalCash, jvMoney, moneyControl, blocked, freeUsable }
+  }, [tree, vals])
+
   // ── editing ───────────────────────────────────────────────────────
-  function setCell(area: string, account: string, value: string) {
-    setGrid(g => ({ ...g, [area]: { ...(g[area] || {}), [account]: value } }))
+  function setCell(eid: string, f: Field, value: string) {
+    setGrid(g => ({ ...g, [eid]: { ...(g[eid] || {}), [f]: value } }))
     setDirty(true)
   }
-  function setGroup(account: string, value: string) {
-    setGroupItems(g => ({ ...g, [account]: value }))
-    setDirty(true)
+  const cellKey = (eid: string, f: Field) => `${eid}:${f}`
+  const cellVal = (eid: string, f: Field) => {
+    const raw = grid[eid]?.[f]
+    if (focusKey === cellKey(eid, f)) return raw ?? ''
+    const n = num(raw)
+    return n == null ? '' : fmtNum(n)
   }
-  // turn the selected lines of the narrative into a bullet / numbered list
-  function applyList(kind: 'bullet' | 'number') {
-    const ta = taRef.current
-    if (!ta) return
-    const value = ta.value
-    const start = value.lastIndexOf('\n', ta.selectionStart - 1) + 1
-    let end = value.indexOf('\n', ta.selectionEnd)
-    if (end === -1) end = value.length
-    const block = value.slice(start, end)
-    let n = 0
-    const transformed = block
-      .split('\n')
-      .map(ln => {
-        const stripped = ln.replace(/^(\s*)([-*•]\s+|\d+[.)]\s+)?/, '$1')
-        if (stripped.trim() === '') return ln
-        n += 1
-        return kind === 'bullet' ? `- ${stripped.trimStart()}` : `${n}. ${stripped.trimStart()}`
-      })
-      .join('\n')
-    const next = value.slice(0, start) + transformed + value.slice(end)
-    setNarrative(next)
-    setDirty(true)
-    requestAnimationFrame(() => {
-      ta.focus()
-      ta.setSelectionRange(start, start + transformed.length)
-    })
+  const cellNeg = (eid: string, f: Field) => {
+    if (focusKey === cellKey(eid, f)) return false
+    const n = num(grid[eid]?.[f]); return n != null && n < 0
   }
 
-  // wrap the selection with an inline mark (** bold, * italic, __ underline)
-  function wrapSel(mark: string) {
-    const ta = taRef.current
-    if (!ta) return
-    const { selectionStart: s, selectionEnd: e, value } = ta
-    const sel = value.slice(s, e) || 'text'
-    const next = value.slice(0, s) + mark + sel + mark + value.slice(e)
-    setNarrative(next)
-    setDirty(true)
-    requestAnimationFrame(() => {
-      ta.focus()
-      ta.setSelectionRange(s + mark.length, s + mark.length + sel.length)
-    })
-  }
-
-  // open a printable / save-to-PDF report for the current month
-  function printReport() {
-    const w = window.open('', '_blank', 'width=900,height=1100')
-    if (!w) {
-      setStatus({ kind: 'err', msg: 'Allow pop-ups to print the report.' })
-      return
-    }
-    w.document.write('<!doctype html><title>Preparing report…</title><body style="font-family:system-ui;padding:40px;color:#666">Preparing report…</body>')
-    supabase
-      .from('bank_position')
-      .select('period,area,account,balance')
-      .then(({ data }) => {
-        const cd = cashDebtByPeriod((data || []) as BankRow[])
-        // reflect unsaved edits for the selected month in the trend series
-        const ops = operatingAreas(areas)
-        const liveCash = ops.reduce((s, a) => s + (num(grid[a]?.['Cash']) ?? 0), 0)
-        const liveDebt = ops.reduce(
-          (s, a) => s + (num(grid[a]?.['Overdrafts']) ?? 0) + (num(grid[a]?.['Loans']) ?? 0),
-          0,
-        )
-        const idx = cd.findIndex(m => m.period === period)
-        if (idx >= 0) cd[idx] = { period, cash: liveCash, debt: liveDebt }
-        else {
-          cd.push({ period, cash: liveCash, debt: liveDebt })
-          cd.sort((a, b) => a.period.localeCompare(b.period))
-        }
-        const html = buildReportHtml({
-          period,
-          areas,
-          grid,
-          groupItems,
-          narrative,
-          priorNet,
-          cashSeries: cd.map(d => ({ period: d.period, val: d.cash })),
-          debtSeries: cd.map(d => ({ period: d.period, val: d.debt })),
-          generatedAt: new Date().toLocaleString('en-GB'),
-          logoUrl: window.location.origin + '/ccc-logo.png',
-        })
-        w.document.open()
-        w.document.write(html)
-        w.document.close()
-      })
-  }
-
-  // ── new month (clone prior as starting point, persisted on Save) ──
-  function openNewMonth() {
-    setCloneFrom(periods[0] || '')
-    setNewMonth('')
-    setShowNew(true)
-  }
-  function createNewMonth() {
-    const p = monthInputToPeriod(newMonth)
-    if (!newMonth) {
-      setStatus({ kind: 'err', msg: 'Pick a month.' })
-      return
-    }
-    if (periods.includes(p)) {
-      setStatus({ kind: 'err', msg: `${fmtPeriodLabel(p)} already exists — select it from the picker.` })
-      return
-    }
-    // clone the chosen source month into the editor; ids dropped → all become inserts on save
-    if (cloneFrom) {
-      supabase
-        .from('bank_position')
-        .select('area,account,balance')
-        .eq('period', cloneFrom)
-        .then(({ data }) => {
-          buildFromRows(((data || []) as BankRow[]).map(r => ({ ...r, id: undefined, period: p })))
-          orig.current = new Map() // nothing persisted yet for this month
-        })
-    } else {
-      buildFromRows([])
-      orig.current = new Map()
-    }
-    setNarrative('')
-    narrativeOrig.current = null
-    setPriorNet(priorNet) // keep; openPeriod won't run for a draft
-    // load the prior month's net for the Δ column
-    supabase
-      .from('bank_position')
-      .select('area,account,balance')
-      .eq('period', priorPeriod(p))
-      .then(({ data }) => setPriorNet(computeNet((data || []) as BankRow[])))
-    setDraftPeriod(p)
-    setPeriod(p)
-    setShowNew(false)
-    setDirty(true)
-    setStatus({ kind: 'ok', msg: `Started ${fmtPeriodLabel(p)} from ${fmtPeriodLabel(cloneFrom)} — edit, then Save.` })
-  }
-
-  // ── save grid + narrative ─────────────────────────────────────────
+  // ── save ──────────────────────────────────────────────────────────
   async function save() {
     if (!canManage || !period) return
-    setSaving(true)
-    setStatus({ kind: 'busy', msg: 'Saving…' })
-
-    // desired cells: operating areas × 3 accounts + Total × group accounts
-    const desired: { area: string; account: string; value: number | null }[] = []
-    for (const area of areas)
-      for (const account of AREA_ACCOUNTS) desired.push({ area, account, value: num(grid[area]?.[account]) })
-    for (const account of GROUP_ACCOUNTS)
-      desired.push({ area: GROUP_AREA, account, value: num(groupItems[account]) })
-
-    const inserts: Omit<BankRow, 'id'>[] = []
-    const updates: { id: number; balance: number }[] = []
-    const deletes: number[] = []
-    for (const d of desired) {
-      const o = orig.current.get(cellKey(d.area, d.account))
-      if (d.value == null) {
-        if (o) deletes.push(o.id)
-      } else if (!o) {
-        inserts.push({ area: d.area, account: d.account, period, balance: d.value })
-      } else if (o.balance !== d.value) {
-        updates.push({ id: o.id, balance: d.value })
-      }
-    }
-
+    setSaving(true); setStatus({ kind: 'busy', msg: 'Saving…' })
     try {
-      if (inserts.length) {
-        const { error } = await supabase.from('bank_position').insert(inserts)
-        if (error) throw error
+      // editable entities: all bp_line entities present in the tree
+      const editable = entities.filter(e => e.entity_type === 'bp_line')
+      const upserts: any[] = []
+      const deletes: string[] = []
+      for (const e of editable) {
+        const row = grid[e.id] || {}
+        const v = zeroLine(); let any = false
+        for (const f of FIELDS) { const n = num(row[f]); if (n != null) { v[f] = n; any = true } }
+        const had = origLines.current.has(e.id)
+        if (!any) { if (had) deletes.push(e.id); continue }
+        upserts.push({ period, entity_id: e.id, ...v })
       }
-      for (const u of updates) {
-        const { error } = await supabase.from('bank_position').update({ balance: u.balance }).eq('id', u.id)
+      if (upserts.length) {
+        const { error } = await supabase
+          .from('bank_position_lines')
+          .upsert(upserts, { onConflict: 'period,entity_id' })
         if (error) throw error
       }
       if (deletes.length) {
-        const { error } = await supabase.from('bank_position').delete().in('id', deletes)
+        const { error } = await supabase
+          .from('bank_position_lines').delete().eq('period', period).in('entity_id', deletes)
         if (error) throw error
       }
 
-      // narrative upsert
+      // treasury rows: replace-all for the period
+      const { error: delErr } = await supabase.from('bank_position_treasury').delete().eq('period', period)
+      if (delErr) throw delErr
+      const trRows = treasury
+        .filter(t => t.label.trim() && t.amount)
+        .map((t, i) => ({ period, flow: t.flow, label: t.label.trim(), amount: Math.abs(t.amount), sort_order: i }))
+      if (trRows.length) {
+        const { error } = await supabase.from('bank_position_treasury').insert(trRows)
+        if (error) throw error
+      }
+
+      // narrative
       const content = narrative.trim()
       const no = narrativeOrig.current
       if (no && content !== no.content) {
         const { error } = await supabase.from('report_remarks').update({ content }).eq('id', no.id)
         if (error) throw error
       } else if (!no && content) {
-        const { error } = await supabase
-          .from('report_remarks')
-          .insert({ period, section: BANK_SECTION, content })
+        const { error } = await supabase.from('report_remarks').insert({ period, section: BANK_SECTION, content })
         if (error) throw error
       }
 
-      // promote a draft month into the real list, then reload from DB for fresh ids
-      const wasDraft = period === draftPeriod
-      if (wasDraft) {
+      if (period === draftPeriod) {
         setPeriods(prev => Array.from(new Set([period, ...prev])).sort((a, b) => b.localeCompare(a)))
         setDraftPeriod(null)
       }
@@ -382,110 +232,122 @@ export default function BankPosition() {
     }
   }
 
-  // ── derived figures (Tony's subtotal hierarchy) ───────────────────
-  const opAreas = operatingAreas(areas)
-  const hasMtb = areas.includes('MTB Overdraft')
-  const hasPalestine = areas.includes('Palestine')
-  const groupNet = ccGroupNet(grid, areas) // CC GROUP TOTAL (Σ operating)
-  const mtb = hasMtb ? areaNet(grid, 'MTB Overdraft') : null
-  const palestine = hasPalestine ? areaNet(grid, 'Palestine') : null
-  const groupWithMtb = groupNet + (mtb ?? 0)
-  const grandTotal = groupWithMtb + (palestine ?? 0)
-  const jvCash = num(groupItems['JV Cash'])
-  const blocked = num(groupItems['Blocked'])
-
-  // CC Group total build-up components (Σ over operating areas)
-  const sumAcct = (acct: string) => opAreas.reduce((s, a) => s + (num(grid[a]?.[acct]) ?? 0), 0)
-  const cashTot = sumAcct('Cash')
-  const odTot = sumAcct('Overdrafts')
-  const loansTot = sumAcct('Loans')
-  // cash-availability waterfall
-  const moneyControl = cashTot - (jvCash ?? 0)
-  const freeUsable = moneyControl - (blocked ?? 0)
-
-  // prior-month subtotals for the Δ column
-  const hasPrior = Object.keys(priorNet).length > 0
-  const priorOp = opAreas.reduce((s, a) => s + (priorNet[a] ?? 0), 0)
-  const priorGroupWithMtb = priorOp + (priorNet['MTB Overdraft'] ?? 0)
-  const priorTotal = priorGroupWithMtb + (priorNet['Palestine'] ?? 0)
-
-  // display value for an editable cell: raw while focused, formatted otherwise
-  const cellVal = (key: string, raw: string | undefined) => {
-    if (focusKey === key) return raw ?? ''
-    if (!raw || raw.trim() === '') return ''
-    const n = num(raw)
-    return n == null ? raw : fmtNum(n)
-  }
-  const cellNeg = (key: string, raw: string | undefined) => {
-    if (focusKey === key) return false
-    const n = num(raw)
-    return n != null && n < 0
+  // ── new month (clone prior detail as starting point) ──────────────
+  function openNewMonth() { setCloneFrom(periods[0] || ''); setNewMonth(''); setShowNew(true) }
+  async function createNewMonth() {
+    const p = monthInputToPeriod(newMonth)
+    if (!newMonth) { setStatus({ kind: 'err', msg: 'Pick a month.' }); return }
+    if (periods.includes(p)) { setStatus({ kind: 'err', msg: `${fmtPeriodLabel(p)} already exists.` }); return }
+    if (cloneFrom) {
+      const lines = await loadLines(cloneFrom)
+      const g: Grid = {}
+      for (const l of lines) {
+        const row: Partial<Record<Field, string>> = {}
+        for (const f of FIELDS) { const v = Number(l[f] ?? 0); if (v !== 0) row[f] = String(v) }
+        g[l.entity_id] = row
+      }
+      setGrid(g)
+      const prior = await loadLines(cloneFrom)
+      setPriorVals(indexLines(prior))
+    } else { setGrid({}); setPriorVals(new Map()) }
+    origLines.current = new Map()
+    setTreasury([]); treasuryOrig.current = []
+    setNarrative(''); narrativeOrig.current = null
+    setDraftPeriod(p); setPeriod(p); setShowNew(false); setDirty(true)
+    setStatus({ kind: 'ok', msg: `Started ${fmtPeriodLabel(p)} from ${fmtPeriodLabel(cloneFrom)} — edit, then Save.` })
   }
 
-  // editable rows in visual order (subtotal rows are skipped — not editable)
-  const editRows = [
-    ...opAreas,
-    ...(hasMtb ? ['MTB Overdraft'] : []),
-    ...(hasPalestine ? ['Palestine'] : []),
-  ]
-  const focusCell = (r: number, c: number) => {
-    const el = document.getElementById(`bpcell-${r}-${c}`) as HTMLInputElement | null
-    if (el) {
-      el.focus()
-      el.select()
+  // ── print ─────────────────────────────────────────────────────────
+  async function printReport() {
+    const w = window.open('', '_blank', 'width=1000,height=1200')
+    if (!w) { setStatus({ kind: 'err', msg: 'Allow pop-ups to print the report.' }); return }
+    w.document.write('<!doctype html><title>Preparing…</title><body style="font-family:system-ui;padding:40px;color:#666">Preparing report…</body>')
+    // 12-month trend of CC Net and (OD+Loans incl MTB), with the MTB portion
+    const { data } = await supabase.from('bank_position_lines').select('period,entity_id,cc_cash,cc_overdraft,cc_loans')
+    const mtbId = tree.mtb?.id
+    const byP = new Map<string, { cash: number; debt: number; mtb: number }>()
+    for (const r of (data || []) as any[]) {
+      const e = byP.get(r.period) || { cash: 0, debt: 0, mtb: 0 }
+      e.cash += Number(r.cc_cash || 0)
+      e.debt += Number(r.cc_overdraft || 0) + Number(r.cc_loans || 0)
+      if (mtbId && r.entity_id === mtbId) e.mtb += Number(r.cc_loans || 0)
+      byP.set(r.period, e)
     }
-  }
-  // arrow-key / Enter movement between cells; Left/Right only jump at the caret edge
-  const onCellKey = (e: KeyboardEvent<HTMLInputElement>, r: number, c: number) => {
-    const nR = editRows.length
-    const nC = AREA_ACCOUNTS.length
-    const el = e.currentTarget
-    const atStart = el.selectionStart === 0 && el.selectionEnd === 0
-    const atEnd = el.selectionStart === el.value.length && el.selectionEnd === el.value.length
-    if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      focusCell((r - 1 + nR) % nR, c)
-    } else if (e.key === 'ArrowDown' || e.key === 'Enter') {
-      e.preventDefault()
-      focusCell((r + 1) % nR, c)
-    } else if (e.key === 'ArrowLeft' && atStart) {
-      e.preventDefault()
-      if (c > 0) focusCell(r, c - 1)
-      else if (r > 0) focusCell(r - 1, nC - 1)
-    } else if (e.key === 'ArrowRight' && atEnd) {
-      e.preventDefault()
-      if (c < nC - 1) focusCell(r, c + 1)
-      else if (r < nR - 1) focusCell(r + 1, 0)
-    }
+    // reflect unsaved current month
+    byP.set(period, {
+      cash: summary.groupTotal.cc_cash,
+      debt: summary.groupTotal.cc_overdraft + summary.groupTotal.cc_loans,
+      mtb: summary.mtbV.cc_loans,
+    })
+    const series = Array.from(byP.entries()).map(([p, v]) => ({ period: p, ...v })).sort((a, b) => a.period.localeCompare(b.period)).slice(-12)
+    const html = buildReportHtml({
+      period, tree, vals, summary,
+      cashSeries: series.map(s => ({ period: s.period, val: s.cash })),
+      debtSeries: series.map(s => ({ period: s.period, val: s.debt, mtb: s.mtb })),
+      treasury, narrative,
+      priorVals,
+      generatedAt: new Date().toLocaleString('en-GB'),
+      logoUrl: window.location.origin + '/ccc-logo.png',
+    })
+    w.document.open(); w.document.write(html); w.document.close()
   }
 
-  // one editable area row (Cash / OD / Loans + Net + Δ)
-  const areaRow = (area: string, special = false, rowIndex = 0) => {
-    const net = areaNet(grid, area)
-    const prev = priorNet[area]
-    const delta = prev == null ? null : net - prev
+  // narrative helpers
+  function wrapSel(mark: string) {
+    const ta = taRef.current; if (!ta) return
+    const { selectionStart: s, selectionEnd: e, value } = ta
+    const sel = value.slice(s, e) || 'text'
+    setNarrative(value.slice(0, s) + mark + sel + mark + value.slice(e)); setDirty(true)
+    requestAnimationFrame(() => { ta.focus(); ta.setSelectionRange(s + mark.length, s + mark.length + sel.length) })
+  }
+  function applyList(kind: 'bullet' | 'number') {
+    const ta = taRef.current; if (!ta) return
+    const value = ta.value
+    const start = value.lastIndexOf('\n', ta.selectionStart - 1) + 1
+    let end = value.indexOf('\n', ta.selectionEnd); if (end === -1) end = value.length
+    let n = 0
+    const t = value.slice(start, end).split('\n').map(ln => {
+      const s = ln.replace(/^(\s*)([-*•]\s+|\d+[.)]\s+)?/, '$1')
+      if (s.trim() === '') return ln
+      n += 1; return kind === 'bullet' ? `- ${s.trimStart()}` : `${n}. ${s.trimStart()}`
+    }).join('\n')
+    setNarrative(value.slice(0, start) + t + value.slice(end)); setDirty(true)
+  }
+
+  if (!canManage) {
     return (
-      <tr key={area} className={special ? 'bp-special' : ''}>
-        <td className="label">{area}</td>
-        {AREA_ACCOUNTS.map((account, ci) => {
-          const key = cellKey(area, account)
-          const raw = grid[area]?.[account]
-          return (
-            <td key={account} className="bp-cell">
-              <input
-                id={`bpcell-${rowIndex}-${ci}`}
-                type="text"
-                inputMode="text"
-                className={cellNeg(key, raw) ? 'neg' : ''}
-                value={cellVal(key, raw)}
-                onFocus={() => setFocusKey(key)}
-                onBlur={() => setFocusKey(null)}
-                onChange={e => setCell(area, account, e.target.value)}
-                onKeyDown={e => onCellKey(e, rowIndex, ci)}
-              />
-            </td>
-          )
-        })}
+      <div className="bp-gate"><div className="bp-gate-card">
+        <h1>Bank Position</h1>
+        <p>Managing the group cash position needs the Treasury or admin role.</p>
+      </div></div>
+    )
+  }
+
+  // ── render helpers ────────────────────────────────────────────────
+  const ncols = FIELDS.length // 9 input columns
+
+  const inputCell = (eid: string, f: Field) => (
+    <td key={f} className="bp-cell">
+      <input
+        type="text" inputMode="text"
+        className={cellNeg(eid, f) ? 'neg' : ''}
+        value={cellVal(eid, f)}
+        onFocus={() => setFocusKey(cellKey(eid, f))}
+        onBlur={() => setFocusKey(null)}
+        onChange={e => setCell(eid, f, e.target.value)}
+      />
+    </td>
+  )
+
+  const editableRow = (e: BpEntity, opts: { indent?: boolean; special?: string } = {}) => {
+    const v = vals.get(e.id) || zeroLine()
+    const net = ccNet(v)
+    const prev = priorVals.get(e.id)
+    const delta = prev ? net - ccNet(prev) : null
+    return (
+      <tr key={e.id} className={opts.special || ''}>
+        <td className={`label ${opts.indent ? 'indent' : ''}`}>{e.name}</td>
+        {FIELDS.map(f => inputCell(e.id, f))}
         <td className={`bp-num ${net < 0 ? 'neg' : ''}`}>{fmtNum(net)}</td>
         <td className={`bp-num bp-delta ${delta == null ? '' : delta < 0 ? 'neg' : ''}`}>
           {delta == null ? '—' : (delta > 0 ? '+' : '') + fmtNum(delta)}
@@ -494,100 +356,50 @@ export default function BankPosition() {
     )
   }
 
-  // a subtotal row in Tony's hierarchy
-  const subtotalRow = (label: string, value: number, prior: number, strong = false) => {
-    const delta = hasPrior ? value - prior : null
-    return (
-      <tr className={`bp-subtotal ${strong ? 'bp-subtotal-strong' : ''}`}>
-        <td className="label">{label}</td>
-        <td colSpan={AREA_ACCOUNTS.length} />
-        <td className={`bp-num ${value < 0 ? 'neg' : ''}`}>{fmtNum(value)}</td>
-        <td className={`bp-num bp-delta ${delta == null ? '' : delta < 0 ? 'neg' : ''}`}>
-          {delta == null ? '—' : (delta > 0 ? '+' : '') + fmtNum(delta)}
-        </td>
-      </tr>
-    )
-  }
+  const subtotalRow = (label: string, v: LineValues, strong = false) => (
+    <tr className={`bp-subtotal ${strong ? 'bp-subtotal-strong' : ''}`}>
+      <td className="label">{label}</td>
+      {FIELDS.map(f => <td key={f} className={`bp-num ${v[f] < 0 ? 'neg' : ''}`}>{v[f] ? fmtNum(v[f]) : ''}</td>)}
+      <td className={`bp-num ${ccNet(v) < 0 ? 'neg' : ''}`}>{fmtNum(ccNet(v))}</td>
+      <td className="bp-num" />
+    </tr>
+  )
 
-  // headline card (variant = emphasis, group = colour accent)
-  const card = (
-    label: string,
-    value: number | null,
-    variant: '' | 'total' | 'free' = '',
-    group: '' | 'build' | 'group' | 'free' = '',
-  ) => (
-    <div className={`bp-card ${variant ? `bp-card-${variant}` : ''} ${group ? `bp-card-g-${group}` : ''}`}>
+  const card = (label: string, value: number | null, g: '' | 'build' | 'group' | 'free' = '', variant: '' | 'total' | 'free' = '') => (
+    <div className={`bp-card ${variant ? `bp-card-${variant}` : ''} ${g ? `bp-card-g-${g}` : ''}`}>
       <span className="bp-card-label">{label}</span>
       <span className={`bp-card-val ${value != null && value < 0 ? 'neg' : ''}`}>{fmtNum(value)}</span>
     </div>
   )
-
-  if (!canManage) {
-    return (
-      <div className="bp-gate">
-        <div className="bp-gate-card">
-          <h1>Bank Position</h1>
-          <p>Managing the group cash position needs the Treasury or admin role.</p>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="bp-root">
       <header className="bp-head">
         <div className="bp-months-row">
           <div className="bp-yearnav">
-            <button
-              className="bp-yearbtn"
-              onClick={() => setViewYear(y => y - 1)}
-              disabled={viewYear <= yearBounds.min}
-              aria-label="Previous year"
-            >
-              ‹
-            </button>
+            <button className="bp-yearbtn" onClick={() => setViewYear(y => y - 1)} disabled={viewYear <= yearBounds.min} aria-label="Previous year">‹</button>
             <span className="bp-year">{viewYear}</span>
-            <button
-              className="bp-yearbtn"
-              onClick={() => setViewYear(y => y + 1)}
-              disabled={viewYear >= yearBounds.max}
-              aria-label="Next year"
-            >
-              ›
-            </button>
+            <button className="bp-yearbtn" onClick={() => setViewYear(y => y + 1)} disabled={viewYear >= yearBounds.max} aria-label="Next year">›</button>
           </div>
           <div className="bp-months">
             {MONTH_ABBR.map((label, i) => {
               const p = `${viewYear}-${String(i + 1).padStart(2, '0')}-01`
               const available = allPeriods.includes(p)
-              const selected = p === period
               return (
-                <button
-                  key={label}
-                  className={`bp-month ${selected ? 'is-selected' : ''} ${p === draftPeriod ? 'is-draft' : ''}`}
-                  onClick={() => selectPeriod(p)}
-                  disabled={!available || saving}
-                  title={available ? '' : 'No data — use New month to create'}
-                >
-                  {label}
-                </button>
+                <button key={label}
+                  className={`bp-month ${p === period ? 'is-selected' : ''} ${p === draftPeriod ? 'is-draft' : ''}`}
+                  onClick={() => selectPeriod(p)} disabled={!available || saving}
+                  title={available ? '' : 'No data — use New month'}>{label}</button>
               )
             })}
           </div>
         </div>
         <div className="bp-head-controls">
-          <button className="bp-btn" onClick={openNewMonth} disabled={saving}>
-            New month
-          </button>
-          <button className="bp-btn" onClick={printReport} disabled={saving || !period}>
-            Print report
-          </button>
-          <button className="bp-btn" onClick={() => setShowNarrative(true)} disabled={!period}>
-            Narrative
-          </button>
-          <button className="bp-btn bp-btn-primary" onClick={save} disabled={saving || !dirty}>
-            {saving ? 'Saving…' : 'Save'}
-          </button>
+          <button className="bp-btn" onClick={openNewMonth} disabled={saving}>New month</button>
+          <button className="bp-btn" onClick={() => setShowTreasury(true)} disabled={!period}>Treasury details</button>
+          <button className="bp-btn" onClick={printReport} disabled={saving || !period}>Print report</button>
+          <button className="bp-btn" onClick={() => setShowNarrative(true)} disabled={!period}>Narrative</button>
+          <button className="bp-btn bp-btn-primary" onClick={save} disabled={saving || !dirty}>{saving ? 'Saving…' : 'Save'}</button>
         </div>
       </header>
 
@@ -595,102 +407,81 @@ export default function BankPosition() {
 
       {showNew && (
         <div className="bp-newmonth">
-          <div className="bp-field">
-            <span>New month</span>
-            <input type="month" value={newMonth} onChange={e => setNewMonth(e.target.value)} />
-          </div>
-          <div className="bp-field">
-            <span>Clone from</span>
+          <div className="bp-field"><span>New month</span><input type="month" value={newMonth} onChange={e => setNewMonth(e.target.value)} /></div>
+          <div className="bp-field"><span>Clone from</span>
             <select value={cloneFrom} onChange={e => setCloneFrom(e.target.value)}>
               <option value="">— blank —</option>
-              {periods.map(p => (
-                <option key={p} value={p}>
-                  {fmtPeriodLabel(p)}
-                </option>
-              ))}
+              {periods.map(p => <option key={p} value={p}>{fmtPeriodLabel(p)}</option>)}
             </select>
           </div>
-          <button className="bp-btn bp-btn-primary" onClick={createNewMonth}>
-            Create
-          </button>
-          <button className="bp-btn" onClick={() => setShowNew(false)}>
-            Cancel
-          </button>
+          <button className="bp-btn bp-btn-primary" onClick={createNewMonth}>Create</button>
+          <button className="bp-btn" onClick={() => setShowNew(false)}>Cancel</button>
         </div>
       )}
 
-      {loading ? (
-        <div className="bp-loading">Loading…</div>
-      ) : (
+      {loading ? <div className="bp-loading">Loading…</div> : (
         <>
-          {/* headline cards — single row, colour-grouped */}
           <div className="bp-cards">
-            {card('Cash', cashTot, '', 'build')}
-            {card('Overdraft', odTot, '', 'build')}
-            {card('Loans', loansTot, '', 'build')}
-            {card('CC Group Total Actual', groupNet, 'total', 'build')}
+            {card('Cash', summary.operatingSum.cc_cash, 'build')}
+            {card('Overdraft', summary.operatingSum.cc_overdraft, 'build')}
+            {card('Loans (excl MTB)', summary.operatingSum.cc_loans, 'build')}
+            {card('MTB Loans', summary.mtbV.cc_loans, 'build')}
+            {card('CC Group Total Actual', ccNet(summary.groupTotal), 'build', 'total')}
             <span className="bp-card-div" />
-            {card('MTB Loans', mtb, '', 'group')}
-            {card('Palestine', palestine, '', 'group')}
-            {card('Total', grandTotal, 'total', 'group')}
+            {card('Palestine', ccNet(summary.palSum), 'group')}
+            {card('Total', ccNet(summary.total), 'group', 'total')}
             <span className="bp-card-div" />
-            {card('JV Money', jvCash, '', 'free')}
-            {card('Money under CCC control', moneyControl, 'free', 'free')}
-            {card('Blocked Cash', blocked, '', 'free')}
-            {card("CCC's Free Usable Cash", freeUsable, 'free', 'free')}
+            {card('JV Money', summary.jvMoney, 'free')}
+            {card('Money under CCC control', summary.moneyControl, 'free', 'free')}
+            {card('Blocked Cash', summary.blocked, 'free')}
+            {card("CCC's Free Usable Cash", summary.freeUsable, 'free', 'free')}
           </div>
 
-          {/* area × account grid */}
           <div className="bp-gridwrap">
-            <table className="bp-table">
+            <table className="bp-table bp-wide">
               <thead>
+                <tr className="bp-grouphead">
+                  <th className="label" rowSpan={2}>Area</th>
+                  {FIELD_GROUPS.map(g => <th key={g.label} colSpan={g.fields.length} className="bp-grp">{g.label}</th>)}
+                  <th rowSpan={2}>CC Net</th>
+                  <th rowSpan={2} title="CC Net change vs prior month">Δ MoM</th>
+                </tr>
                 <tr>
-                  <th className="label">Area</th>
-                  {AREA_ACCOUNTS.map(a => (
-                    <th key={a}>{a}</th>
-                  ))}
-                  <th>Net</th>
-                  <th title="Net change vs prior month">Δ MoM</th>
+                  {FIELD_GROUPS.flatMap(g => g.fields).map(f => <th key={f}>{FIELD_LABEL[f]}</th>)}
                 </tr>
               </thead>
               <tbody>
-                {opAreas.map((area, i) => areaRow(area, false, i))}
-                {subtotalRow('CC Group total', groupNet, priorOp)}
-                {hasMtb && areaRow('MTB Overdraft', true, opAreas.length)}
-                {subtotalRow('CC Group total incl. MTB', groupWithMtb, priorGroupWithMtb)}
-                {hasPalestine && areaRow('Palestine', true, opAreas.length + (hasMtb ? 1 : 0))}
-                {subtotalRow('Total', grandTotal, priorTotal, true)}
+                {summary.areaVals.map(({ node, v }) =>
+                  node.children.length === 0
+                    ? editableRow(node.entity)
+                    : (
+                      <Fragment key={node.entity.id}>
+                        {subtotalRow(node.entity.name, v)}
+                        {node.children.map(c => editableRow(c, { indent: true }))}
+                      </Fragment>
+                    ),
+                )}
+                {tree.mtb && editableRow(tree.mtb, { special: 'bp-special' })}
+                {subtotalRow('CC Group Total Actual', summary.groupTotal, true)}
+                {tree.memo.map(m => editableRow(m, { special: 'bp-special' }))}
+                {subtotalRow('Total (incl. Palestine)', summary.total, true)}
               </tbody>
             </table>
           </div>
-
-          {/* group waterfall items (stored under area = Total) */}
-          <div className="bp-group">
-            <h2 className="bp-h2">Group items</h2>
-            <p className="bp-group-hint">Cash-availability waterfall — stored under the “Total” row.</p>
-            <div className="bp-group-fields">
-              {GROUP_ACCOUNTS.map(account => {
-                const key = cellKey(GROUP_AREA, account)
-                const raw = groupItems[account]
-                return (
-                  <label key={account} className="bp-field">
-                    <span>{account}</span>
-                    <input
-                      type="text"
-                      inputMode="text"
-                      className={cellNeg(key, raw) ? 'neg' : ''}
-                      value={cellVal(key, raw)}
-                      onFocus={() => setFocusKey(key)}
-                      onBlur={() => setFocusKey(null)}
-                      onChange={e => setGroup(account, e.target.value)}
-                    />
-                  </label>
-                )
-              })}
-            </div>
-          </div>
-
+          <p className="bp-foot-note">
+            Detailed grain — sub-area lines roll up to their grouping. Grouping is managed in Areas &amp; Projects.
+            OD &amp; Loans entered negative. MTB shown separately, included in the group total.
+          </p>
         </>
+      )}
+
+      {showTreasury && (
+        <TreasuryModal
+          rows={treasury}
+          onChange={r => { setTreasury(r); setDirty(true) }}
+          onClose={() => setShowTreasury(false)}
+          period={period}
+        />
       )}
 
       {showNarrative && (
@@ -699,39 +490,20 @@ export default function BankPosition() {
             <div className="bp-narrative-head">
               <h2 className="bp-h2">Narrative — {period ? fmtPeriodLabel(period) : ''}</h2>
               <div className="bp-list-tools">
-                <button type="button" className="bp-tool bp-tool-b" onClick={() => wrapSel('**')} title="Bold">
-                  B
-                </button>
-                <button type="button" className="bp-tool bp-tool-i" onClick={() => wrapSel('*')} title="Italic">
-                  I
-                </button>
-                <button type="button" className="bp-tool bp-tool-u" onClick={() => wrapSel('__')} title="Underline">
-                  U
-                </button>
+                <button type="button" className="bp-tool bp-tool-b" onClick={() => wrapSel('**')} title="Bold">B</button>
+                <button type="button" className="bp-tool bp-tool-i" onClick={() => wrapSel('*')} title="Italic">I</button>
+                <button type="button" className="bp-tool bp-tool-u" onClick={() => wrapSel('__')} title="Underline">U</button>
                 <span className="bp-tool-sep" />
-                <button type="button" className="bp-tool" onClick={() => applyList('bullet')} title="Bullet list">
-                  • List
-                </button>
-                <button type="button" className="bp-tool" onClick={() => applyList('number')} title="Numbered list">
-                  1. List
-                </button>
+                <button type="button" className="bp-tool" onClick={() => applyList('bullet')}>• List</button>
+                <button type="button" className="bp-tool" onClick={() => applyList('number')}>1. List</button>
               </div>
             </div>
-            <textarea
-              ref={taRef}
-              value={narrative}
-              onChange={e => {
-                setNarrative(e.target.value)
-                setDirty(true)
-              }}
-              placeholder="Cash position commentary for this month…"
-              rows={16}
-            />
+            <textarea ref={taRef} value={narrative}
+              onChange={e => { setNarrative(e.target.value); setDirty(true) }}
+              placeholder="Cash position commentary for this month…" rows={16} />
             <div className="bp-modal-foot">
-              <span className="bp-modal-hint">Changes save with the month’s Save button.</span>
-              <button type="button" className="bp-btn bp-btn-primary" onClick={() => setShowNarrative(false)}>
-                Done
-              </button>
+              <span className="bp-modal-hint">Changes save with the month's Save button.</span>
+              <button type="button" className="bp-btn bp-btn-primary" onClick={() => setShowNarrative(false)}>Done</button>
             </div>
           </div>
         </div>
@@ -740,13 +512,47 @@ export default function BankPosition() {
   )
 }
 
-/* area→net map for a set of rows (used for the Δ-vs-prior column). */
-function computeNet(rows: BankRow[]): Record<string, number> {
-  const out: Record<string, number> = {}
-  for (const r of rows) {
-    if (r.area === GROUP_AREA) continue
-    if (!(AREA_ACCOUNTS as readonly string[]).includes(r.account)) continue
-    out[r.area] = (out[r.area] || 0) + Number(r.balance)
-  }
-  return out
+// ── Treasury details editor ───────────────────────────────────────────
+function TreasuryModal({ rows, onChange, onClose, period }: {
+  rows: TreasuryRow[]; onChange: (r: TreasuryRow[]) => void; onClose: () => void; period: string
+}) {
+  const receipts = rows.filter(r => r.flow === 'receipt')
+  const payments = rows.filter(r => r.flow === 'payment')
+  const update = (flow: 'receipt' | 'payment', list: TreasuryRow[]) =>
+    onChange([...rows.filter(r => r.flow !== flow), ...list])
+  const totReceipts = receipts.reduce((s, r) => s + (r.amount || 0), 0)
+  const totPayments = payments.reduce((s, r) => s + (r.amount || 0), 0)
+
+  const column = (flow: 'receipt' | 'payment', list: TreasuryRow[]) => (
+    <div className="bp-tre-col">
+      <h3>{flow === 'receipt' ? 'Receipts' : 'Payments'}</h3>
+      {list.map((r, i) => (
+        <div className="bp-tre-row" key={i}>
+          <input className="bp-tre-label" value={r.label} placeholder="Source"
+            onChange={e => { const l = [...list]; l[i] = { ...r, label: e.target.value }; update(flow, l) }} />
+          <input className="bp-tre-amt" inputMode="decimal" value={r.amount || ''}
+            onChange={e => { const l = [...list]; l[i] = { ...r, amount: Number(e.target.value) || 0 }; update(flow, l) }} />
+          <button className="bp-tre-del" onClick={() => update(flow, list.filter((_, j) => j !== i))}>×</button>
+        </div>
+      ))}
+      <button className="bp-btn bp-tre-add"
+        onClick={() => update(flow, [...list, { period, flow, label: '', amount: 0, sort_order: list.length }])}>+ Add {flow}</button>
+      <div className="bp-tre-total">Total {flow === 'receipt' ? 'in' : 'out'}: {fmtNum(flow === 'receipt' ? totReceipts : -totPayments)}</div>
+    </div>
+  )
+
+  return (
+    <div className="bp-modal-backdrop" onClick={onClose}>
+      <div className="bp-modal bp-modal-wide" onClick={e => e.stopPropagation()}>
+        <div className="bp-narrative-head">
+          <h2 className="bp-h2">Treasury details — {fmtPeriodLabel(period)}</h2>
+        </div>
+        <div className="bp-tre-grid">{column('receipt', receipts)}{column('payment', payments)}</div>
+        <div className="bp-modal-foot">
+          <span className="bp-modal-hint">Net movement {fmtNum(totReceipts - totPayments)} — saves with the month's Save button.</span>
+          <button className="bp-btn bp-btn-primary" onClick={onClose}>Done</button>
+        </div>
+      </div>
+    </div>
+  )
 }

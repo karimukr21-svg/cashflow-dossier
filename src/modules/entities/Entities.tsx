@@ -5,6 +5,8 @@ import {
   loadAliases,
   mapAlias,
   unmapAlias,
+  updateNode,
+  createBpGrouping,
   SOURCE_SYSTEMS,
   type CanonicalNode,
   type Alias,
@@ -13,10 +15,12 @@ import {
 import './entities.css'
 
 type Status = { kind: 'ok' | 'err'; msg: string } | null
+type MainView = 'ap' | 'bp'
 
 export default function Entities() {
   const role = useRole()
   const canMap = canManageCashFlow(role) // admin | treasury — may edit aliases here
+  const [mainView, setMainView] = useState<MainView>('ap')
 
   const [nodes, setNodes] = useState<CanonicalNode[]>([])
   const [aliases, setAliases] = useState<Alias[]>([])
@@ -142,28 +146,182 @@ export default function Entities() {
     <div className="ent-shell">
       {status && <div className={`ent-toast ${status.kind}`}>{status.msg}</div>}
 
-      <div className="ent-panes">
-        <CanonicalPane
-          topAreas={topAreas}
-          subAreasByParent={subAreasByParent}
-          projectsByArea={projectsByArea}
-          totalAreas={areas.length}
-        />
-        <MappingPane
-          sourceKey={sourceKey}
-          onSourceChange={setSourceKey}
-          locals={locals}
-          localsLoading={localsLoading}
-          aliasByLocalKey={aliasByLocalKey}
-          areas={areas}
-          projectsByArea={projectsByArea}
-          nodeById={nodeById}
-          canMap={canMap}
-          onMap={doMap}
-          onUnmap={doUnmap}
-        />
+      <div className="ent-viewtabs">
+        <button className={`ent-viewtab ${mainView === 'ap' ? 'is-active' : ''}`} onClick={() => setMainView('ap')}>
+          Areas &amp; Projects
+        </button>
+        <button className={`ent-viewtab ${mainView === 'bp' ? 'is-active' : ''}`} onClick={() => setMainView('bp')}>
+          Bank position areas
+        </button>
       </div>
+
+      {mainView === 'ap' ? (
+        <div className="ent-panes">
+          <CanonicalPane
+            topAreas={topAreas}
+            subAreasByParent={subAreasByParent}
+            projectsByArea={projectsByArea}
+            totalAreas={areas.length}
+          />
+          <MappingPane
+            sourceKey={sourceKey}
+            onSourceChange={setSourceKey}
+            locals={locals}
+            localsLoading={localsLoading}
+            aliasByLocalKey={aliasByLocalKey}
+            areas={areas}
+            projectsByArea={projectsByArea}
+            nodeById={nodeById}
+            canMap={canMap}
+            onMap={doMap}
+            onUnmap={doUnmap}
+          />
+        </div>
+      ) : (
+        <BankPositionPane nodes={nodes} canMap={canMap} onChanged={refresh} onErr={m => flash('err', m)} />
+      )}
     </div>
+  )
+}
+
+/* ================================================================== *
+ * BANK POSITION — manage the grouping (virtual areas) the lines roll into
+ * ================================================================== */
+
+function BankPositionPane({
+  nodes, canMap, onChanged, onErr,
+}: {
+  nodes: CanonicalNode[]
+  canMap: boolean
+  onChanged: () => Promise<void> | void
+  onErr: (msg: string) => void
+}) {
+  const byOrder = (a: CanonicalNode, b: CanonicalNode) =>
+    a.sort_order - b.sort_order || a.name.localeCompare(b.name)
+  const groupings = useMemo(
+    () => nodes.filter(n => n.entity_type === 'bp_area').sort(byOrder),
+    [nodes],
+  )
+  const lines = useMemo(
+    () => nodes.filter(n => n.entity_type === 'bp_line').sort(byOrder),
+    [nodes],
+  )
+  const childrenOf = useMemo(() => {
+    const m = new Map<string, CanonicalNode[]>()
+    for (const l of lines) if (l.parent_id) { const a = m.get(l.parent_id) ?? []; a.push(l); m.set(l.parent_id, a) }
+    for (const a of m.values()) a.sort(byOrder)
+    return m
+  }, [lines])
+  const directLines = useMemo(
+    () => lines.filter(l => !l.parent_id && l.area_group === 'operating').sort(byOrder),
+    [lines],
+  )
+  const memoLines = useMemo(
+    () => lines.filter(l => !l.parent_id && l.area_group !== 'operating').sort(byOrder),
+    [lines],
+  )
+
+  const [newName, setNewName] = useState('')
+
+  async function reparent(id: string, parentId: string | null) {
+    try { await updateNode(id, { parent_id: parentId }); await onChanged() }
+    catch (e) { onErr((e as Error).message) }
+  }
+  async function addGrouping() {
+    const name = newName.trim()
+    if (!name) return
+    try {
+      const maxSort = Math.max(0, ...groupings.map(g => g.sort_order))
+      await createBpGrouping(name, maxSort + 1)
+      setNewName(''); await onChanged()
+    } catch (e) { onErr((e as Error).message) }
+  }
+
+  const parentPicker = (line: CanonicalNode) => (
+    <select
+      className="ent-bp-select"
+      value={line.parent_id ?? ''}
+      disabled={!canMap}
+      onChange={e => reparent(line.id, e.target.value || null)}
+    >
+      <option value="">— direct line (no grouping) —</option>
+      {groupings.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+    </select>
+  )
+
+  return (
+    <section className="ent-pane ent-pane-full">
+      <header className="ent-pane-head">
+        <div>
+          <h2>Bank position areas</h2>
+          <p className="ent-sub">
+            {groupings.length} groupings · {lines.length} lines · the summary areas in the Bank Position tool
+            are a rollup of these. {canMap ? 'Reassign a line to change which grouping it rolls into.' : 'Read-only'}
+          </p>
+        </div>
+        {canMap && (
+          <div className="ent-bp-add">
+            <input placeholder="New grouping name…" value={newName}
+              onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') addGrouping() }} />
+            <button className="ent-picker-trigger primary" onClick={addGrouping}>Add grouping</button>
+          </div>
+        )}
+      </header>
+
+      <div className="ent-bp-tree">
+        {groupings.map(g => {
+          const kids = childrenOf.get(g.id) ?? []
+          return (
+            <div key={g.id} className="ent-bp-group">
+              <div className="ent-node ent-node-virtual">
+                <span className="ent-kind ent-kind-group">Group</span>
+                <span className="ent-name ent-name-static">{g.name}</span>
+                <span className="ent-count">{kids.length}</span>
+              </div>
+              <div className="ent-kids">
+                {kids.map(line => (
+                  <div key={line.id} className="ent-bp-line">
+                    <span className="ent-bp-linename">{line.name}</span>
+                    {parentPicker(line)}
+                  </div>
+                ))}
+                {kids.length === 0 && <div className="ent-empty">No lines</div>}
+              </div>
+            </div>
+          )
+        })}
+
+        <div className="ent-bp-group">
+          <div className="ent-node"><span className="ent-kind">Direct</span>
+            <span className="ent-name ent-name-static">Direct lines (their own summary area)</span>
+            <span className="ent-count">{directLines.length}</span></div>
+          <div className="ent-kids">
+            {directLines.map(line => (
+              <div key={line.id} className="ent-bp-line">
+                <span className="ent-bp-linename">{line.name}</span>
+                {parentPicker(line)}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {memoLines.length > 0 && (
+          <div className="ent-bp-group">
+            <div className="ent-node"><span className="ent-kind">Memo</span>
+              <span className="ent-name ent-name-static">Below-the-line (MTB, Palestine)</span>
+              <span className="ent-count">{memoLines.length}</span></div>
+            <div className="ent-kids">
+              {memoLines.map(line => (
+                <div key={line.id} className="ent-bp-line">
+                  <span className="ent-bp-linename">{line.name} <em className="ent-bp-tag">{line.area_group}</em></span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
   )
 }
 

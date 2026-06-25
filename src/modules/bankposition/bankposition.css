@@ -559,3 +559,37 @@
   color: var(--mute);
   margin: 0;
 }
+
+/* ── wide detailed grid (9 balance columns) ─────────────────────── */
+.bp-wide { font-size: 12px; }
+.bp-wide th, .bp-wide td { padding: 4px 6px; }
+.bp-wide .bp-cell { padding: 2px 3px; }
+.bp-wide .bp-cell input { width: 64px; height: 24px; font-size: 11.5px; padding: 0 5px; }
+.bp-wide td.label, .bp-wide th.label {
+  position: sticky; left: 0; z-index: 1; background: var(--surface);
+  min-width: 150px; max-width: 150px;
+}
+.bp-wide tr:hover td.label { background: var(--surface-alt); }
+.bp-wide td.label.indent { padding-left: 22px; color: var(--mute); font-size: 11.5px; }
+.bp-wide tr.bp-subtotal td.label, .bp-wide tr.bp-subtotal-strong td.label { background: var(--surface-alt); }
+.bp-gridwrap { overflow-x: auto; }
+.bp-grouphead .bp-grp {
+  text-align: center; font-size: 9.5px; letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--border); color: var(--charcoal); font-weight: 600;
+  border-left: 1px solid var(--border);
+}
+.bp-wide tr.bp-subtotal td.bp-num { font-weight: 500; }
+.bp-foot-note { color: var(--mute); font-size: 11.5px; margin: 10px 2px 24px; line-height: 1.5; }
+
+/* ── treasury details modal ─────────────────────────────────────── */
+.bp-modal-wide { max-width: 760px; width: 92vw; }
+.bp-tre-grid { display: flex; gap: 22px; }
+.bp-tre-col { flex: 1; }
+.bp-tre-col h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--mute); margin: 0 0 8px; font-weight: 600; }
+.bp-tre-row { display: flex; gap: 6px; margin-bottom: 5px; align-items: center; }
+.bp-tre-label { flex: 1; height: 28px; border: 1px solid var(--border); border-radius: 5px; padding: 0 8px; font-size: 12.5px; }
+.bp-tre-amt { width: 84px; height: 28px; border: 1px solid var(--border); border-radius: 5px; padding: 0 8px; text-align: right; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.bp-tre-del { width: 24px; height: 24px; border: none; background: transparent; color: var(--mute); cursor: pointer; font-size: 16px; line-height: 1; border-radius: 4px; }
+.bp-tre-del:hover { background: var(--surface-alt); color: var(--bad); }
+.bp-tre-add { margin-top: 6px; font-size: 12px; }
+.bp-tre-total { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 12.5px; font-weight: 500; font-variant-numeric: tabular-nums; }

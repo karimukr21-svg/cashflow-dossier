@@ -9,7 +9,7 @@ import { supabase } from '@/lib/supabase'
  * A local name with no alias = UNMAPPED (computed live, never stored).
  * ------------------------------------------------------------------ */
 
-export type EntityType = 'area' | 'project'
+export type EntityType = 'area' | 'project' | 'bp_area' | 'bp_line'
 
 export interface CanonicalNode {
   id: string
@@ -133,6 +133,20 @@ export async function updateNode(
   patch: Partial<Pick<CanonicalNode, 'name' | 'parent_id' | 'owner_dept' | 'is_active'>>,
 ): Promise<void> {
   const { error } = await supabase.from('canonical_entity').update(patch).eq('id', id)
+  if (error) throw error
+}
+
+/** Create a virtual bank-position grouping area (a parent the lines roll into). */
+export async function createBpGrouping(name: string, sortOrder: number): Promise<void> {
+  const { error } = await supabase.from('canonical_entity').insert({
+    entity_type: 'bp_area',
+    name,
+    owner_dept: 'treasury',
+    is_virtual: true,
+    is_active: true,
+    sort_order: sortOrder,
+    area_group: 'operating',
+  })
   if (error) throw error
 }
 
