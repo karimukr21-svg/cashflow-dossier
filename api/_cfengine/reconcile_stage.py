@@ -55,7 +55,7 @@ TARGET_SHEET = {
     'BOTSWANA_Apr_2026_CashFlow.xlsx':      'CONSOLIDATED',
     'KAZH_Apr_2026_CashFlow.xlsx':          'CONSOLIDATED',
     'Morganti_Apr_2026_CashFlow.xlsx':      'CONSOLIDATED',
-    'Ivory Coast_Apr_2026_CashFlow.xlsx':   'CONSOLIDATED',
+    'Ivory Coast_Apr_2026_CashFlow.xlsx':   'IVORY COAST XOF FINAL',   # native XOF, single-area
     'Libya_Apr_2026_CashFlow.xlsx':         'LIBYA CONSOLIDATED',
     'MOZAMBIQUE_Apr_2026_CashFlow.xlsx':    'new Consolidated ',
     'CCC Rwanda_Apr_2026_CashFlow.xlsx':    'RWANDA CONSOLIDATED - CCC ',
@@ -63,7 +63,7 @@ TARGET_SHEET = {
     'Algeria_Morocco_Apr_2026_CashFlow.xlsx': 'CONSOLIDATED',
     'Egypt 2026 Cash flow Consolidated - April 2026-2.xlsx': 'CONSOLIDATED',
     'Iraq_Apr_2026_CashFlow.xlsx':          None,
-    'Nigeria_Apr_2026_CashFlow.xlsx':       None,
+    'Nigeria_Apr_2026_CashFlow.xlsx':       'NIGERIA NGN',   # native NGN, single-area
     'CCUW_Apr_2026_CashFlow.xlsx':          None,
 }
 
@@ -81,6 +81,8 @@ CURRENCY_OVERRIDE = {
     'EPSO_Apr_2026_CashFlow.xlsx': 'AED',     # taking the native AED consolidated sheet
     'Iraq_Apr_2026_CashFlow.xlsx': 'USD',     # single CONSOLIDATED sheet, USD '000
     'CCUW_Apr_2026_CashFlow.xlsx': 'USD',     # no in-sheet currency header; area is USD
+    'Nigeria_Apr_2026_CashFlow.xlsx': 'NGN',  # taking the native NGN sheet (header mislabels it USD)
+    'Ivory Coast_Apr_2026_CashFlow.xlsx': 'XOF',  # taking the IVORY COAST XOF FINAL sheet
 }
 CCY_TOKENS = ('USD', 'SAR', 'AED', 'QAR', 'EUR', 'EGP', 'KZT', 'OMR', 'NGN',
               'XOF', 'JOD', 'MAD', 'BWP', 'RWF', 'GBP', 'TND', 'DZD')
@@ -99,6 +101,12 @@ EXCLUDE_SHEETS = {
     # sheet (the file also bundles unrelated areas — Botswana/Nigeria/Grenada/Zambia).
     'Rwanda_NBIA_Apr_2026_CashFlow.xlsx': {'RWANDA USD', 'RWANDA RWF', 'IVC',
                                            'BOTSWANA', 'NIGERIA', 'GRENADA', 'ZAMBIA'},
+    # Nigeria: take the native NGN sheet (single-area); drop the USD restatement.
+    'Nigeria_Apr_2026_CashFlow.xlsx': {'NIGERIA USD'},
+    # Ivory Coast: take only 'IVORY COAST XOF FINAL'; drop the USD restatements and
+    # the unrelated areas the file bundles (Mozam/Rwanda/Botswana/Grenada/Zambia).
+    'Ivory Coast_Apr_2026_CashFlow.xlsx': {'CONSOLIDATED', 'IVORY COAST USD FINAL',
+        'IVORY COAST XOF', 'MOZAM', 'RWANDA', 'BOTSWANA', 'GRENADA', 'ZAMBIA', 'NEW SALES'},
 }
 
 # Single-entity areas: no per-project decomposition exists, only an area cash flow.

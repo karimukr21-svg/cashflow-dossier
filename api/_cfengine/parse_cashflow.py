@@ -243,17 +243,52 @@ def label_col_left_of(rows, header_ri, first_period_col):
 def detect_header(rows, as_of):
     """Return dict: {mode, label_col, section_col, periods:{col:(year,month,kind)}}
     or None if no period axis found."""
-    # --- datetime axis ---
+    # --- datetime axis (also folds in month-name cells in the SAME row) ---
+    # Some sheets mix datetime columns with bare/text month tokens that carry the
+    # prior-year actuals (e.g. Nigeria: JAN..SEP then 2025-10.. ; CCUW: "JAN 25 - A"
+    # then 2026-05..). The datetimes anchor the year; bare months are filled around
+    # them with a two-pass walk so those early-2025 actuals are not dropped.
     for ri, row in enumerate(rows[:10]):
         dates = [(ci, v) for ci, v in enumerate(row) if is_date(v)]
         if len(dates) >= 3:
-            first_date_col = min(ci for ci, _ in dates)
-            lc = label_col_left_of(rows, ri, first_date_col)
+            # collect every period-ish column: (col, month, explicit_year|None)
+            cols = []
+            for ci, v in enumerate(row):
+                if is_date(v):
+                    d = v.date() if isinstance(v, datetime.datetime) else v
+                    cols.append((ci, d.month, d.year))
+                elif month_num(v) is not None:
+                    mn, ey = month_year(v)
+                    cols.append((ci, mn, ey))
+            cols.sort()
+            # forward fill years (snap to explicit, JAN rollover for bare)
+            yr = {}
+            cur = None; prevm = None
+            for ci, mn, ey in cols:
+                if ey is not None:
+                    cur = ey
+                elif cur is not None and prevm is not None and mn < prevm:
+                    cur += 1
+                yr[ci] = cur; prevm = mn
+            # backward fill any leading bare months (before the first anchor)
+            cur = None; nextm = None
+            for ci, mn, ey in reversed(cols):
+                if yr[ci] is not None:
+                    cur = yr[ci]; nextm = mn; continue
+                if ey is not None:
+                    cur = ey
+                elif cur is not None and nextm is not None and mn > nextm:
+                    cur -= 1
+                yr[ci] = cur; nextm = mn
             periods = {}
-            for ci, v in dates:
-                d = v.date() if isinstance(v, datetime.datetime) else v
-                kind = 'actual' if d <= as_of else 'forecast'
-                periods[ci] = (d.year, d.month, kind)
+            for ci, mn, _ey in cols:
+                y = yr[ci]
+                if y is None:
+                    continue
+                kind = 'actual' if datetime.date(y, mn, 1) <= as_of else 'forecast'
+                periods[ci] = (y, mn, kind)
+            first_period_col = min(periods) if periods else min(ci for ci, _ in dates)
+            lc = label_col_left_of(rows, ri, first_period_col)
             return {'mode': 'datetime', 'header_row': ri, 'label_col': lc,
                     'section_col': max(0, lc - 1), 'periods': periods}
     # --- year-grouped axis ---
