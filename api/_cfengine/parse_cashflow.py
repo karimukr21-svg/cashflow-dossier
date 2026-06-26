@@ -175,6 +175,24 @@ def month_num(v):
         return None
     return MONTHS.get(v.strip().upper()[:3])
 
+def month_year(v):
+    """(month, explicit_year|None) from a header token: 'JAN' -> (1,None);
+    "JAN'26" -> (1,2026); 'JAN-2025' -> (1,2025). The 2-digit suffix lets a
+    bare-month axis that switches years mid-row (e.g. EPSO: JAN..DEC = prior
+    year, then JAN'26.. = cutover year) be anchored to the real year."""
+    if not isinstance(v, str):
+        return (None, None)
+    s = v.strip().upper()
+    mn = MONTHS.get(s[:3])
+    if mn is None:
+        return (None, None)
+    m = re.search(r"(?:'|\s|-|/)(\d{4}|\d{2})\b", s[3:])
+    yr = None
+    if m:
+        g = m.group(1)
+        yr = int(g) if len(g) == 4 else 2000 + int(g)
+    return (mn, yr)
+
 def yearblock_tokens(v):
     if not isinstance(v, str):
         return None
@@ -246,8 +264,8 @@ def detect_header(rows, as_of):
             continue
         # month sub-row within the next 2 rows
         for mr in range(ri + 1, min(ri + 3, len(rows))):
-            months = [(ci, month_num(v)) for ci, v in enumerate(rows[mr])
-                      if month_num(v) is not None]
+            months = [(ci, *month_year(v)) for ci, v in enumerate(rows[mr])
+                      if month_num(v) is not None]   # [(col, month, explicit_year|None)]
             if len(months) >= 3:
                 lc = find_label_col(row)
                 if find_label_col(rows[mr]) is not None and not is_date(rows[mr][lc] if lc < len(rows[mr]) else None):
@@ -257,11 +275,11 @@ def detect_header(rows, as_of):
                         'section_col': max(0, lc - 1), 'periods': periods}
     # --- bare month-name axis (single year, inferred) ---
     for ri, row in enumerate(rows[:10]):
-        months = [(ci, month_num(v)) for ci, v in enumerate(row)
-                  if month_num(v) is not None]
+        months = [(ci, *month_year(v)) for ci, v in enumerate(row)
+                  if month_num(v) is not None]   # [(col, month, explicit_year|None)]
         if len(months) >= 3:
             lc = find_label_col(row)
-            # infer year from a year token anywhere in the first rows, else as_of year
+            # base year: a 4-digit token in the header rows, else as_of year
             yr = None
             for r in rows[:ri + 1]:
                 for v in r:
@@ -269,14 +287,26 @@ def detect_header(rows, as_of):
                         m = re.search(r'(20\d\d)', v)
                         if m:
                             yr = int(m.group(1))
-            yr = yr or as_of.year
-            periods = {}
+            base = yr or as_of.year
+            # provisional forward-walk (JAN rollover -> +1)
+            prov = {}
             prev = 0
-            y = yr
-            for ci, mn in months:
+            y = base
+            for ci, mn, _ey in months:
                 if mn < prev:
                     y += 1
                 prev = mn
+                prov[ci] = y
+            # if any column carries an EXPLICIT year (e.g. JAN'26), snap the whole
+            # sequence to it — fixes axes that start in a prior year then switch.
+            delta = 0
+            for ci, mn, ey in months:
+                if ey is not None:
+                    delta = ey - prov[ci]
+                    break
+            periods = {}
+            for ci, mn, _ey in months:
+                y = prov[ci] + delta
                 d = datetime.date(y, mn, 1)
                 periods[ci] = (y, mn, 'actual' if d <= as_of else 'forecast')
             return {'mode': 'month-name', 'header_row': ri, 'label_col': lc,
@@ -300,29 +330,37 @@ def _year_grouped_periods(blocks, months, as_of):
     periods = {}
     # group month columns by their owning block to reset the year walk per block
     by_block = defaultdict(list)
-    for ci, mn in months:
+    for ci, mn, ey in months:
         b = None
         for c, yb in starts:
             if c <= ci:
                 b = c
             else:
                 break
-        by_block[b].append((ci, mn))
+        by_block[b].append((ci, mn, ey))
     for bstart, cols in by_block.items():
         yb = dict(starts).get(bstart)
         if yb is None:
             yb = {'kind': 'actual', 'years': []}
         base = (yb['years'][0] if yb['years'] else as_of.year)
+        # provisional forward-walk (JAN rollover -> +1)
+        prov = {}
         prev = 0
         y = base
-        for ci, mn in sorted(cols):
+        for ci, mn, _ey in sorted(cols):
             if prev and mn < prev:
                 y += 1
             prev = mn
-            d = datetime.date(y, mn, 1)
-            # in-sheet block label drives kind; datetime-style as_of as tiebreak
-            kind = yb['kind']
-            periods[ci] = (y, mn, kind)
+            prov[ci] = y
+        # snap the block to any EXPLICIT year token (e.g. JAN'26) so a block that
+        # starts in a prior year then crosses into the cutover year lands right.
+        delta = 0
+        for ci, mn, ey in sorted(cols):
+            if ey is not None:
+                delta = ey - prov[ci]
+                break
+        for ci, mn, _ey in cols:
+            periods[ci] = (prov[ci] + delta, mn, yb['kind'])
     return periods
 
 # ---- line resolution (section + direction state machine) --------------------

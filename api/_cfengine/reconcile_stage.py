@@ -47,7 +47,10 @@ TARGET_SHEET = {
     'UAE_Apr_2026_CashFlow.xlsx':           'CONSOLIDATED AED',
     'Oman_Apr_2026_CashFlow.xlsx':          'CONSOLIDATED OMR',
     'EPSO_Apr_2026_CashFlow.xlsx':          'CONSOLIDATED-USD',
-    'Jordan_Apr_2026_CashFlow.xlsx':        'CONSOLIDATED - USD',
+    # Jordan: the in-sheet "Currency" labels are SWAPPED (the sheet named "- USD"
+    # declares JOD and vice-versa); by the values the JOD-valued sheet is
+    # "CONSOLIDATED -AREA JOD". Store native JOD, so the area sheet is that one.
+    'Jordan_Apr_2026_CashFlow.xlsx':        'CONSOLIDATED -AREA JOD',
     'Astana_Apr_2026_CashFlow.xlsx':        'CONSOLIDATED',
     'BOTSWANA_Apr_2026_CashFlow.xlsx':      'CONSOLIDATED',
     'KAZH_Apr_2026_CashFlow.xlsx':          'CONSOLIDATED',
@@ -74,6 +77,7 @@ CURRENCY_OVERRIDE = {
     'AREA QATAR CASH FLOW ACTUAL APRIL 2026 & FORECAST - MOA.xlsx': 'USD',
     'Qatar_Apr_2026_CashFlow_Updated.xlsx': 'USD',
     'Nigeria_Apr_2026_CashFlow.xlsx': 'USD',
+    'Jordan_Apr_2026_CashFlow.xlsx': 'JOD',   # in-sheet currency labels are swapped
 }
 CCY_TOKENS = ('USD', 'SAR', 'AED', 'QAR', 'EUR', 'EGP', 'KZT', 'OMR', 'NGN',
               'XOF', 'JOD', 'MAD', 'BWP', 'RWF', 'GBP', 'TND', 'DZD')
