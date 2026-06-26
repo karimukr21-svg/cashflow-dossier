@@ -462,6 +462,8 @@
 .cfm-lbl-flash-tick { font-weight: 700; }
 @keyframes cfm-lbl-fade { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
 .cfm-labels .cfm-btn { background: #141414; color: #fff; }
+.cfm-labels .cfm-btn-ghost { background: #fff; color: #64748b; border: 1px solid #e2e8f0; }
+.cfm-labels .cfm-btn-ghost:hover { color: #141414; border-color: #94a3b8; }
 .cfm-labels .cfm-btn:disabled { opacity: 0.45; }
 .cfm-lbl-text {
   border: 1px solid #e2e8f0; border-radius: 6px; padding: 7px 10px; font-size: 12.5px;
@@ -535,33 +537,56 @@
 .cfm-lbl-list-empty { padding: 22px; text-align: center; color: #9ca3af; font-size: 12.5px;
   border: 1px dashed #e2e8f0; border-radius: 8px; background: #fafafa; }
 
-/* mappings list — 3 columns by nature (mirrors the source-sheet grouping:
-   receipts together, payments together, balances together) */
-.cfm-lbl-natcols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; align-items: start; }
-.cfm-lbl-natcol { border: 1px solid #e8ebee; border-radius: 9px; background: #fff; overflow: hidden;
+/* lines & labels manager — sections → canonical line (main label) → local labels */
+.cfm-cl-sections { display: flex; flex-direction: column; gap: 10px; }
+.cfm-cl-section { border: 1px solid #e8ebee; border-radius: 9px; background: #fff; overflow: hidden;
   box-shadow: 0 1px 2px rgba(20,20,20,0.03); }
-.cfm-lbl-natcol-h { display: flex; align-items: center; gap: 8px; padding: 9px 13px;
-  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
-  border-bottom: 1px solid #eef0f2; }
-.cfm-lbl-natcol-h.is-rcpt { background: #f0fdf4; color: #15803d; border-bottom-color: #dcfce7; }
-.cfm-lbl-natcol-h.is-pay { background: #fef2f2; color: #b91c1c; border-bottom-color: #fee2e2; }
-.cfm-lbl-natcol-h.is-bal { background: #f8fafc; color: #475569; border-bottom-color: #eef0f2; }
-.cfm-lbl-natcol-n { margin-left: auto; font-size: 10px; font-weight: 700; letter-spacing: 0;
-  border: 1px solid currentColor; border-radius: 8px; padding: 0 7px; opacity: 0.7; }
-.cfm-lbl-natcol-body { padding: 4px 0 6px; }
-.cfm-lbl-natcol-empty { padding: 16px; text-align: center; color: #cbd5e1; font-size: 13px; }
-.cfm-lbl-natgroup + .cfm-lbl-natgroup { margin-top: 2px; }
-.cfm-lbl-natgroup-h { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
-  color: #94a3b8; padding: 7px 13px 3px; }
-.cfm-lbl-maprow2 { padding: 5px 13px 6px; }
-.cfm-lbl-maprow2:hover { background: #fafbfc; }
-.cfm-lbl-maprow2-top { display: flex; align-items: flex-start; gap: 6px; }
-.cfm-lbl-maprow2 .cfm-lbl-alias { flex: 1; font-weight: 500; color: #141414; font-size: 12px; line-height: 1.35; }
-.cfm-lbl-maprow2 .cfm-lbl-del { color: transparent; margin: 0; flex: none; }
-.cfm-lbl-maprow2:hover .cfm-lbl-del { color: #cbd5e1; }
-.cfm-lbl-maprow2-tgt { display: flex; gap: 5px; color: #64748b; font-size: 11px; line-height: 1.35; margin-top: 1px; }
-.cfm-lbl-maprow2-tgt .cfm-lbl-arrow { color: #cbd5e1; flex: none; }
-@media (max-width: 860px) { .cfm-lbl-natcols { grid-template-columns: 1fr; } }
+.cfm-cl-section-h { display: flex; align-items: center; gap: 8px; padding: 9px 14px;
+  font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.05em;
+  background: #f8fafc; border-bottom: 1px solid #eef0f2; }
+.cfm-cl-section-n { margin-left: auto; font-size: 10px; font-weight: 600; color: #64748b;
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1px 8px; letter-spacing: 0; }
+.cfm-cl-section-body { padding: 2px 0 4px; }
+
+.cfm-cl-line { padding: 9px 14px 10px; }
+.cfm-cl-line + .cfm-cl-line { border-top: 1px solid #f4f6f8; }
+.cfm-cl-line.is-editing { background: #fcfcfd; }
+.cfm-cl-line-main { display: flex; align-items: center; gap: 9px; }
+.cfm-cl-desc { font-weight: 600; color: #141414; font-size: 12.5px; }
+.cfm-cl-edit-btn { background: none; border: none; color: transparent; cursor: pointer;
+  font-size: 12px; padding: 2px 6px; border-radius: 5px; transition: color .12s, background .12s; }
+.cfm-cl-line:hover .cfm-cl-edit-btn { color: #94a3b8; }
+.cfm-cl-edit-btn:hover { color: #e10020 !important; background: #fef2f2; }
+
+/* local labels (aliases) under a line */
+.cfm-cl-aliases { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 7px;
+  padding-left: 1px; }
+.cfm-cl-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: #475569;
+  background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; padding: 2px 5px 2px 8px; }
+.cfm-cl-chip-x { background: none; border: none; color: #b6c0cc; cursor: pointer; font-size: 10px;
+  padding: 0 2px; border-radius: 4px; line-height: 1.4; }
+.cfm-cl-chip-x:hover { color: #e10020; background: #fee2e2; }
+.cfm-cl-noalias { font-size: 11px; color: #cbd5e1; font-style: italic; }
+.cfm-cl-addbtn { background: none; border: 1px dashed #d6dde5; color: #94a3b8; cursor: pointer;
+  font-size: 11px; border-radius: 6px; padding: 2px 9px; transition: color .12s, border-color .12s; }
+.cfm-cl-addbtn:hover { color: #475569; border-color: #94a3b8; }
+.cfm-cl-addchip { display: inline-flex; align-items: center; gap: 5px; }
+.cfm-cl-addchip input { border: 1px solid #cbd5e1; border-radius: 6px; padding: 3px 8px; font-size: 11px;
+  min-width: 160px; outline: none; color: #141414; }
+.cfm-cl-addchip input:focus { border-color: #94a3b8; }
+
+/* edit panel (main label + section + nature) */
+.cfm-cl-edit-desc { border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 9px; font-size: 12.5px;
+  color: #141414; font-weight: 600; flex: 1; min-width: 180px; outline: none; }
+.cfm-cl-edit-desc:focus { border-color: #94a3b8; }
+.cfm-cl-edit-panel { margin-top: 9px; padding: 11px 12px; background: #f8fafc; border: 1px solid #e6eaee;
+  border-radius: 8px; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 11px; }
+.cfm-cl-edit-panel label { display: flex; flex-direction: column; gap: 4px; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.04em; color: #9ca3af; }
+.cfm-cl-edit-panel select { border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 9px; font-size: 12px;
+  background: #fff; color: #141414; min-width: 150px; }
+.cfm-cl-edit-actions { display: flex; gap: 6px; }
+.cfm-cl-edit-note { flex-basis: 100%; font-size: 10.5px; color: #94a3b8; line-height: 1.4; }
 
 .cfm-lbl-cat { margin-bottom: 14px; }
 .cfm-lbl-cat-h { display: flex; align-items: center; gap: 8px; font-size: 11px; text-transform: uppercase;

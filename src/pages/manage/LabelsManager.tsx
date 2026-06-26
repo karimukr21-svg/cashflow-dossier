@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
-// Labels & mappings — manage the chart of cash-flow lines and the aliases that map
-// each area's local label onto a canonical line. Adding an alias here makes the
-// parser recognise that label on the next re-stage (load_ref live-merges aliases).
+// Labels & mappings — the canonical chart manager. Each cf_lines row is a "line"
+// (its description is the MAIN label that shows in reports), grouped into the
+// statement sections the areas use (Operation, New Sales, Interest, …). Under each
+// line are the LOCAL labels (cf_line_aliases) the parser recognises for it.
+//
+// The parser matches on (tight(description), nature, category) for BOTH lines and
+// aliases (load_ref live-merges them). So when a line's main label / section /
+// nature is edited, we PRESERVE its old identity as an alias — files already using
+// the old name keep importing. The alias-matching contract is unchanged.
 type Line = {
   line_code: string; nature: string; category: string
   description: string; sort_order: number; is_active: boolean
@@ -13,13 +19,11 @@ type Alias = {
   alias_category: string; line_code: string; notes: string | null
 }
 
-// nature → small accent (kept restrained, within the CCC slate/crimson language)
+const NATURES = ['Receipts', 'Payments', 'Balance']
 const NATURE_CLASS: Record<string, string> = {
   Receipts: 'is-rcpt', Payments: 'is-pay', Balance: 'is-bal',
 }
 function natureClass(n: string) { return NATURE_CLASS[n] ?? 'is-bal' }
-// the three natures, in cash-flow-statement order (mirrors how the source sheets group)
-const NATURES = ['Receipts', 'Payments', 'Balance']
 
 export default function LabelsManager({ canManage }: { canManage: boolean }) {
   const [lines, setLines] = useState<Line[]>([])
@@ -27,23 +31,26 @@ export default function LabelsManager({ canManage }: { canManage: boolean }) {
   const [pending, setPending] = useState<{ label: string; runs: string[] }[]>([])
   const [q, setQ] = useState('')
   const [catFilter, setCatFilter] = useState<string | null>(null)
-  const [newLabel, setNewLabel] = useState('')
-  const [newCode, setNewCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
-  const [showChart, setShowChart] = useState(false)
   const [loading, setLoading] = useState(true)
+  // per-line interaction state
+  const [editingCode, setEditingCode] = useState<string | null>(null)
+  const [editDesc, setEditDesc] = useState('')
+  const [editCat, setEditCat] = useState('')
+  const [editNat, setEditNat] = useState('')
+  const [addingCode, setAddingCode] = useState<string | null>(null)
+  const [addText, setAddText] = useState('')
 
   const load = async () => {
     const [{ data: L }, { data: A }, { data: R }] = await Promise.all([
-      supabase.from('cf_lines').select('*').order('category').order('sort_order'),
-      supabase.from('cf_line_aliases').select('*').order('alias_category').order('alias_description'),
+      supabase.from('cf_lines').select('*').order('sort_order'),
+      supabase.from('cf_line_aliases').select('*').order('alias_description'),
       supabase.from('cf_import_runs').select('area,recon_summary').eq('status', 'open'),
     ])
     setLines((L as Line[]) ?? [])
     setAliases((A as Alias[]) ?? [])
-    // aggregate the labels that didn't map across all open runs
     const agg: Record<string, Set<string>> = {}
     for (const run of (R as any[]) ?? []) {
       const um = run.recon_summary?.unmatched_labels ?? {}
@@ -51,52 +58,70 @@ export default function LabelsManager({ canManage }: { canManage: boolean }) {
     }
     setPending(Object.entries(agg)
       .map(([label, runs]) => ({ label, runs: [...runs] }))
-      // most-impactful first: labels failing across many areas float to the top
       .sort((a, b) => b.runs.length - a.runs.length || a.label.localeCompare(b.label)))
     setLoading(false)
   }
   useEffect(() => { load() }, [])
 
-  const flashOk = (msg: string) => {
-    setFlash(msg)
-    window.setTimeout(() => setFlash(null), 2600)
-  }
+  const flashOk = (msg: string) => { setFlash(msg); window.setTimeout(() => setFlash(null), 2600) }
 
+  const activeLines = useMemo(
+    () => lines.filter(l => l.is_active).sort((a, b) => a.sort_order - b.sort_order), [lines])
   const lineByCode = useMemo(
-    () => Object.fromEntries(lines.map(l => [l.line_code, l])) as Record<string, Line>,
-    [lines])
-
-  const linesByCat = useMemo(() => {
-    const m: Record<string, Line[]> = {}
-    for (const l of lines) if (l.is_active) (m[l.category] ??= []).push(l)
+    () => Object.fromEntries(lines.map(l => [l.line_code, l])) as Record<string, Line>, [lines])
+  const aliasesByCode = useMemo(() => {
+    const m: Record<string, Alias[]> = {}
+    for (const a of aliases) (m[a.line_code] ??= []).push(a)
     return m
-  }, [lines])
-  const activeLines = useMemo(() => lines.filter(l => l.is_active), [lines])
+  }, [aliases])
 
-  // already-mapped labels (lower-cased) → for inline duplicate validation on the add form
-  const aliasKeys = useMemo(
-    () => new Set(aliases.map(a => a.alias_description.toLowerCase())),
-    [aliases])
-  const dupOnAdd = newLabel.trim() && aliasKeys.has(newLabel.trim().toLowerCase())
+  // sections in statement order (first appearance by sort_order)
+  const sections = useMemo(() => {
+    const order: string[] = []
+    const map: Record<string, Line[]> = {}
+    for (const l of activeLines) {
+      if (!map[l.category]) { map[l.category] = []; order.push(l.category) }
+      map[l.category].push(l)
+    }
+    return order.map(cat => ({ cat, lines: map[cat] }))
+  }, [activeLines])
+  const categoriesList = useMemo(() => sections.map(s => s.cat), [sections])
 
-  const addAlias = async (label: string, code: string) => {
-    const lbl = label.trim()
-    const line = lineByCode[code]
-    if (!lbl || !line) return
+  // search + section filter
+  const ql = q.toLowerCase()
+  const lineMatches = (l: Line) => {
+    if (!ql) return true
+    if (l.description.toLowerCase().includes(ql) || l.line_code.toLowerCase().includes(ql)) return true
+    return (aliasesByCode[l.line_code] ?? []).some(a => a.alias_description.toLowerCase().includes(ql))
+  }
+  const visibleSections = useMemo(() => sections
+    .filter(s => !catFilter || s.cat === catFilter)
+    .map(s => ({ cat: s.cat, lines: s.lines.filter(lineMatches) }))
+    .filter(s => s.lines.length > 0),
+    [sections, catFilter, ql, aliasesByCode])
+  const visibleCount = visibleSections.reduce((n, s) => n + s.lines.length, 0)
+
+  // ── writes ──
+  const insertAlias = async (text: string, line?: Line): Promise<boolean> => {
+    const lbl = text.trim()
+    if (!lbl || !line) return false
     setBusy(true); setErr(null)
     const { error } = await supabase.from('cf_line_aliases').insert({
-      alias_description: lbl, alias_nature: line.nature,
-      alias_category: line.category, line_code: code, notes: 'added via Labels page',
+      alias_description: lbl, alias_nature: line.nature, alias_category: line.category,
+      line_code: line.line_code, notes: 'added via Labels page',
     })
     setBusy(false)
-    if (error) { setErr(error.message); return }
-    setNewLabel(''); setNewCode('')
-    flashOk(`Mapped "${lbl}" → ${line.description}`)
-    load()
+    if (error) {
+      setErr(error.code === '23505'
+        ? `"${lbl}" is already a label (it may point to a different line).` : error.message)
+      return false
+    }
+    flashOk(`Added label "${lbl}" → ${line.description}`)
+    load(); return true
   }
 
   const delAlias = async (a: Alias) => {
-    if (!confirm(`Delete mapping "${a.alias_description}" → ${a.line_code}?`)) return
+    if (!confirm(`Remove the label "${a.alias_description}"?`)) return
     setErr(null)
     const { error } = await supabase.from('cf_line_aliases').delete()
       .eq('alias_description', a.alias_description)
@@ -106,41 +131,56 @@ export default function LabelsManager({ canManage }: { canManage: boolean }) {
     load()
   }
 
-  const ql = q.toLowerCase()
-  const filtered = aliases.filter(a => {
-    if (catFilter && a.alias_category !== catFilter) return false
-    return !ql || a.alias_description.toLowerCase().includes(ql) ||
-      a.line_code.toLowerCase().includes(ql) ||
-      (lineByCode[a.line_code]?.description ?? '').toLowerCase().includes(ql)
-  })
-
-  // statement-ish category order, derived from the chart's sort_order
-  const catOrder = useMemo(() => {
-    const min: Record<string, number> = {}
-    for (const l of lines) min[l.category] = Math.min(min[l.category] ?? Infinity, l.sort_order)
-    return min
-  }, [lines])
-  const groupByCat = (arr: Alias[]) => {
-    const m: Record<string, Alias[]> = {}
-    for (const a of arr) (m[a.alias_category] ??= []).push(a)
-    return Object.entries(m).sort((x, y) =>
-      (catOrder[x[0]] ?? 999) - (catOrder[y[0]] ?? 999) || x[0].localeCompare(y[0]))
+  const startEdit = (l: Line) => {
+    setEditingCode(l.line_code); setEditDesc(l.description)
+    setEditCat(l.category); setEditNat(l.nature); setAddingCode(null)
   }
 
-  // categories present in the alias set, for the filter chips (with counts)
-  const aliasCats = useMemo(() => {
-    const m: Record<string, number> = {}
-    for (const a of aliases) m[a.alias_category] = (m[a.alias_category] ?? 0) + 1
-    return Object.entries(m).sort((a, b) => a[0].localeCompare(b[0]))
-  }, [aliases])
+  const saveLineEdit = async (line: Line) => {
+    const desc = editDesc.trim()
+    if (!desc) return
+    const changed = desc !== line.description || editCat !== line.category || editNat !== line.nature
+    if (!changed) { setEditingCode(null); return }
+    setBusy(true); setErr(null)
+    // preserve the line's OLD identity as a recognised label, so files using the
+    // old name/section keep importing (parser matches on desc+nature+category)
+    await supabase.from('cf_line_aliases').upsert({
+      alias_description: line.description, alias_nature: line.nature,
+      alias_category: line.category, line_code: line.line_code, notes: 'kept on edit',
+    }, { onConflict: 'alias_description,alias_nature,alias_category', ignoreDuplicates: true })
+    // if the section changed, append the line to the end of the target section's order
+    let sort_order = line.sort_order
+    if (editCat !== line.category) {
+      const inTarget = activeLines.filter(l => l.category === editCat && l.line_code !== line.line_code)
+      if (inTarget.length) sort_order = Math.max(...inTarget.map(l => l.sort_order)) + 1
+    }
+    const { error } = await supabase.from('cf_lines')
+      .update({ description: desc, category: editCat, nature: editNat, sort_order })
+      .eq('line_code', line.line_code)
+    setBusy(false)
+    if (error) {
+      setErr(error.code === '23505'
+        ? `A line "${desc}" already exists in ${editCat} · ${editNat}.` : error.message)
+      return
+    }
+    setEditingCode(null)
+    flashOk(`Updated "${desc}"`)
+    load()
+  }
+
+  const doAddLabel = async (line: Line) => {
+    const ok = await insertAlias(addText, line)
+    if (ok) { setAddingCode(null); setAddText('') }
+  }
 
   const multiArea = pending.filter(p => p.runs.length > 1).length
 
   return (
     <div className="cfm-labels">
       <p className="cfm-lbl-intro">
-        Map an area's local label onto a canonical line. New mappings apply the next
-        time that area is re-staged.
+        Every canonical line, the section it sits in, and the local labels the parser
+        recognises for it. Edit a line's main label or move it to another section, and
+        add or remove its labels. Changes apply the next time an area is re-staged.
       </p>
       {err && <div className="cfm-lbl-err">{err}</div>}
       {flash && <div className="cfm-lbl-flash"><span className="cfm-lbl-flash-tick">✓</span>{flash}</div>}
@@ -153,9 +193,7 @@ export default function LabelsManager({ canManage }: { canManage: boolean }) {
             {!loading && pending.length > 0 && (
               <>
                 <span className="cfm-lbl-pending-count">{pending.length}</span>
-                {multiArea > 0 && (
-                  <span className="cfm-lbl-pending-sub">{multiArea} across multiple areas</span>
-                )}
+                {multiArea > 0 && <span className="cfm-lbl-pending-sub">{multiArea} across multiple areas</span>}
               </>
             )}
           </header>
@@ -170,136 +208,127 @@ export default function LabelsManager({ canManage }: { canManage: boolean }) {
             <div className="cfm-lbl-pending-list">
               {pending.map(p => (
                 <PendingRow key={p.label} label={p.label} areas={p.runs}
-                  lines={activeLines} onAdd={addAlias} busy={busy} />
+                  lines={activeLines} onAdd={(label, code) => insertAlias(label, lineByCode[code])} busy={busy} />
               ))}
             </div>
           )}
         </section>
       )}
 
-      {/* ── add a mapping manually ── */}
-      {canManage && (
-        <section className="cfm-lbl-add">
-          <div className="cfm-lbl-add-head">Add a mapping</div>
-          <div className="cfm-lbl-add-row">
-            <label className="cfm-lbl-fld cfm-lbl-fld-grow">
-              <span>Local label</span>
-              <input className="cfm-lbl-text" placeholder="Exactly as it appears in the file"
-                value={newLabel} onChange={e => setNewLabel(e.target.value)} />
-            </label>
-            <span className="cfm-lbl-add-to">→</span>
-            <label className="cfm-lbl-fld">
-              <span>Canonical line</span>
-              <LinePicker lines={activeLines} value={newCode} onChange={setNewCode} />
-            </label>
-            <button className="cfm-btn cfm-lbl-add-btn"
-              disabled={busy || !newLabel.trim() || !newCode || !!dupOnAdd}
-              onClick={() => addAlias(newLabel, newCode)}>Add mapping</button>
-          </div>
-          {dupOnAdd && (
-            <div className="cfm-lbl-add-warn">
-              "{newLabel.trim()}" is already mapped — edit or delete it in the list below.
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* ── existing mappings ── */}
+      {/* ── the canonical chart: sections → lines → labels ── */}
       <section className="cfm-lbl-list">
         <div className="cfm-lbl-list-head">
           <h4 className="cfm-lbl-list-title">
-            Mappings <span className="cfm-lbl-count">{filtered.length}{filtered.length !== aliases.length ? ` of ${aliases.length}` : ''}</span>
+            Lines &amp; labels
+            <span className="cfm-lbl-count">{visibleCount}{visibleCount !== activeLines.length ? ` of ${activeLines.length}` : ''}</span>
           </h4>
           <div className="cfm-lbl-search">
             <span className="cfm-lbl-search-ico">⌕</span>
-            <input placeholder="Search label, line or code…" value={q} onChange={e => setQ(e.target.value)} />
+            <input placeholder="Search a line or local label…" value={q} onChange={e => setQ(e.target.value)} />
             {q && <button className="cfm-lbl-search-x" onClick={() => setQ('')} title="Clear">✕</button>}
           </div>
         </div>
 
-        {aliasCats.length > 1 && (
-          <div className="cfm-lbl-chips">
-            <button className={`cfm-lbl-chip ${!catFilter ? 'is-active' : ''}`}
-              onClick={() => setCatFilter(null)}>All</button>
-            {aliasCats.map(([cat, n]) => (
-              <button key={cat} className={`cfm-lbl-chip ${catFilter === cat ? 'is-active' : ''}`}
-                onClick={() => setCatFilter(catFilter === cat ? null : cat)}>
-                {cat}<span className="cfm-lbl-chip-n">{n}</span>
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="cfm-lbl-chips">
+          <button className={`cfm-lbl-chip ${!catFilter ? 'is-active' : ''}`}
+            onClick={() => setCatFilter(null)}>All</button>
+          {sections.map(s => (
+            <button key={s.cat} className={`cfm-lbl-chip ${catFilter === s.cat ? 'is-active' : ''}`}
+              onClick={() => setCatFilter(catFilter === s.cat ? null : s.cat)}>
+              {s.cat}<span className="cfm-lbl-chip-n">{s.lines.length}</span>
+            </button>
+          ))}
+        </div>
 
-        {filtered.length === 0 ? (
-          <div className="cfm-lbl-list-empty">
-            {aliases.length === 0 ? 'No mappings yet.' : 'No mappings match your search.'}
-          </div>
+        {visibleSections.length === 0 ? (
+          <div className="cfm-lbl-list-empty">No lines match your search.</div>
         ) : (
-          <div className="cfm-lbl-natcols">
-            {NATURES.map(nat => {
-              const items = filtered.filter(a => a.alias_nature === nat)
-              return (
-                <div key={nat} className="cfm-lbl-natcol">
-                  <div className={`cfm-lbl-natcol-h ${natureClass(nat)}`}>
-                    <span className="cfm-lbl-natcol-name">{nat}</span>
-                    <span className="cfm-lbl-natcol-n">{items.length}</span>
-                  </div>
-                  <div className="cfm-lbl-natcol-body">
-                    {items.length === 0 ? (
-                      <div className="cfm-lbl-natcol-empty">—</div>
-                    ) : (
-                      groupByCat(items).map(([cat, as]) => (
-                        <div key={cat} className="cfm-lbl-natgroup">
-                          <div className="cfm-lbl-natgroup-h">{cat}</div>
-                          {as.map(a => {
-                            const line = lineByCode[a.line_code]
-                            return (
-                              <div key={a.alias_category + a.alias_nature + a.alias_description}
-                                className="cfm-lbl-maprow2">
-                                <div className="cfm-lbl-maprow2-top">
-                                  <span className="cfm-lbl-alias">{a.alias_description}</span>
+          <div className="cfm-cl-sections">
+            {visibleSections.map(s => (
+              <div key={s.cat} className="cfm-cl-section">
+                <div className="cfm-cl-section-h">
+                  <span>{s.cat}</span>
+                  <span className="cfm-cl-section-n">{s.lines.length}</span>
+                </div>
+                <div className="cfm-cl-section-body">
+                  {s.lines.map(line => {
+                    const code = line.line_code
+                    const lineAliases = aliasesByCode[code] ?? []
+                    const isEditing = editingCode === code
+                    return (
+                      <div key={code} className={`cfm-cl-line ${isEditing ? 'is-editing' : ''}`}>
+                        {isEditing ? (
+                          <>
+                            <div className="cfm-cl-line-main">
+                              <input className="cfm-cl-edit-desc" autoFocus value={editDesc}
+                                onChange={e => setEditDesc(e.target.value)} placeholder="Main label"
+                                onKeyDown={e => { if (e.key === 'Escape') setEditingCode(null) }} />
+                            </div>
+                            <div className="cfm-cl-edit-panel">
+                              <label>Section
+                                <select value={editCat} onChange={e => setEditCat(e.target.value)}>
+                                  {categoriesList.map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                              </label>
+                              <label>Nature
+                                <select value={editNat} onChange={e => setEditNat(e.target.value)}>
+                                  {NATURES.map(n => <option key={n} value={n}>{n}</option>)}
+                                </select>
+                              </label>
+                              <div className="cfm-cl-edit-actions">
+                                <button className="cfm-btn cfm-btn-sm" disabled={busy || !editDesc.trim()}
+                                  onClick={() => saveLineEdit(line)}>Save</button>
+                                <button className="cfm-btn cfm-btn-ghost cfm-btn-sm"
+                                  onClick={() => setEditingCode(null)}>Cancel</button>
+                              </div>
+                              <div className="cfm-cl-edit-note">
+                                The old name is kept as a recognised label, so files already using it still import.
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="cfm-cl-line-main">
+                              <span className={`cfm-lbl-nature ${natureClass(line.nature)}`}>{line.nature}</span>
+                              <span className="cfm-cl-desc">{line.description}</span>
+                              {canManage && (
+                                <button className="cfm-cl-edit-btn" title="Edit main label & section"
+                                  onClick={() => startEdit(line)}>✎</button>
+                              )}
+                            </div>
+                            <div className="cfm-cl-aliases">
+                              {lineAliases.map(a => (
+                                <span key={a.alias_category + a.alias_nature + a.alias_description} className="cfm-cl-chip">
+                                  {a.alias_description}
                                   {canManage && (
-                                    <button className="cfm-lbl-del" title="Delete mapping"
+                                    <button className="cfm-cl-chip-x" title="Remove label"
                                       onClick={() => delAlias(a)}>✕</button>
                                   )}
-                                </div>
-                                <div className="cfm-lbl-maprow2-tgt">
-                                  <span className="cfm-lbl-arrow">→</span>
-                                  {line?.description ?? a.line_code}
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      ))
-                    )}
-                  </div>
+                                </span>
+                              ))}
+                              {lineAliases.length === 0 && <span className="cfm-cl-noalias">no local labels yet</span>}
+                              {canManage && (addingCode === code ? (
+                                <span className="cfm-cl-addchip">
+                                  <input autoFocus value={addText} placeholder="local label…"
+                                    onChange={e => setAddText(e.target.value)}
+                                    onKeyDown={e => {
+                                      if (e.key === 'Enter') doAddLabel(line)
+                                      if (e.key === 'Escape') { setAddingCode(null); setAddText('') }
+                                    }} />
+                                  <button className="cfm-btn cfm-btn-sm" disabled={busy || !addText.trim()}
+                                    onClick={() => doAddLabel(line)}>Add</button>
+                                </span>
+                              ) : (
+                                <button className="cfm-cl-addbtn"
+                                  onClick={() => { setAddingCode(code); setAddText('') }}>+ label</button>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
-              )
-            })}
-          </div>
-        )}
-      </section>
-
-      {/* ── chart of lines reference ── */}
-      <section className="cfm-lbl-chart">
-        <button className="cfm-lbl-chart-toggle" onClick={() => setShowChart(s => !s)}>
-          <span className="cfm-sr-caret">{showChart ? '▾' : '▸'}</span>
-          Chart of lines
-          <span className="cfm-lbl-chart-n">{activeLines.length}</span>
-        </button>
-        {showChart && (
-          <div className="cfm-lbl-chart-body">
-            {Object.entries(linesByCat).map(([cat, ls]) => (
-              <div key={cat} className="cfm-lbl-cat">
-                <div className="cfm-lbl-cat-h">{cat}<span className="cfm-lbl-cat-n">{ls.length}</span></div>
-                {ls.map(l => (
-                  <div key={l.line_code} className="cfm-lbl-row cfm-lbl-row-ref">
-                    <span className={`cfm-lbl-nature ${natureClass(l.nature)}`}>{l.nature}</span>
-                    <span className="cfm-lbl-ref-desc">{l.description}</span>
-                    <span className="cfm-lbl-code">{l.line_code}</span>
-                  </div>
-                ))}
               </div>
             ))}
           </div>
@@ -332,7 +361,7 @@ function PendingRow({ label, areas, lines, onAdd, busy }: {
   )
 }
 
-// ── searchable canonical-line picker (replaces the long native <select>) ──
+// ── searchable canonical-line picker (used by the triage queue) ──
 function LinePicker({ lines, value, onChange, compact }: {
   lines: Line[]; value: string; onChange: (v: string) => void; compact?: boolean
 }) {
@@ -377,7 +406,7 @@ function LinePicker({ lines, value, onChange, compact }: {
         {sel ? (
           <span className="cfm-lpick-val">
             <span className={`cfm-lbl-nature ${natureClass(sel.nature)}`}>{sel.nature}</span>
-            <span className="cfm-lpick-desc">{sel.description}</span>
+            <span className="cfm-lpick-desc">{sel.category} · {sel.description}</span>
           </span>
         ) : <span className="cfm-lpick-ph">map to line…</span>}
         <span className="cfm-lpick-caret">▾</span>
