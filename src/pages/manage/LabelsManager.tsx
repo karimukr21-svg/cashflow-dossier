@@ -227,26 +227,35 @@ export default function LabelsManager({ canManage }: { canManage: boolean }) {
             {aliases.length === 0 ? 'No mappings yet.' : 'No mappings match your search.'}
           </div>
         ) : (
-          Object.entries(byCat).map(([cat, as]) => (
-            <div key={cat} className="cfm-lbl-cat">
-              <div className="cfm-lbl-cat-h">{cat}<span className="cfm-lbl-cat-n">{as.length}</span></div>
-              {as.map(a => {
-                const line = lineByCode[a.line_code]
-                return (
-                  <div key={a.alias_category + a.alias_nature + a.alias_description} className="cfm-lbl-row">
-                    <span className="cfm-lbl-alias">{a.alias_description}</span>
-                    <span className="cfm-lbl-arrow">→</span>
-                    <span className={`cfm-lbl-nature ${natureClass(a.alias_nature)}`}>{a.alias_nature}</span>
-                    <span className="cfm-lbl-target">{line?.description ?? a.line_code}</span>
-                    {canManage && (
-                      <button className="cfm-lbl-del" title="Delete mapping"
-                        onClick={() => delAlias(a)}>✕</button>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          ))
+          <div className="cfm-lbl-groups">
+            {Object.entries(byCat).map(([cat, as]) => (
+              <div key={cat} className="cfm-lbl-group">
+                <div className="cfm-lbl-group-h">
+                  <span className="cfm-lbl-group-name">{cat}</span>
+                  <span className="cfm-lbl-group-n">{as.length}</span>
+                </div>
+                <div className="cfm-lbl-group-body">
+                  {as.map(a => {
+                    const line = lineByCode[a.line_code]
+                    return (
+                      <div key={a.alias_category + a.alias_nature + a.alias_description} className="cfm-lbl-maprow">
+                        <span className="cfm-lbl-alias">{a.alias_description}</span>
+                        <span className="cfm-lbl-tgt">
+                          <span className="cfm-lbl-arrow">→</span>
+                          <span className={`cfm-lbl-nature ${natureClass(a.alias_nature)}`}>{a.alias_nature}</span>
+                          <span className="cfm-lbl-target">{line?.description ?? a.line_code}</span>
+                        </span>
+                        {canManage && (
+                          <button className="cfm-lbl-del" title="Delete mapping"
+                            onClick={() => delAlias(a)}>✕</button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </section>
 
