@@ -46,7 +46,7 @@ TARGET_SHEET = {
     'Saudi_Apr_2026_CashFlow.xlsx':         'SAR-CONSOLIDATED',
     'UAE_Apr_2026_CashFlow.xlsx':           'CONSOLIDATED AED',
     'Oman_Apr_2026_CashFlow.xlsx':          'CONSOLIDATED OMR',
-    'EPSO_Apr_2026_CashFlow.xlsx':          'CONSOLIDATED-USD',
+    'EPSO_Apr_2026_CashFlow.xlsx':          'CONSOLIDATED-AED',   # native AED, not the USD restatement
     # Jordan: the in-sheet "Currency" labels are SWAPPED (the sheet named "- USD"
     # declares JOD and vice-versa); by the values the JOD-valued sheet is
     # "CONSOLIDATED -AREA JOD". Store native JOD, so the area sheet is that one.
@@ -78,6 +78,9 @@ CURRENCY_OVERRIDE = {
     'Qatar_Apr_2026_CashFlow_Updated.xlsx': 'USD',
     'Nigeria_Apr_2026_CashFlow.xlsx': 'USD',
     'Jordan_Apr_2026_CashFlow.xlsx': 'JOD',   # in-sheet currency labels are swapped
+    'EPSO_Apr_2026_CashFlow.xlsx': 'AED',     # taking the native AED consolidated sheet
+    'Iraq_Apr_2026_CashFlow.xlsx': 'USD',     # single CONSOLIDATED sheet, USD '000
+    'CCUW_Apr_2026_CashFlow.xlsx': 'USD',     # no in-sheet currency header; area is USD
 }
 CCY_TOKENS = ('USD', 'SAR', 'AED', 'QAR', 'EUR', 'EGP', 'KZT', 'OMR', 'NGN',
               'XOF', 'JOD', 'MAD', 'BWP', 'RWF', 'GBP', 'TND', 'DZD')
@@ -90,6 +93,12 @@ EXCLUDE_SHEETS = {
     'UAE_Apr_2026_CashFlow.xlsx': {'UAE'},
     # transfer/receipts helper tabs that would double-count the area total
     'Oman_Apr_2026_CashFlow.xlsx': {'TRANSFER WITHIN GROUP OMAN', 'Receipts - Completed'},
+    # Rwanda: take ONLY the 'RWANDA CONSOLIDATED - CCC share' sheet (it already
+    # combines the RWANDA USD + RWANDA RWF entities into the CCC share, USD '000).
+    # Exclude the project sheets so the run falls to single-area on that consolidated
+    # sheet (the file also bundles unrelated areas — Botswana/Nigeria/Grenada/Zambia).
+    'Rwanda_NBIA_Apr_2026_CashFlow.xlsx': {'RWANDA USD', 'RWANDA RWF', 'IVC',
+                                           'BOTSWANA', 'NIGERIA', 'GRENADA', 'ZAMBIA'},
 }
 
 # Single-entity areas: no per-project decomposition exists, only an area cash flow.
