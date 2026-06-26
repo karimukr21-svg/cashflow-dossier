@@ -23,7 +23,10 @@ const NATURES = ['Receipts', 'Payments', 'Balance']
 const NATURE_CLASS: Record<string, string> = {
   Receipts: 'is-rcpt', Payments: 'is-pay', Balance: 'is-bal',
 }
+const SIGN: Record<string, string> = { Receipts: 'positive', Payments: 'negative', Balance: 'signed' }
 function natureClass(n: string) { return NATURE_CLASS[n] ?? 'is-bal' }
+const slug = (s: string) =>
+  s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 32) || 'line'
 
 export default function LabelsManager({ canManage }: { canManage: boolean }) {
   const [lines, setLines] = useState<Line[]>([])
@@ -35,11 +38,12 @@ export default function LabelsManager({ canManage }: { canManage: boolean }) {
   const [err, setErr] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  // per-line interaction state
-  const [editingCode, setEditingCode] = useState<string | null>(null)
-  const [editDesc, setEditDesc] = useState('')
-  const [editCat, setEditCat] = useState('')
-  const [editNat, setEditNat] = useState('')
+  // modal (edit / create a line) + its fields
+  const [modal, setModal] = useState<null | { mode: 'create' | 'edit'; line?: Line }>(null)
+  const [fDesc, setFDesc] = useState('')
+  const [fCat, setFCat] = useState('')
+  const [fNat, setFNat] = useState('')
+  // per-line add-label state
   const [addingCode, setAddingCode] = useState<string | null>(null)
   const [addText, setAddText] = useState('')
 
@@ -131,41 +135,72 @@ export default function LabelsManager({ canManage }: { canManage: boolean }) {
     load()
   }
 
-  const startEdit = (l: Line) => {
-    setEditingCode(l.line_code); setEditDesc(l.description)
-    setEditCat(l.category); setEditNat(l.nature); setAddingCode(null)
+  const openEdit = (l: Line) => {
+    setFDesc(l.description); setFCat(l.category); setFNat(l.nature)
+    setModal({ mode: 'edit', line: l }); setAddingCode(null)
   }
+  const openCreate = () => {
+    setFDesc(''); setFCat(categoriesList[0] ?? 'Operation'); setFNat('Receipts')
+    setModal({ mode: 'create' }); setAddingCode(null)
+  }
+  const closeModal = () => setModal(null)
 
-  const saveLineEdit = async (line: Line) => {
-    const desc = editDesc.trim()
-    if (!desc) return
-    const changed = desc !== line.description || editCat !== line.category || editNat !== line.nature
-    if (!changed) { setEditingCode(null); return }
+  const saveLineEdit = async (line: Line): Promise<boolean> => {
+    const desc = fDesc.trim()
+    if (!desc) return false
+    const changed = desc !== line.description || fCat !== line.category || fNat !== line.nature
+    if (!changed) return true
     setBusy(true); setErr(null)
-    // preserve the line's OLD identity as a recognised label, so files using the
-    // old name/section keep importing (parser matches on desc+nature+category)
+    // preserve the line's OLD identity as a recognised label so existing files import
     await supabase.from('cf_line_aliases').upsert({
       alias_description: line.description, alias_nature: line.nature,
       alias_category: line.category, line_code: line.line_code, notes: 'kept on edit',
     }, { onConflict: 'alias_description,alias_nature,alias_category', ignoreDuplicates: true })
-    // if the section changed, append the line to the end of the target section's order
     let sort_order = line.sort_order
-    if (editCat !== line.category) {
-      const inTarget = activeLines.filter(l => l.category === editCat && l.line_code !== line.line_code)
+    if (fCat !== line.category) {
+      const inTarget = activeLines.filter(l => l.category === fCat && l.line_code !== line.line_code)
       if (inTarget.length) sort_order = Math.max(...inTarget.map(l => l.sort_order)) + 1
     }
     const { error } = await supabase.from('cf_lines')
-      .update({ description: desc, category: editCat, nature: editNat, sort_order })
+      .update({ description: desc, category: fCat, nature: fNat, sign_convention: SIGN[fNat] ?? 'signed', sort_order })
       .eq('line_code', line.line_code)
     setBusy(false)
     if (error) {
       setErr(error.code === '23505'
-        ? `A line "${desc}" already exists in ${editCat} · ${editNat}.` : error.message)
-      return
+        ? `A line "${desc}" already exists in ${fCat} · ${fNat}.` : error.message)
+      return false
     }
-    setEditingCode(null)
     flashOk(`Updated "${desc}"`)
-    load()
+    load(); return true
+  }
+
+  const createLine = async (): Promise<boolean> => {
+    const desc = fDesc.trim()
+    if (!desc) return false
+    setBusy(true); setErr(null)
+    const inTarget = activeLines.filter(l => l.category === fCat)
+    const sort_order = (inTarget.length
+      ? Math.max(...inTarget.map(l => l.sort_order))
+      : Math.max(0, ...activeLines.map(l => l.sort_order))) + 1
+    const line_code = `cust_${slug(desc)}_${Math.random().toString(36).slice(2, 6)}`
+    const { error } = await supabase.from('cf_lines').insert({
+      line_code, description: desc, category: fCat, nature: fNat,
+      sign_convention: SIGN[fNat] ?? 'signed', sort_order, is_active: true,
+    })
+    setBusy(false)
+    if (error) {
+      setErr(error.code === '23505'
+        ? `A line "${desc}" already exists in ${fCat} · ${fNat}.` : error.message)
+      return false
+    }
+    flashOk(`Created "${desc}" in ${fCat}`)
+    load(); return true
+  }
+
+  const saveModal = async () => {
+    const ok = modal?.mode === 'create' ? await createLine()
+      : modal?.line ? await saveLineEdit(modal.line) : false
+    if (ok) closeModal()
   }
 
   const doAddLabel = async (line: Line) => {
@@ -179,13 +214,14 @@ export default function LabelsManager({ canManage }: { canManage: boolean }) {
     <div className="cfm-labels">
       <p className="cfm-lbl-intro">
         Every canonical line, the section it sits in, and the local labels the parser
-        recognises for it. Edit a line's main label or move it to another section, and
-        add or remove its labels. Changes apply the next time an area is re-staged.
+        recognises for it. Edit a line's main label or move it to another section, add or
+        remove its labels, or create a new line to group labels under. Changes apply the
+        next time an area is re-staged.
       </p>
       {err && <div className="cfm-lbl-err">{err}</div>}
       {flash && <div className="cfm-lbl-flash"><span className="cfm-lbl-flash-tick">✓</span>{flash}</div>}
 
-      {/* ── triage queue: labels that didn't map across open runs ── */}
+      {/* ── triage queue ── */}
       {canManage && (
         <section className="cfm-lbl-pending">
           <header className="cfm-lbl-pending-head">
@@ -215,13 +251,16 @@ export default function LabelsManager({ canManage }: { canManage: boolean }) {
         </section>
       )}
 
-      {/* ── the canonical chart: sections → lines → labels ── */}
+      {/* ── the canonical chart: sections (as columns) → lines → labels ── */}
       <section className="cfm-lbl-list">
         <div className="cfm-lbl-list-head">
-          <h4 className="cfm-lbl-list-title">
-            Lines &amp; labels
-            <span className="cfm-lbl-count">{visibleCount}{visibleCount !== activeLines.length ? ` of ${activeLines.length}` : ''}</span>
-          </h4>
+          <div className="cfm-lbl-list-head-l">
+            <h4 className="cfm-lbl-list-title">
+              Lines &amp; labels
+              <span className="cfm-lbl-count">{visibleCount}{visibleCount !== activeLines.length ? ` of ${activeLines.length}` : ''}</span>
+            </h4>
+            {canManage && <button className="cfm-cl-newbtn" onClick={openCreate}>+ New line</button>}
+          </div>
           <div className="cfm-lbl-search">
             <span className="cfm-lbl-search-ico">⌕</span>
             <input placeholder="Search a line or local label…" value={q} onChange={e => setQ(e.target.value)} />
@@ -254,77 +293,44 @@ export default function LabelsManager({ canManage }: { canManage: boolean }) {
                   {s.lines.map(line => {
                     const code = line.line_code
                     const lineAliases = aliasesByCode[code] ?? []
-                    const isEditing = editingCode === code
                     return (
-                      <div key={code} className={`cfm-cl-line ${isEditing ? 'is-editing' : ''}`}>
-                        {isEditing ? (
-                          <>
-                            <div className="cfm-cl-line-main">
-                              <input className="cfm-cl-edit-desc" autoFocus value={editDesc}
-                                onChange={e => setEditDesc(e.target.value)} placeholder="Main label"
-                                onKeyDown={e => { if (e.key === 'Escape') setEditingCode(null) }} />
-                            </div>
-                            <div className="cfm-cl-edit-panel">
-                              <label>Section
-                                <select value={editCat} onChange={e => setEditCat(e.target.value)}>
-                                  {categoriesList.map(c => <option key={c} value={c}>{c}</option>)}
-                                </select>
-                              </label>
-                              <label>Nature
-                                <select value={editNat} onChange={e => setEditNat(e.target.value)}>
-                                  {NATURES.map(n => <option key={n} value={n}>{n}</option>)}
-                                </select>
-                              </label>
-                              <div className="cfm-cl-edit-actions">
-                                <button className="cfm-btn cfm-btn-sm" disabled={busy || !editDesc.trim()}
-                                  onClick={() => saveLineEdit(line)}>Save</button>
-                                <button className="cfm-btn cfm-btn-ghost cfm-btn-sm"
-                                  onClick={() => setEditingCode(null)}>Cancel</button>
-                              </div>
-                              <div className="cfm-cl-edit-note">
-                                The old name is kept as a recognised label, so files already using it still import.
-                              </div>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="cfm-cl-line-main">
-                              <span className={`cfm-lbl-nature ${natureClass(line.nature)}`}>{line.nature}</span>
-                              <span className="cfm-cl-desc">{line.description}</span>
+                      <div key={code} className="cfm-cl-line">
+                        <div className="cfm-cl-line-main">
+                          <span className={`cfm-lbl-nature ${natureClass(line.nature)}`}>{line.nature}</span>
+                          <span className="cfm-cl-desc">{line.description}</span>
+                          {code.startsWith('cust_') && <span className="cfm-cl-tag">new</span>}
+                          {canManage && (
+                            <button className="cfm-cl-edit-btn" title="Edit main label & section"
+                              onClick={() => openEdit(line)}>✎</button>
+                          )}
+                        </div>
+                        <div className="cfm-cl-aliases">
+                          {lineAliases.map(a => (
+                            <span key={a.alias_category + a.alias_nature + a.alias_description} className="cfm-cl-chip">
+                              {a.alias_description}
                               {canManage && (
-                                <button className="cfm-cl-edit-btn" title="Edit main label & section"
-                                  onClick={() => startEdit(line)}>✎</button>
+                                <button className="cfm-cl-chip-x" title="Remove label"
+                                  onClick={() => delAlias(a)}>✕</button>
                               )}
-                            </div>
-                            <div className="cfm-cl-aliases">
-                              {lineAliases.map(a => (
-                                <span key={a.alias_category + a.alias_nature + a.alias_description} className="cfm-cl-chip">
-                                  {a.alias_description}
-                                  {canManage && (
-                                    <button className="cfm-cl-chip-x" title="Remove label"
-                                      onClick={() => delAlias(a)}>✕</button>
-                                  )}
-                                </span>
-                              ))}
-                              {lineAliases.length === 0 && <span className="cfm-cl-noalias">no local labels yet</span>}
-                              {canManage && (addingCode === code ? (
-                                <span className="cfm-cl-addchip">
-                                  <input autoFocus value={addText} placeholder="local label…"
-                                    onChange={e => setAddText(e.target.value)}
-                                    onKeyDown={e => {
-                                      if (e.key === 'Enter') doAddLabel(line)
-                                      if (e.key === 'Escape') { setAddingCode(null); setAddText('') }
-                                    }} />
-                                  <button className="cfm-btn cfm-btn-sm" disabled={busy || !addText.trim()}
-                                    onClick={() => doAddLabel(line)}>Add</button>
-                                </span>
-                              ) : (
-                                <button className="cfm-cl-addbtn"
-                                  onClick={() => { setAddingCode(code); setAddText('') }}>+ label</button>
-                              ))}
-                            </div>
-                          </>
-                        )}
+                            </span>
+                          ))}
+                          {lineAliases.length === 0 && <span className="cfm-cl-noalias">no local labels yet</span>}
+                          {canManage && (addingCode === code ? (
+                            <span className="cfm-cl-addchip">
+                              <input autoFocus value={addText} placeholder="local label…"
+                                onChange={e => setAddText(e.target.value)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') doAddLabel(line)
+                                  if (e.key === 'Escape') { setAddingCode(null); setAddText('') }
+                                }} />
+                              <button className="cfm-btn cfm-btn-sm" disabled={busy || !addText.trim()}
+                                onClick={() => doAddLabel(line)}>Add</button>
+                            </span>
+                          ) : (
+                            <button className="cfm-cl-addbtn"
+                              onClick={() => { setAddingCode(code); setAddText('') }}>+ label</button>
+                          ))}
+                        </div>
                       </div>
                     )
                   })}
@@ -334,6 +340,48 @@ export default function LabelsManager({ canManage }: { canManage: boolean }) {
           </div>
         )}
       </section>
+
+      {/* ── edit / create modal ── */}
+      {modal && (
+        <div className="cfm-modal-overlay" onMouseDown={closeModal}>
+          <div className="cfm-modal" onMouseDown={e => e.stopPropagation()}>
+            <div className="cfm-modal-h">
+              <span>{modal.mode === 'create' ? 'New line' : 'Edit line'}</span>
+              <button className="cfm-modal-x" onClick={closeModal} title="Close">✕</button>
+            </div>
+            <div className="cfm-modal-body">
+              <label className="cfm-modal-fld">Main label
+                <input autoFocus value={fDesc} onChange={e => setFDesc(e.target.value)}
+                  placeholder="e.g. Subcontractor payments"
+                  onKeyDown={e => { if (e.key === 'Enter') saveModal(); if (e.key === 'Escape') closeModal() }} />
+              </label>
+              <div className="cfm-modal-row">
+                <label className="cfm-modal-fld">Section
+                  <select value={fCat} onChange={e => setFCat(e.target.value)}>
+                    {categoriesList.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </label>
+                <label className="cfm-modal-fld">Nature
+                  <select value={fNat} onChange={e => setFNat(e.target.value)}>
+                    {NATURES.map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </label>
+              </div>
+              <div className="cfm-modal-note">
+                {modal.mode === 'edit'
+                  ? 'The old name is kept as a recognised label, so files already using it still import.'
+                  : 'Creates a grouping line. After saving, add the local labels it should catch.'}
+              </div>
+            </div>
+            <div className="cfm-modal-foot">
+              <button className="cfm-btn cfm-btn-ghost cfm-btn-sm" onClick={closeModal}>Cancel</button>
+              <button className="cfm-btn cfm-btn-sm" disabled={busy || !fDesc.trim()} onClick={saveModal}>
+                {modal.mode === 'create' ? 'Create line' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
