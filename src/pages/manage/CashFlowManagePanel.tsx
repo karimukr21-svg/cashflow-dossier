@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useRole, canManageCashFlow } from '@/lib/role'
 import ImportRunsManager from './ImportRunsManager'
 import CycleVersionManager from './CycleVersionManager'
+import LabelsManager from './LabelsManager'
 import './cashflow-manage.css'
 
 // Manage mode (Treasury) — the single home, ported from the work dashboard (S8).
@@ -13,6 +14,7 @@ import './cashflow-manage.css'
 const TABS = [
   { key: 'runs', label: 'Import runs' },
   { key: 'versions', label: 'Cycles & versions' },
+  { key: 'labels', label: 'Labels & mappings' },
 ]
 
 export default function CashFlowManagePanel() {
@@ -46,6 +48,7 @@ export default function CashFlowManagePanel() {
 
       {tab === 'runs' && <ImportRunsManager canManage={canManage} />}
       {tab === 'versions' && <CycleVersionManager canManage={canManage} />}
+      {tab === 'labels' && <LabelsManager canManage={canManage} />}
     </div>
   )
 }
