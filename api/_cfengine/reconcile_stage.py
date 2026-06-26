@@ -52,7 +52,7 @@ TARGET_SHEET = {
     # "CONSOLIDATED -AREA JOD". Store native JOD, so the area sheet is that one.
     'Jordan_Apr_2026_CashFlow.xlsx':        'CONSOLIDATED -AREA JOD',
     'Astana_Apr_2026_CashFlow.xlsx':        'CONSOLIDATED',
-    'BOTSWANA_Apr_2026_CashFlow.xlsx':      'CONSOLIDATED',
+    'BOTSWANA_Apr_2026_CashFlow.xlsx':      'BOT',   # take only the BOT sheet for now
     'KAZH_Apr_2026_CashFlow.xlsx':          'CONSOLIDATED',
     'Morganti_Apr_2026_CashFlow.xlsx':      'CONSOLIDATED',
     'Ivory Coast_Apr_2026_CashFlow.xlsx':   'IVORY COAST XOF FINAL',   # native XOF, single-area
@@ -107,6 +107,9 @@ EXCLUDE_SHEETS = {
     # the unrelated areas the file bundles (Mozam/Rwanda/Botswana/Grenada/Zambia).
     'Ivory Coast_Apr_2026_CashFlow.xlsx': {'CONSOLIDATED', 'IVORY COAST USD FINAL',
         'IVORY COAST XOF', 'MOZAM', 'RWANDA', 'BOTSWANA', 'GRENADA', 'ZAMBIA', 'NEW SALES'},
+    # Botswana: take only the BOT sheet for now; the file bundles other areas.
+    'BOTSWANA_Apr_2026_CashFlow.xlsx': {'CONSOLIDATED', 'BOT (2)', 'IVC', 'RWANDA',
+        'BOTSWANA', 'NIGERIA', 'GRENADA', 'ZAMBIA', 'NEW SALES'},
 }
 
 # Single-entity areas: no per-project decomposition exists, only an area cash flow.
@@ -116,6 +119,8 @@ MAIN_SHEET = {
     'EPSO_Apr_2026_CashFlow.xlsx': 'CONSOLIDATED-USD',
     'Jordan_Apr_2026_CashFlow.xlsx': 'CONSOLIDATED - USD',
     'Astana_Apr_2026_CashFlow.xlsx': 'CONSOLIDATED',
+    # no-total areas: the sheet that carries the area's BALANCE AT START anchor.
+    'CCUW_Apr_2026_CashFlow.xlsx': 'CASH FLOW REPORTS',
 }
 
 
@@ -485,6 +490,13 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
     breaks = []
     recon_status = 'single_area' if single_area else 'no_total'
     target_used = None
+    # Balance anchor for no-total areas: read opening/ending from a designated MAIN
+    # sheet even without a reconcile target (e.g. CCUW has no consolidated total, but
+    # CASH FLOW REPORTS carries the area's BALANCE AT START — the running-balance anchor).
+    if not single_area and not (target and target in wb.sheetnames):
+        ms = MAIN_SHEET.get(fn)
+        if ms and ms in wb.sheetnames:
+            rollup_balances = extract_rollup_balances(wb[ms], as_of)
     if target and target in wb.sheetnames and not single_area:
         tgt, _ = parse_target(wb, area, target, resolver, as_of)
         target_used = target
