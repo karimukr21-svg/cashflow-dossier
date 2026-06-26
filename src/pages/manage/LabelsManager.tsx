@@ -18,6 +18,8 @@ const NATURE_CLASS: Record<string, string> = {
   Receipts: 'is-rcpt', Payments: 'is-pay', Balance: 'is-bal',
 }
 function natureClass(n: string) { return NATURE_CLASS[n] ?? 'is-bal' }
+// the three natures, in cash-flow-statement order (mirrors how the source sheets group)
+const NATURES = ['Receipts', 'Payments', 'Balance']
 
 export default function LabelsManager({ canManage }: { canManage: boolean }) {
   const [lines, setLines] = useState<Line[]>([])
@@ -112,12 +114,18 @@ export default function LabelsManager({ canManage }: { canManage: boolean }) {
       (lineByCode[a.line_code]?.description ?? '').toLowerCase().includes(ql)
   })
 
-  // group filtered aliases by category for display
-  const byCat = useMemo(() => {
+  // statement-ish category order, derived from the chart's sort_order
+  const catOrder = useMemo(() => {
+    const min: Record<string, number> = {}
+    for (const l of lines) min[l.category] = Math.min(min[l.category] ?? Infinity, l.sort_order)
+    return min
+  }, [lines])
+  const groupByCat = (arr: Alias[]) => {
     const m: Record<string, Alias[]> = {}
-    for (const a of filtered) (m[a.alias_category] ??= []).push(a)
-    return m
-  }, [filtered])
+    for (const a of arr) (m[a.alias_category] ??= []).push(a)
+    return Object.entries(m).sort((x, y) =>
+      (catOrder[x[0]] ?? 999) - (catOrder[y[0]] ?? 999) || x[0].localeCompare(y[0]))
+  }
 
   // categories present in the alias set, for the filter chips (with counts)
   const aliasCats = useMemo(() => {
@@ -227,34 +235,48 @@ export default function LabelsManager({ canManage }: { canManage: boolean }) {
             {aliases.length === 0 ? 'No mappings yet.' : 'No mappings match your search.'}
           </div>
         ) : (
-          <div className="cfm-lbl-groups">
-            {Object.entries(byCat).map(([cat, as]) => (
-              <div key={cat} className="cfm-lbl-group">
-                <div className="cfm-lbl-group-h">
-                  <span className="cfm-lbl-group-name">{cat}</span>
-                  <span className="cfm-lbl-group-n">{as.length}</span>
+          <div className="cfm-lbl-natcols">
+            {NATURES.map(nat => {
+              const items = filtered.filter(a => a.alias_nature === nat)
+              return (
+                <div key={nat} className="cfm-lbl-natcol">
+                  <div className={`cfm-lbl-natcol-h ${natureClass(nat)}`}>
+                    <span className="cfm-lbl-natcol-name">{nat}</span>
+                    <span className="cfm-lbl-natcol-n">{items.length}</span>
+                  </div>
+                  <div className="cfm-lbl-natcol-body">
+                    {items.length === 0 ? (
+                      <div className="cfm-lbl-natcol-empty">—</div>
+                    ) : (
+                      groupByCat(items).map(([cat, as]) => (
+                        <div key={cat} className="cfm-lbl-natgroup">
+                          <div className="cfm-lbl-natgroup-h">{cat}</div>
+                          {as.map(a => {
+                            const line = lineByCode[a.line_code]
+                            return (
+                              <div key={a.alias_category + a.alias_nature + a.alias_description}
+                                className="cfm-lbl-maprow2">
+                                <div className="cfm-lbl-maprow2-top">
+                                  <span className="cfm-lbl-alias">{a.alias_description}</span>
+                                  {canManage && (
+                                    <button className="cfm-lbl-del" title="Delete mapping"
+                                      onClick={() => delAlias(a)}>✕</button>
+                                  )}
+                                </div>
+                                <div className="cfm-lbl-maprow2-tgt">
+                                  <span className="cfm-lbl-arrow">→</span>
+                                  {line?.description ?? a.line_code}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
-                <div className="cfm-lbl-group-body">
-                  {as.map(a => {
-                    const line = lineByCode[a.line_code]
-                    return (
-                      <div key={a.alias_category + a.alias_nature + a.alias_description} className="cfm-lbl-maprow">
-                        <span className="cfm-lbl-alias">{a.alias_description}</span>
-                        <span className="cfm-lbl-tgt">
-                          <span className="cfm-lbl-arrow">→</span>
-                          <span className={`cfm-lbl-nature ${natureClass(a.alias_nature)}`}>{a.alias_nature}</span>
-                          <span className="cfm-lbl-target">{line?.description ?? a.line_code}</span>
-                        </span>
-                        {canManage && (
-                          <button className="cfm-lbl-del" title="Delete mapping"
-                            onClick={() => delAlias(a)}>✕</button>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </section>
