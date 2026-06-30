@@ -63,6 +63,29 @@ export async function fetchLines(): Promise<CfLine[]> {
   return data as CfLine[]
 }
 
+/** Payables balance (Midas group 212 — suppliers/subcontractors/taxes) for a
+ *  canonical area (or the whole group when omitted) at a period, from
+ *  public.bs_positions. Returns native if every contributing area shares the
+ *  requested currency, else USD. A point-in-time balance (one snapshot). */
+export async function fetchPayables(opts: {
+  canonicalAreaId?: string; period: number; currency?: string;
+}): Promise<{ value: number; currency: string } | null> {
+  let q = supabase
+    .from('bs_positions')
+    .select('local_balance, usd_balance, book_currency')
+    .eq('period', opts.period).eq('grp', '212')
+  if (opts.canonicalAreaId) q = q.eq('canonical_area_id', opts.canonicalAreaId)
+  else q = q.not('canonical_area_id', 'is', null)
+  const { data, error } = await q
+  if (error) throw error
+  if (!data || data.length === 0) return null
+  const ccys = new Set(data.map(r => r.book_currency))
+  if (opts.currency && ccys.size === 1 && [...ccys][0] === opts.currency) {
+    return { value: data.reduce((t, r) => t + Number(r.local_balance || 0), 0), currency: opts.currency }
+  }
+  return { value: data.reduce((t, r) => t + Number(r.usd_balance || 0), 0), currency: 'USD' }
+}
+
 /** The distinct cf area labels that actually carry pushed forecast rows for a
  *  version — used to default a view to a populated area rather than a hardcoded
  *  showcase. One short text column; deduped client-side. */

@@ -24,19 +24,22 @@ const fMs = (v: number | null | undefined): string => {
 const sign = (v: number | null | undefined) => (v == null || v === 0) ? '' : (v < 0 ? 'neg' : 'pos')
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
-function bottomLine(d: NarrativeData, scopeLabel: string): string {
+function bottomLine(d: NarrativeData, scopeLabel: string, payables: { value: number; currency: string } | null): string {
   let lowIdx = 0; d.cashClosing.forEach((v, i) => { if (v < d.cashClosing[lowIdx]) lowIdx = i })
   const dip = d.cashClosing[lowIdx] < (d.now ?? 0)
     ? ` It dips to <b class="neg">${fM(d.cashClosing[lowIdx])}m</b> in ${MONTHS[lowIdx]} before recovering,`
     : ``
+  const pay = payables
+    ? `On top of this sit payables to suppliers and subcontractors of <b class="neg">${fM(Math.abs(payables.value))}m</b>.`
+    : `Payables to suppliers and subcontractors are tracked separately — <b>figures pending</b>.`
   return `${cap(scopeLabel)} holds <b class="pos">${fM(d.now)}m</b> of liquid cash today,${dip} and is forecast to build to <b class="pos">${fM(d.yearEnd)}m</b> by year-end. `
-    + `Set against this, loans and overdrafts of <b>${fM(d.debtNow)}m</b> are paid down to <b>${fM(d.debtEnd)}m</b> by December. `
-    + `Payables to suppliers and subcontractors are tracked separately — <b>figures pending</b>.`
+    + `Set against this, loans and overdrafts of <b>${fM(d.debtNow)}m</b> are paid down to <b>${fM(d.debtEnd)}m</b> by December. ${pay}`
 }
 
 export function buildNarrativeHtml(
   d: NarrativeData,
-  ctx: { scopeLabel: string; year: number; asOfLabel: string; mode: 'group' | 'area'; unit: string; months: string[] },
+  ctx: { scopeLabel: string; year: number; asOfLabel: string; mode: 'group' | 'area'; unit: string; months: string[];
+         payables: { value: number; currency: string } | null },
 ): string {
   const liqSwing = (d.yearEnd ?? 0) - (d.now ?? 0)
   const decRetire = d.debtEnd - d.liabilities[10]
@@ -108,11 +111,11 @@ export function buildNarrativeHtml(
   <div class="strip">
     ${stat('Liquid funds', `<span class="${sign(d.now)}">${fM(d.now)}</span><span class="arr">→</span><span class="${sign(d.yearEnd)}">${fM(d.yearEnd)}</span>`, `Cash on hand · ${fMs(liqSwing)} over the year`)}
     ${stat('Loans &amp; overdrafts', `<span class="neg">${fM(-Math.abs(d.debtNow))}</span><span class="arr">→</span><span class="neg">${fM(-Math.abs(d.debtEnd))}</span>`, `Financing · held ≈ ${plateau}m all year · ${fMs(decRetire)} in Dec`)}
-    ${stat('Payables (suppliers + subcontractors)', `<span class="pending">Pending</span>`, `Trade liabilities · awaiting Amr's figures`)}
+    ${stat('Payables (suppliers + subcontractors)', ctx.payables ? `<span class="neg">${fM(-Math.abs(ctx.payables.value))}</span>` : `<span class="pending">Pending</span>`, ctx.payables ? `Suppliers, subcontractors &amp; taxes · as of ${ctx.asOfLabel}${ctx.payables.currency === 'USD' && !ctx.unit.startsWith('USD') ? ' (USD)' : ''}` : `Trade liabilities · no Midas balance for this period`)}
     ${stat('Full-year flow', `<span class="pos">${fM(d.recvFull)}</span>`, `Receipts vs ${fM(Math.abs(d.payFull))} payments · net ${fMs(d.recvFull + d.payFull)}`)}
   </div>
 
-  <div class="bl"><span class="bl-tag">Bottom line</span><span class="bl-text">${bottomLine(d, ctx.scopeLabel)}</span></div>
+  <div class="bl"><span class="bl-tag">Bottom line</span><span class="bl-text">${bottomLine(d, ctx.scopeLabel, ctx.payables)}</span></div>
 
   <script>window.onload = function () { window.print(); };</script>
 </body></html>`

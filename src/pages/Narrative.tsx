@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  fetchActuals, fetchForecasts, fetchPopulatedCfAreas,
+  fetchActuals, fetchForecasts, fetchPopulatedCfAreas, fetchPayables,
   type CfCell, type CfLine, type CanonicalArea,
 } from '@/lib/queries'
 import { computeDerivedBalances } from '@/lib/derivedBalances'
@@ -100,13 +100,30 @@ export default function Narrative({ scope }: { scope: Scope }) {
     computeNarrative(actuals, forecasts, scope.lines, year, asOf, mode, scope.cfToCanonical),
     [actuals, forecasts, scope.lines, year, asOf, mode, scope.cfToCanonical])
 
+  // Payables (Midas BS group 212) — a separate point-in-time obligation balance.
+  const [payables, setPayables] = useState<{ value: number; currency: string } | null>(null)
+  useEffect(() => {
+    if (mode === 'area' && !selArea) { setPayables(null); return }
+    let cancel = false
+    ;(async () => {
+      try {
+        const p = await fetchPayables({
+          canonicalAreaId: mode === 'area' ? selArea?.area_id : undefined,
+          period: asOf, currency: currency || undefined,
+        })
+        if (!cancel) setPayables(p)
+      } catch { if (!cancel) setPayables(null) }
+    })()
+    return () => { cancel = true }
+  }, [mode, selArea?.area_id, asOf, currency])
+
   const scopeLabel = mode === 'group' ? 'the Group' : (selArea?.display_name || 'area')
   const unit = `${currency || (mode === 'group' ? 'mixed' : 'local')} millions`
 
   const print = () => {
     const w = window.open('', '_blank')
     if (!w) return
-    w.document.write(buildNarrativeHtml(data, { scopeLabel, year, asOfLabel, mode, unit, months: MONTHS }))
+    w.document.write(buildNarrativeHtml(data, { scopeLabel, year, asOfLabel, mode, unit, months: MONTHS, payables }))
     w.document.close()
   }
 
@@ -127,7 +144,7 @@ export default function Narrative({ scope }: { scope: Scope }) {
 
       {loading
         ? <div className="placeholder-box">Loading…</div>
-        : <ChairmanReport d={data} scopeLabel={scopeLabel} year={year} asOfLabel={asOfLabel} unit={unit} mode={mode} />}
+        : <ChairmanReport d={data} scopeLabel={scopeLabel} year={year} asOfLabel={asOfLabel} unit={unit} mode={mode} payables={payables} />}
     </div>
   )
 }
@@ -143,9 +160,13 @@ const fMs = (v: number | null | undefined) => {
 const sign = (v: number | null | undefined) => (v == null || v === 0) ? '' : (v < 0 ? 'neg' : 'pos')
 
 /* ── the report ─────────────────────────────────────────────────────────── */
-function ChairmanReport({ d, scopeLabel, year, asOfLabel, unit, mode }: {
-  d: NarrativeData; scopeLabel: string; year: number; asOfLabel: string; unit: string; mode: Mode
+function ChairmanReport({ d, scopeLabel, year, asOfLabel, unit, mode, payables }: {
+  d: NarrativeData; scopeLabel: string; year: number; asOfLabel: string; unit: string; mode: Mode;
+  payables: { value: number; currency: string } | null
 }) {
+  const payNote = payables
+    ? `Suppliers, subcontractors & taxes · as of ${asOfLabel}${payables.currency === 'USD' && !unit.startsWith('USD') ? ' (USD)' : ''}`
+    : 'Trade liabilities · no Midas balance for this period'
   const liqSwing = (d.yearEnd ?? 0) - (d.now ?? 0)
   const decRetire = d.debtEnd - d.liabilities[10]
   const plateau = Math.round((d.liabilities.slice(0, 11).reduce((a, b) => a + b, 0) / 11) / 1e6 / 50) * 50
@@ -208,16 +229,16 @@ function ChairmanReport({ d, scopeLabel, year, asOfLabel, unit, mode }: {
           note={`Cash on hand · ${fMs(liqSwing)} over the year`} />
         <StatCol label="Loans &amp; overdrafts" from={-Math.abs(d.debtNow)} to={-Math.abs(d.debtEnd)} bothNeg
           note={`Financing · held ≈ ${plateau}m all year · ${fMs(decRetire)} in Dec`} />
-        <StatCol label="Payables (suppliers + subcontractors)" pending
-          note="Trade liabilities · awaiting Amr's figures" />
-        <StatCol label="Full-year flow" single={d.recvFull}
+        <StatCol label="Payables (suppliers + subcontractors)" single={payables ? -Math.abs(payables.value) : undefined}
+          pending={!payables} note={payNote} />
+        <StatCol label="Full-year flow" single={d.recvFull} singlePos
           note={`Receipts vs ${fM(Math.abs(d.payFull))} payments · net ${fMs(d.recvFull + d.payFull)}`} />
       </div>
 
       {/* Region 5 — bottom line */}
       <div className="cnr-bottomline">
         <span className="cnr-bl-tag">Bottom line</span>
-        <span className="cnr-bl-text">{bottomLine(d, scopeLabel)}</span>
+        <span className="cnr-bl-text">{bottomLine(d, scopeLabel, payables)}</span>
       </div>
 
       {/* Optional analyst detail — below the chairman read */}
@@ -232,8 +253,8 @@ function ChairmanReport({ d, scopeLabel, year, asOfLabel, unit, mode }: {
   )
 }
 
-function StatCol({ label, from, to, single, note, bothNeg, pending }: {
-  label: string; from?: number | null; to?: number | null; single?: number; note: string; bothNeg?: boolean; pending?: boolean
+function StatCol({ label, from, to, single, note, bothNeg, pending, singlePos }: {
+  label: string; from?: number | null; to?: number | null; single?: number; note: string; bothNeg?: boolean; pending?: boolean; singlePos?: boolean
 }) {
   return (
     <div className="cnr-stat">
@@ -242,7 +263,7 @@ function StatCol({ label, from, to, single, note, bothNeg, pending }: {
         {pending ? (
           <span className="cnr-stat-pending">Pending</span>
         ) : single !== undefined ? (
-          <span className="pos">{fM(single)}</span>
+          <span className={singlePos ? 'pos' : sign(single)}>{fM(single)}</span>
         ) : (
           <>
             <span className={bothNeg ? 'neg' : sign(from)}>{fM(from)}</span>
@@ -272,14 +293,16 @@ function Bars({ items, tone }: { items: { label: string; value: number }[]; tone
   )
 }
 
-function bottomLine(d: NarrativeData, scopeLabel: string): string {
+function bottomLine(d: NarrativeData, scopeLabel: string, payables: { value: number; currency: string } | null): string {
   let lowIdx = 0; d.cashClosing.forEach((v, i) => { if (v < d.cashClosing[lowIdx]) lowIdx = i })
   const dip = d.cashClosing[lowIdx] < (d.now ?? 0)
     ? ` It dips to ${fM(d.cashClosing[lowIdx])}m in ${MONTHS[lowIdx]} before recovering,`
     : ``
+  const pay = payables
+    ? `On top of this sit payables to suppliers and subcontractors of ${fM(Math.abs(payables.value))}m.`
+    : `Payables to suppliers and subcontractors are tracked separately — figures pending.`
   return `${cap(scopeLabel)} holds ${fM(d.now)}m of liquid cash today,${dip} and is forecast to build to ${fM(d.yearEnd)}m by year-end. `
-    + `Set against this, loans and overdrafts of ${fM(d.debtNow)}m are paid down to ${fM(d.debtEnd)}m by December. `
-    + `Payables to suppliers and subcontractors are tracked separately — figures pending.`
+    + `Set against this, loans and overdrafts of ${fM(d.debtNow)}m are paid down to ${fM(d.debtEnd)}m by December. ${pay}`
 }
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
