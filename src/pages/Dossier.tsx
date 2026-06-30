@@ -8,6 +8,7 @@ import {
   type CfVersion, type CfLine, type CanonicalArea, type AreaGroup,
 } from '@/lib/queries'
 import AreaDrill from './AreaDrill'
+import Narrative from './Narrative'
 import DebtPosition from './DebtPosition'
 import WhatChanged from './WhatChanged'
 import Overall from './Overall'
@@ -32,7 +33,7 @@ function parseOrd(raw: string | null): GrainOrd {
 }
 
 type View =
-  | { kind: 'summary'; lens: 'overall' | 'funders' | 'heatmap' | 'changed' | 'loans' | 'allareas' }
+  | { kind: 'summary'; lens: 'narrative' | 'overall' | 'funders' | 'heatmap' | 'changed' | 'loans' | 'allareas' }
   | { kind: 'area'; area: string }
   | { kind: 'manage' }
 
@@ -41,7 +42,7 @@ function parseView(sp: URLSearchParams): View {
   const sub = sp.get('sub') || ''
   if (view === 'manage') return { kind: 'manage' }
   if (view === 'area' && sp.get('area')) return { kind: 'area', area: sp.get('area')! }
-  const lens = (['overall', 'funders', 'heatmap', 'changed', 'loans', 'allareas'].includes(sub) ? sub : 'overall') as any
+  const lens = (['narrative', 'overall', 'funders', 'heatmap', 'changed', 'loans', 'allareas'].includes(sub) ? sub : 'overall') as any
   return { kind: 'summary', lens }
 }
 
@@ -218,6 +219,7 @@ export default function Dossier() {
    * a CFO conversation runs. EXPLORE = analyst tools. */
   const navItems: NavItem[] = [
     ...(canManage ? [{ group: 'MANAGE', label: 'Manage Cash Flow', view: { kind: 'manage' as const } }] : []),
+    { group: 'SUMMARY', label: 'Cash Flow Story',       view: { kind: 'summary', lens: 'narrative' } },
     { group: 'SUMMARY', label: 'Cash Runway',          view: { kind: 'summary', lens: 'overall' } },
     { group: 'SUMMARY', label: 'Funders vs Consumers', view: { kind: 'summary', lens: 'funders' } },
     { group: 'SUMMARY', label: 'Treasury',             view: { kind: 'summary', lens: 'heatmap' } },
@@ -290,6 +292,7 @@ export default function Dossier() {
     }
 
     if (view.kind === 'summary') {
+      if (view.lens === 'narrative')  return <Narrative scope={scope} />
       if (view.lens === 'overall')    return <Overall scope={scope} />
       if (view.lens === 'funders')    return <AreasFunders scope={scope} onSelectArea={(areaId) => goto({ kind: 'area', area: areaId })} />
       if (view.lens === 'heatmap')    return <TreasuryHeatmap scope={scope} onSelectArea={(areaId) => goto({ kind: 'area', area: areaId })} />

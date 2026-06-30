@@ -1468,3 +1468,69 @@ body, html, #root {
   font-weight: 500;
 }
 .accuracy-window-note { color: var(--mute); font-weight: 400; margin-left: 6px; }
+
+/* ───────────────────────── Cash Flow Story (Narrative) ───────────────────── */
+.narr { max-width: 980px; }
+.narr-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.narr-grain { display: flex; align-items: center; gap: 6px; }
+.narr-pill { padding: 5px 14px; border: 1px solid var(--border); background: var(--surface);
+  border-radius: 7px; font-size: 12px; cursor: pointer; color: var(--ink); }
+.narr-pill.active { background: var(--crimson); border-color: var(--crimson); color: #fff; }
+.narr-select { margin-left: 6px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 7px;
+  font-size: 12px; background: var(--surface); color: var(--ink); }
+.narr-print-btn { padding: 5px 16px; border: 1px solid var(--ink); background: var(--surface);
+  border-radius: 7px; font-size: 12px; cursor: pointer; color: var(--ink); }
+.narr-print-btn:hover { background: var(--ink); color: #fff; }
+
+.narr-page { }
+.narr-head { border-bottom: 2.5px solid var(--crimson); padding-bottom: 10px; margin-bottom: 16px; }
+.narr-head h1 { font-size: 24px; margin: 0; }
+.narr-sub { font-size: 12px; color: var(--mute); margin-top: 3px; }
+
+.narr-beats { }
+.narr-beat { display: flex; gap: 14px; padding: 9px 0; border-bottom: 1px solid #f0f1f3; }
+.narr-beat-n { font-size: 12px; font-weight: 700; color: var(--crimson); min-width: 24px; padding-top: 3px; }
+.narr-beat-body { font-size: 16px; line-height: 1.55; }
+.narr-beat-lead { color: #374151; }
+.narr-beat-val { font-weight: 700; font-size: 19px; }
+.narr-beat-val.pos { color: var(--good); }
+.narr-beat-val.neg { color: var(--crimson); }
+.narr-beat-val.ink { color: var(--ink); }
+
+.narr-divider { display: flex; align-items: center; gap: 10px; margin: 14px 0 4px; }
+.narr-divider span { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #9ca3af; }
+.narr-divider:after { content: ""; flex: 1; height: 1px; background: var(--border); }
+
+.narr-bottomline { margin-top: 16px; padding: 14px 18px; background: var(--bg);
+  border-left: 3px solid var(--crimson); border-radius: 6px; }
+.narr-bl-label { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: var(--mute); font-weight: 600; }
+.narr-bl-value { font-size: 30px; font-weight: 700; margin: 2px 0; }
+.narr-bl-value.pos { color: var(--good); } .narr-bl-value.neg { color: var(--crimson); }
+.narr-bl-note { font-size: 12px; color: var(--mute); }
+
+.narr-where { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin-top: 24px; }
+.narr-where-col h3, .narr-byarea h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .5px;
+  color: var(--crimson); margin: 0 0 10px; }
+.narr-where-col h3 span, .narr-byarea h3 span { color: #9ca3af; font-weight: 500; text-transform: none; letter-spacing: 0; font-size: 11px; }
+.narr-bars { }
+.narr-bars-empty { font-size: 11px; color: #9ca3af; }
+.narr-bar-row { display: grid; grid-template-columns: 104px 1fr 78px; align-items: center; gap: 8px; margin-bottom: 6px; }
+.narr-bar-label { font-size: 11.5px; color: #374151; }
+.narr-bar-track { height: 12px; background: #f0f1f3; border-radius: 3px; overflow: hidden; }
+.narr-bar-fill { height: 100%; border-radius: 3px; }
+.narr-bar-fill.neg { background: var(--crimson); }
+.narr-bar-fill.pos { background: var(--good); }
+.narr-bar-val { font-size: 11.5px; text-align: right; font-variant-numeric: tabular-nums; }
+.narr-bar-val.pos { color: var(--good); } .narr-bar-val.neg { color: var(--crimson); }
+
+.narr-byarea { margin-top: 24px; }
+.narr-area-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.narr-area-table th { text-align: right; font-size: 9px; text-transform: uppercase; letter-spacing: .4px;
+  color: var(--mute); padding: 4px 8px; border-bottom: 1px solid #d1d5db; }
+.narr-area-table th:first-child { text-align: left; }
+.narr-area-table td { text-align: right; padding: 3px 8px; font-variant-numeric: tabular-nums; }
+.narr-area-table td:first-child { text-align: left; }
+.narr-area-table td.num.neg { color: var(--bad); }
+.narr-area-table td.num.pos { color: var(--good); }
+
+.narr-foot { margin-top: 24px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 10px; color: #9ca3af; }
