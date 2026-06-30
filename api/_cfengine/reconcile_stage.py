@@ -122,8 +122,15 @@ SCALE_OVERRIDE = {
 # consolidated only starts 2025, so the pre-2025 PARP rows create a spurious year with
 # flows but no opening anchor. Floor it at 2025 so the area starts clean with a real
 # opening balance.
+# Kazakhstan: the file's Dec-2024 ending balance != Jan-2025 opening balance (a manual
+# reset, Δ243k — the only discontinuity in the 2020-2026 series). The cash chain is
+# DERIVED (anchor = first month's opening, then closing = opening + movements; see
+# src/lib/derivedBalances.ts), so a chain spanning that break carries the -243 reset
+# forward and offsets 2026 from the file. Floor at 2025 (drop 2024 entirely) so the
+# earliest anchor is Jan-2025's clean post-break opening → 2025 + 2026 tie the file.
 START_YEAR_OVERRIDE = {
     'MOZAMBIQUE_Apr_2026_CashFlow.xlsx': 2025,
+    'KAZH_Apr_2026_CashFlow.xlsx': 2025,
 }
 
 # Sheets that, despite classifying as 'project', are NOT real projects to sum:
