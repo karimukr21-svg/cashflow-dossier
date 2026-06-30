@@ -65,11 +65,11 @@ export async function fetchLines(): Promise<CfLine[]> {
 
 /** Payables balance (Midas group 212 — suppliers/subcontractors/taxes) for a
  *  canonical area (or the whole group when omitted) at a period, from
- *  public.bs_positions. Returns native if every contributing area shares the
- *  requested currency, else USD. A point-in-time balance (one snapshot). */
+ *  public.bs_positions. Returns BOTH native (valid only if every contributing
+ *  area shares one currency) and USD. A point-in-time balance (one snapshot). */
 export async function fetchPayables(opts: {
-  canonicalAreaId?: string; period: number; currency?: string;
-}): Promise<{ value: number; currency: string } | null> {
+  canonicalAreaId?: string; period: number;
+}): Promise<{ localValue: number | null; usdValue: number; nativeCurrency: string } | null> {
   let q = supabase
     .from('bs_positions')
     .select('local_balance, usd_balance, book_currency')
@@ -80,10 +80,28 @@ export async function fetchPayables(opts: {
   if (error) throw error
   if (!data || data.length === 0) return null
   const ccys = new Set(data.map(r => r.book_currency))
-  if (opts.currency && ccys.size === 1 && [...ccys][0] === opts.currency) {
-    return { value: data.reduce((t, r) => t + Number(r.local_balance || 0), 0), currency: opts.currency }
+  const usdValue = data.reduce((t, r) => t + Number(r.usd_balance || 0), 0)
+  const single = ccys.size === 1 && ![...ccys][0]?.includes('MULTI')
+  return {
+    localValue: single ? data.reduce((t, r) => t + Number(r.local_balance || 0), 0) : null,
+    usdValue,
+    nativeCurrency: single ? [...ccys][0] : 'MULTI',
   }
-  return { value: data.reduce((t, r) => t + Number(r.usd_balance || 0), 0), currency: 'USD' }
+}
+
+/** USD-per-1-unit rate for a currency at a date, from gacc.fx_rates (latest
+ *  cycle effective on/before the date). Used to show an area's native-currency
+ *  story in USD. Returns null when no rate is found. */
+export async function fetchFxRate(fromCurrency: string, asOfDate: string): Promise<number | null> {
+  if (!fromCurrency || fromCurrency === 'USD') return fromCurrency === 'USD' ? 1 : null
+  const { data: cycles } = await supabase.schema('gacc')
+    .from('fx_rate_cycles').select('id, effective_date')
+    .lte('effective_date', asOfDate).order('effective_date', { ascending: false }).limit(1)
+  if (!cycles || cycles.length === 0) return null
+  const { data: rates } = await supabase.schema('gacc')
+    .from('fx_rates').select('rate')
+    .eq('fx_rate_cycle_id', cycles[0].id).eq('from_currency', fromCurrency).eq('to_currency', 'USD').limit(1)
+  return rates && rates.length ? Number(rates[0].rate) : null
 }
 
 /** The distinct cf area labels that actually carry pushed forecast rows for a

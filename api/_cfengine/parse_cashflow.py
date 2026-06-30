@@ -467,8 +467,12 @@ def section_of(label_tight):
             return cat
     return None
 
-def resolve_line(label, section, direction, post_ending, resolver, area):
-    """Return (line_code or None, new_direction). `direction` is 'Receipts'/'Payments'."""
+def resolve_line(label, section, direction, post_ending, resolver, area, wg_sub=None):
+    """Return (line_code or None, new_direction). `direction` is 'Receipts'/'Payments'.
+    wg_sub carries the active Within-Group subsection ('outside_area'/'within_area'/
+    'treasury'/'moa') set by a banner row, so counterparty-named detail rows under it
+    (e.g. CCUW's 'UAE - CCEPTE', 'ADCB Legal Fees' under 'PAYMENTS - OUTSIDE AREA')
+    inherit the classification instead of falling through to unmatched."""
     lt = tight(label)
     # In Interest / Non-Operational a bare RECEIPTS / PAYMENTS row IS the data line,
     # so don't let the SKIP_LABELS guard reject it (it stays a skippable sub-header
@@ -517,6 +521,13 @@ def resolve_line(label, section, direction, post_ending, resolver, area):
             code = 'treasury_pay_areas'
         elif 'WITHIN' in lt or 'AREA' in lt or tight(area) in lt or lt in ('QATAR',):
             code = 'wg_recpt_within_area' if nat == 'Receipts' else 'wg_pay_within_area'
+        elif wg_sub:
+            # detail row with no keyword of its own — inherit the banner's subsection
+            sub = {'outside_area': ('wg_recpt_outside_area', 'wg_pay_outside_area'),
+                   'within_area':  ('wg_recpt_within_area',  'wg_pay_within_area'),
+                   'treasury':     ('wg_recpt_treasury',     'wg_pay_treasury'),
+                   'moa':          ('wg_recpt_moa',          'wg_pay_moa')}[wg_sub]
+            code = sub[0] if nat == 'Receipts' else sub[1]
         else:
             return None, d
         return code, d
@@ -658,6 +669,7 @@ def parse_sheet(ws, area, sheet_name, resolver, as_of, verbose=False):
     unmatched = {}   # label -> {count, cells: ["Sheet!C12", ...]} for reviewer lookup
     direction = None
     section = None
+    wg_sub = None    # active Within-Group subsection (set by a banner, applied to detail)
     post_ending = False
     start = hdr['header_row'] + 1
 
@@ -670,6 +682,7 @@ def parse_sheet(ws, area, sheet_name, resolver, as_of, verbose=False):
             if cat:
                 section = cat
                 direction = None
+                wg_sub = None
         if not label or not label.strip():
             continue
         lt = tight(label)
@@ -702,6 +715,7 @@ def parse_sheet(ws, area, sheet_name, resolver, as_of, verbose=False):
         if lab_sec:
             section = lab_sec
             direction = None
+            wg_sub = None
             continue
         # pure direction sub-headers
         if lt in ('RECEIPTS', 'RECEIPT') and section in ('Operation', 'New Sales', None):
@@ -713,6 +727,29 @@ def parse_sheet(ws, area, sheet_name, resolver, as_of, verbose=False):
             direction = 'Receipts'; continue
         if lt in ('OUT', 'OUTSETTLE'):
             direction = 'Payments'; continue
+        # Within-Group subsection banner (e.g. 'RECEIPTS - OUTSIDE AREA',
+        # 'PAYMENTS - OUTSIDE AREA'): a NO-VALUE row naming a transfer subsection
+        # (OUTSIDE/WITHIN AREA, TREASURY, MOA) + optional direction. Records the
+        # subsection so counterparty detail rows beneath (e.g. CCUW 'UAE - CCEPTE',
+        # 'ADCB Legal Fees') inherit the classification, then skips the banner. Also
+        # ESTABLISHES the Within Group section — needed for sheets whose section title
+        # sits above the detected header (e.g. CCUW's 'TRANSFERS OUTSIDE AREA' sheet).
+        # No-value-only so a valued line still maps by its own keyword (no double-count).
+        wsub = ('moa' if 'MOA' in lt else
+                'outside_area' if 'OUTSIDEAREA' in lt else
+                'within_area' if 'WITHINAREA' in lt else
+                'treasury' if 'TREASURY' in lt else None)
+        if wsub:
+            row_has_val = any(isinstance(r[ci], (int, float)) and r[ci] not in (0, None)
+                              for ci in periods if ci < len(r))
+            if not row_has_val:
+                section = 'Within Group'
+                wg_sub = wsub
+                if lt.startswith('RECEIPT'):
+                    direction = 'Receipts'
+                elif lt.startswith('PAYMENT'):
+                    direction = 'Payments'
+                continue
         # In Interest / Non-Operational the bare RECEIPTS / PAYMENTS rows ARE the
         # data lines (one receipt + one payment carry the section's whole value) —
         # unlike Operation, where they are sub-headers. So don't let SKIP_LABELS
@@ -723,7 +760,7 @@ def parse_sheet(ws, area, sheet_name, resolver, as_of, verbose=False):
         if lt in SKIP_LABELS and not is_section_data:
             continue
         code, direction = resolve_line(label, section, direction, post_ending,
-                                       resolver, area)
+                                       resolver, area, wg_sub)
         if lt in ENDING or (('ENDING' in lt or 'CLOSING' in lt) and 'BALANCE' in lt):
             post_ending = True
         # Intentional skip (e.g. a Bank Financing 'TOTAL …' subtotal) — drop it

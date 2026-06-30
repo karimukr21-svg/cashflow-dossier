@@ -34,25 +34,32 @@ export function buildLiquidChart(opts: {
   ymax += (ymax - ymin) * 0.12
   const range = (ymax - ymin) || 1
 
-  const W = 1360, H = 348
-  const plotL = 66, plotR = 1306, plotW = plotR - plotL
+  const W = 1360, H = 350
+  const plotL = 84, plotR = 1320, plotW = plotR - plotL
   const top = 26, plotH = 256, axisY = top + plotH + 22
   const x = (i: number) => plotL + (i / (n - 1)) * plotW
   const y = (val: number) => top + ((ymax - val) / range) * plotH
+  // actual/forecast boundary — the SAME x for the tint edge and the divider
+  const divX = (x(asIdx) + x(asIdx + 1)) / 2
 
   let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">`
   s += `<defs><linearGradient id="liqGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${INK}" stop-opacity="0.14"/><stop offset="1" stop-color="${INK}" stop-opacity="0.02"/></linearGradient></defs>`
 
-  // actual tint
-  s += `<rect x="${plotL}" y="${top}" width="${(x(asIdx) - plotL).toFixed(1)}" height="${plotH}" fill="${TINT}"/>`
+  // actual tint — extends to the divider so the shading edge and the dotted line coincide
+  s += `<rect x="${plotL}" y="${top}" width="${(divX - plotL).toFixed(1)}" height="${plotH}" fill="${TINT}"/>`
 
-  // gridlines (rounded) + labels
-  const step = Math.max(50, Math.ceil(ymax / 4 / 50) * 50)
-  for (let g = 0; g <= ymax; g += step) {
-    const yy = y(g).toFixed(1)
-    s += `<line x1="${plotL}" y1="${yy}" x2="${plotR}" y2="${yy}" stroke="${GRID}" stroke-width="1"/>`
-    s += `<text x="${plotL - 10}" y="${(y(g) + 4).toFixed(1)}" text-anchor="end" font-size="11" fill="${SLATE}">${g}</text>`
+  // y gridlines + labels + ticks (nice round step)
+  const rawStep = ymax / 4
+  const mag = Math.pow(10, Math.floor(Math.log10(Math.max(1, rawStep))))
+  const step = Math.max(mag, Math.ceil(rawStep / mag) * mag)
+  for (let g = 0; g <= ymax + 1; g += step) {
+    const yy = y(g)
+    s += `<line x1="${plotL}" y1="${yy.toFixed(1)}" x2="${plotR}" y2="${yy.toFixed(1)}" stroke="${GRID}" stroke-width="1"/>`
+    s += `<line x1="${(plotL - 5).toFixed(1)}" y1="${yy.toFixed(1)}" x2="${plotL}" y2="${yy.toFixed(1)}" stroke="${SLATE}" stroke-width="1"/>`
+    s += `<text x="${plotL - 11}" y="${(yy + 4).toFixed(1)}" text-anchor="end" font-size="12.5" font-weight="500" fill="#475569">${g.toLocaleString('en-US')}</text>`
   }
+  // y axis line
+  s += `<line x1="${plotL}" y1="${top}" x2="${plotL}" y2="${(top + plotH).toFixed(1)}" stroke="${GRID}" stroke-width="1"/>`
   if (ymin < 0) { const z = y(0).toFixed(1); s += `<line x1="${plotL}" y1="${z}" x2="${plotR}" y2="${z}" stroke="${INK}" stroke-width="1.2"/>` }
 
   // area
@@ -68,11 +75,10 @@ export function buildLiquidChart(opts: {
   s += `<path d="${path(asIdx, n - 1)}" fill="none" stroke="${INK}" stroke-width="3.2" stroke-dasharray="5,4" stroke-linecap="round"/>`
   for (let i = 0; i < n; i++) s += `<circle cx="${x(i).toFixed(1)}" cy="${y(v[i]).toFixed(1)}" r="2.4" fill="${INK}"/>`
 
-  // divider + labels
-  const divX = ((x(asIdx) + x(asIdx + 1)) / 2).toFixed(1)
-  s += `<line x1="${divX}" y1="${top}" x2="${divX}" y2="${top + plotH}" stroke="${SLATE}" stroke-width="1" stroke-dasharray="3,3" opacity="0.7"/>`
-  s += `<text x="${x(Math.max(0, asIdx - 1)).toFixed(1)}" y="${top + 14}" text-anchor="middle" font-size="10" font-weight="700" letter-spacing="1" fill="${SLATE}">ACTUAL</text>`
-  s += `<text x="${x(asIdx + 2).toFixed(1)}" y="${top + 14}" text-anchor="middle" font-size="10" font-weight="700" letter-spacing="1" fill="${SLATE}">FORECAST</text>`
+  // divider + labels (divX shared with the tint edge above)
+  s += `<line x1="${divX.toFixed(1)}" y1="${top}" x2="${divX.toFixed(1)}" y2="${(top + plotH).toFixed(1)}" stroke="${SLATE}" stroke-width="1.2" stroke-dasharray="4,3" opacity="0.8"/>`
+  s += `<text x="${((plotL + divX) / 2).toFixed(1)}" y="${top + 14}" text-anchor="middle" font-size="10" font-weight="700" letter-spacing="1" fill="${SLATE}">ACTUAL</text>`
+  s += `<text x="${((divX + plotR) / 2).toFixed(1)}" y="${top + 14}" text-anchor="middle" font-size="10" font-weight="700" letter-spacing="1" fill="${SLATE}">FORECAST</text>`
 
   // year-end pill + now marker
   const pill = (cx: number, cy: number, txt: string) => {

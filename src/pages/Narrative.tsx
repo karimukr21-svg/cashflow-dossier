@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  fetchActuals, fetchForecasts, fetchPopulatedCfAreas, fetchPayables,
+  fetchActuals, fetchForecasts, fetchPopulatedCfAreas, fetchPayables, fetchFxRate,
   type CfCell, type CfLine, type CanonicalArea,
 } from '@/lib/queries'
 import { computeDerivedBalances } from '@/lib/derivedBalances'
@@ -101,29 +101,51 @@ export default function Narrative({ scope }: { scope: Scope }) {
     [actuals, forecasts, scope.lines, year, asOf, mode, scope.cfToCanonical])
 
   // Payables (Midas BS group 212) — a separate point-in-time obligation balance.
-  const [payables, setPayables] = useState<{ value: number; currency: string } | null>(null)
+  const [payablesRaw, setPayablesRaw] = useState<{ localValue: number | null; usdValue: number; nativeCurrency: string } | null>(null)
   useEffect(() => {
-    if (mode === 'area' && !selArea) { setPayables(null); return }
+    if (mode === 'area' && !selArea) { setPayablesRaw(null); return }
     let cancel = false
     ;(async () => {
       try {
-        const p = await fetchPayables({
-          canonicalAreaId: mode === 'area' ? selArea?.area_id : undefined,
-          period: asOf, currency: currency || undefined,
-        })
-        if (!cancel) setPayables(p)
-      } catch { if (!cancel) setPayables(null) }
+        const p = await fetchPayables({ canonicalAreaId: mode === 'area' ? selArea?.area_id : undefined, period: asOf })
+        if (!cancel) setPayablesRaw(p)
+      } catch { if (!cancel) setPayablesRaw(null) }
     })()
     return () => { cancel = true }
-  }, [mode, selArea?.area_id, asOf, currency])
+  }, [mode, selArea?.area_id, asOf])
+
+  // Currency display toggle (area mode): native local or USD via gacc.fx_rates.
+  const [ccy, setCcy] = useState<'local' | 'usd'>('local')
+  const [fxRate, setFxRate] = useState<number | null>(null)
+  useEffect(() => {
+    if (mode !== 'area' || !currency) { setFxRate(null); return }
+    let cancel = false
+    const asOfDate = selVer?.as_of_date || `${year}-${String(asOfMonth).padStart(2, '0')}-01`
+    fetchFxRate(currency, asOfDate).then(r => { if (!cancel) setFxRate(r) }).catch(() => { if (!cancel) setFxRate(null) })
+    return () => { cancel = true }
+  }, [mode, currency, selVer?.as_of_date])
+
+  const useUsd = mode === 'group' || (ccy === 'usd' && !!fxRate)
+  const rate = mode === 'group' ? 1 : (useUsd && fxRate ? fxRate : 1)
+  const dispData = useMemo(() => rate === 1 ? data : scaleData(data, rate), [data, rate])
+  const dispCurrency = mode === 'group' ? (currency || 'mixed') : (useUsd ? 'USD' : (currency || 'local'))
+  const unit = `${dispCurrency} millions`
+
+  // Resolve payables to the display currency.
+  const payables = useMemo<{ value: number; currency: string } | null>(() => {
+    if (!payablesRaw) return null
+    if (useUsd) return { value: payablesRaw.usdValue, currency: 'USD' }
+    if (payablesRaw.localValue != null && payablesRaw.nativeCurrency === currency)
+      return { value: payablesRaw.localValue, currency: currency }
+    return { value: payablesRaw.usdValue, currency: 'USD' }
+  }, [payablesRaw, useUsd, currency])
 
   const scopeLabel = mode === 'group' ? 'the Group' : (selArea?.display_name || 'area')
-  const unit = `${currency || (mode === 'group' ? 'mixed' : 'local')} millions`
 
   const print = () => {
     const w = window.open('', '_blank')
     if (!w) return
-    w.document.write(buildNarrativeHtml(data, { scopeLabel, year, asOfLabel, mode, unit, months: MONTHS, payables }))
+    w.document.write(buildNarrativeHtml(dispData, { scopeLabel, year, asOfLabel, mode, unit, months: MONTHS, payables }))
     w.document.close()
   }
 
@@ -138,18 +160,42 @@ export default function Narrative({ scope }: { scope: Scope }) {
               {sortedAreas.map(a => <option key={a.area_id} value={a.area_id}>{a.display_name}</option>)}
             </select>
           )}
+          {mode === 'area' && fxRate && currency && currency !== 'USD' && (
+            <div className="cnr-ccytoggle">
+              <button className={ccy === 'local' ? 'active' : ''} onClick={() => setCcy('local')}>{currency}</button>
+              <button className={ccy === 'usd' ? 'active' : ''} onClick={() => setCcy('usd')}>USD</button>
+            </div>
+          )}
         </div>
         <button className="cnr-print-btn" onClick={print}>Print</button>
       </div>
 
       {loading
         ? <div className="placeholder-box">Loading…</div>
-        : <ChairmanReport d={data} scopeLabel={scopeLabel} year={year} asOfLabel={asOfLabel} unit={unit} mode={mode} payables={payables} />}
+        : <ChairmanReport d={dispData} scopeLabel={scopeLabel} year={year} asOfLabel={asOfLabel} unit={unit} mode={mode} payables={payables} />}
     </div>
   )
 }
 
 /* ── helpers ────────────────────────────────────────────────────────────── */
+/* Scale every monetary field by an FX rate (native → USD), so screen + print
+ * render the converted figures with the normal formatters. */
+function scaleData(d: NarrativeData, r: number): NarrativeData {
+  const s = (v: number | null) => v == null ? v : v * r
+  return {
+    ...d,
+    opening: s(d.opening), now: s(d.now), yearEnd: s(d.yearEnd),
+    cashClosing: d.cashClosing.map(v => v * r), liabilities: d.liabilities.map(v => v * r), netFunds: d.netFunds.map(v => v * r),
+    recvFull: d.recvFull * r, payFull: d.payFull * r, recvYTD: d.recvYTD * r, payYTD: d.payYTD * r,
+    netYTD: d.netYTD * r, recvRem: d.recvRem * r, payRem: d.payRem * r, netRem: d.netRem * r,
+    debtOpen: d.debtOpen * r, debtNow: d.debtNow * r, debtEnd: d.debtEnd * r,
+    nfOpen: d.nfOpen * r, nfNow: d.nfNow * r, nfEnd: d.nfEnd * r,
+    debtPeak: d.debtPeak * r, minNf: { idx: d.minNf.idx, value: d.minNf.value * r },
+    paySections: d.paySections.map(x => ({ ...x, value: x.value * r })),
+    recvSections: d.recvSections.map(x => ({ ...x, value: x.value * r })),
+  }
+}
+
 const fM = (v: number | null | undefined) => v == null ? '—' : fmt(v / 1e6, { decimals: 1 })
 const fMs = (v: number | null | undefined) => {
   if (v == null) return '—'
