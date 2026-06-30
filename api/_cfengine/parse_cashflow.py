@@ -809,6 +809,21 @@ def parse_sheet(ws, area, sheet_name, resolver, as_of, verbose=False):
             if _flip_pay(rr['line_code']):
                 rr['value'] = round(-rr['value'], 4)
 
+    # Within Group gets its OWN per-sheet sign detection (NOT folded into the flip
+    # above): most files sign their transfer detail (KSA/KZ carry the minus), but some
+    # store the transfer-OUT detail as gross positive under a PAYMENTS banner (e.g.
+    # CCUW's 'TRANSFERS OUTSIDE AREA' sheet). A single combined detection would break
+    # Kazakhstan, where one sheet mixes GROSS operations with already-SIGNED
+    # within-group. Detect on the within-group payment lines alone, per sheet.
+    def _wg_pay(c):
+        return (resolver.nat_by_code.get(c) == 'Payments'
+                and resolver.cat_by_code.get(c) == 'Within Group')
+    wg_pay_sum = sum(rr['value'] for rr in out_rows if _wg_pay(rr['line_code']))
+    if wg_pay_sum > 0:
+        for rr in out_rows:
+            if _wg_pay(rr['line_code']):
+                rr['value'] = round(-rr['value'], 4)
+
     meta = {'sheet': sheet_name, 'project_code': project_code, 'mode': hdr['mode'],
             'label_col': lc, 'n_rows': len(out_rows), 'unmatched': dict(unmatched),
             'pay_flipped': pay_sum > 0}

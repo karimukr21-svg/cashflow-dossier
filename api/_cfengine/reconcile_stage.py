@@ -117,6 +117,15 @@ SCALE_OVERRIDE = {
     # double-count — fix those first, then confirm its scale (also '000) and add here.
 }
 
+# Per-file start-year floor (drop history before this year). Default = global MIN_YEAR.
+# Mozambique: the PARP sheet carries an older 2020-2025 project history; the area
+# consolidated only starts 2025, so the pre-2025 PARP rows create a spurious year with
+# flows but no opening anchor. Floor it at 2025 so the area starts clean with a real
+# opening balance.
+START_YEAR_OVERRIDE = {
+    'MOZAMBIQUE_Apr_2026_CashFlow.xlsx': 2025,
+}
+
 # Sheets that, despite classifying as 'project', are NOT real projects to sum:
 # by-project In/Out/NET summaries + sub-rollups that would double-count.
 EXCLUDE_SHEETS = {
@@ -609,6 +618,20 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
                 rollup_balances[bk] = round(rollup_balances[bk] * scale, 4)
         rollup_sections = {sk: {k: round(v * scale, 4) for k, v in d.items()}
                            for sk, d in rollup_sections.items()}
+
+    # Per-file start-year floor (see START_YEAR_OVERRIDE). Drops older history that
+    # has no opening anchor, so the area starts clean. Recompute the A/F counts after.
+    start_year = START_YEAR_OVERRIDE.get(fn)
+    if start_year:
+        staged = [r for r in staged if r['year'] >= start_year]
+        for bk in ('opening', 'ending', 'accum_loans', 'accum_od'):
+            if isinstance(rollup_balances.get(bk), dict):
+                rollup_balances[bk] = {k: v for k, v in rollup_balances[bk].items()
+                                       if int(k[:4]) >= start_year}
+        rollup_sections = {sk: {k: v for k, v in d.items() if int(k[:4]) >= start_year}
+                           for sk, d in rollup_sections.items()}
+        n_act = sum(1 for r in staged if r['kind'] == 'actual')
+        n_fc = sum(1 for r in staged if r['kind'] == 'forecast')
 
     summed_set = set(sel)
     # Per summed sheet: each is a project or an area item. Split into ASSIGNED
