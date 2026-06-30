@@ -1524,6 +1524,8 @@ body, html, #root {
 .cnr-foot-sep { color: #cbd5e1; font-weight: 400; }
 .cnr-foot-ccy { font-size: 12px; color: #94a3b8; font-weight: 600; }
 .cnr-foot-note { font-size: 9.5px; color: var(--mute); }
+.cnr-foot-item--note { display: flex; flex-direction: column; justify-content: center; }
+.cnr-foot-note--lg { font-size: 11px; line-height: 1.5; margin-top: 3px; }
 
 .cnr-strip { display: flex; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); margin-top: 8px; }
 .cnr-stat { flex: 1; padding: 12px 20px; border-left: 1px solid var(--border); }

@@ -44,7 +44,7 @@ export function buildNarrativeHtml(
   const netFlow = d.recvFull + d.payFull
   const cash13 = [d.opening ?? 0, ...d.cashClosing]
   const net13 = [d.nfOpen, ...d.netFunds]
-  const chart = buildCashStoryChart({ months: ['', ...(ctx.months || MONTHS)], cash: cash13, net: net13, asIdx: d.asOfMonth, asOfLabel: ctx.asOfLabel, year: ctx.year })
+  const chart = buildCashStoryChart({ months: ['', ...(ctx.months || MONTHS)], cash: cash13, net: net13, asIdx: d.asOfMonth, asOfLabel: ctx.asOfLabel, year: ctx.year, payablesToday: ctx.payables ? ctx.payables.value : null })
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cash Flow Story — ${ctx.scopeLabel}</title>
 <style>
@@ -83,6 +83,8 @@ export function buildNarrativeHtml(
   .foot-label { font-size: 8.5px; letter-spacing: .5px; text-transform: uppercase; color: #64748b; font-weight: 700; }
   .foot-val { font-size: 18px; font-weight: 800; margin: 3px 0 2px; } .foot-val .sep { color: #cbd5e1; margin: 0 4px; font-weight: 400; } .foot-ccy { font-size: 11px; color: #94a3b8; font-weight: 600; }
   .foot-note { font-size: 9px; color: #64748b; }
+  .foot-item--note { display: flex; flex-direction: column; justify-content: center; }
+  .foot-note--lg { font-size: 10.5px; line-height: 1.5; margin-top: 2px; }
   .bl { margin-top: 11px; background: #15233b; border-radius: 6px; padding: 11px 16px; display: flex; align-items: baseline; gap: 12px; }
   .bl-tag { background: #E10020; color: #fff; font-size: 8.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; padding: 3px 8px; border-radius: 4px; white-space: nowrap; }
   .bl-text { color: #e8edf4; font-size: 12px; line-height: 1.5; } .bl-text b { color: #fff; } .bl-text b.neg { color: #ff6b81; } .bl-text b.pos { color: #34d399; }
@@ -111,10 +113,9 @@ export function buildNarrativeHtml(
   </div>
 
   <div class="foot">
-    <div class="foot-item">
+    <div class="foot-item foot-item--note">
       <div class="foot-label">Payables · suppliers &amp; subcontractors</div>
-      <div class="foot-val">${ctx.payables ? `<span class="neg">${fM(-Math.abs(ctx.payables.value))}</span>` : `<span class="pending">Pending</span>`}${ctx.payables && ctx.payables.currency === 'USD' && !ctx.unit.startsWith('USD') ? `<span class="foot-ccy"> USD</span>` : ''}</div>
-      <div class="foot-note">${ctx.payables ? `Midas balance · ${ctx.asOfLabel} snapshot only — monthly trail pending Bilal's extracts` : 'No Midas balance for this period'}</div>
+      <div class="foot-note foot-note--lg">${ctx.payables ? `Current balance shown at Today above · single Midas snapshot (${ctx.asOfLabel})${ctx.payables.currency === 'USD' && !ctx.unit.startsWith('USD') ? ', USD' : ''} — monthly trail pending Bilal's extracts` : 'No Midas balance for this period — payables trail pending'}</div>
     </div>
     <div class="foot-item">
       <div class="foot-label">Full-year cash flow</div>

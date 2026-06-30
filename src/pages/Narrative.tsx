@@ -274,20 +274,17 @@ function ChairmanReport({ d, scopeLabel, year, asOfLabel, unit, mode, payables }
         </div>
         <div className="cnr-chart" dangerouslySetInnerHTML={{ __html: buildCashStoryChart({
           months: ['', ...MONTHS], cash: cash13, net: net13, asIdx: d.asOfMonth, asOfLabel, year,
+          payablesToday: payables ? payables.value : null,
         }) }} />
       </div>
 
-      {/* Region 4 — payables (single Midas snapshot) + full-year flow */}
+      {/* Region 4 — payables data note + full-year flow */}
       <div className="cnr-foot">
-        <div className="cnr-foot-item">
+        <div className="cnr-foot-item cnr-foot-item--note">
           <div className="cnr-foot-label">Payables · suppliers &amp; subcontractors</div>
-          <div className="cnr-foot-val">{payables
-            ? <span className="neg">{fM(-Math.abs(payables.value))}</span>
-            : <span className="cnr-stat-pending">Pending</span>}
-            {payables && payables.currency === 'USD' && !unit.startsWith('USD') ? <span className="cnr-foot-ccy"> USD</span> : null}</div>
-          <div className="cnr-foot-note">{payables
-            ? `Midas balance · ${asOfLabel} snapshot only — monthly trail pending Bilal's extracts`
-            : 'No Midas balance for this period'}</div>
+          <div className="cnr-foot-note cnr-foot-note--lg">{payables
+            ? `Current balance shown at Today above · single Midas snapshot (${asOfLabel})${payables.currency === 'USD' && !unit.startsWith('USD') ? ', USD' : ''} — monthly trail pending Bilal's extracts`
+            : 'No Midas balance for this period — payables trail pending'}</div>
         </div>
         <div className="cnr-foot-item">
           <div className="cnr-foot-label">Full-year cash flow</div>

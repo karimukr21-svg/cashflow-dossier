@@ -28,8 +28,9 @@ export function buildCashStoryChart(opts: {
   cash: number[]; net: number[];   // 13 raw each (debt = cash − net = the band)
   asIdx: number;             // index of the current period (April = 4)
   asOfLabel: string; year: number;
+  payablesToday?: number | null;   // current (as-of) trade payables balance, if known
 }): string {
-  const { cash, net, months, asOfLabel, year } = opts
+  const { cash, net, months, asOfLabel, year, payablesToday } = opts
   const n = cash.length, asIdx = opts.asIdx
   const C = cash.map(mm), N = net.map(mm)
 
@@ -124,6 +125,11 @@ export function buildCashStoryChart(opts: {
     s += `<text x="${cx.toFixed(1)}" y="${cpY.toFixed(1)}" text-anchor="${cp.anchor}" font-size="9.5" font-weight="700" letter-spacing=".4" fill="${SLATE}">${cp.head}</text>`
     s += `<text x="${cx.toFixed(1)}" y="${(cpY + 20).toFixed(1)}" text-anchor="${cp.anchor}" font-size="13.5" font-weight="700" fill="${CASH}">${mag(cash[cp.i])}<tspan font-size="9.5" font-weight="500" fill="${SLATE}"> cash</tspan></text>`
     s += `<text x="${cx.toFixed(1)}" y="${(cpY + 38).toFixed(1)}" text-anchor="${cp.anchor}" font-size="13.5" font-weight="700" fill="${BAD}">(${mag(debtV)})<tspan font-size="9.5" font-weight="500" fill="${SLATE}"> loans &amp; OD</tspan></text>`
+    // current payables — only the as-of checkpoint carries a balance (one Midas snapshot)
+    if (cp.i === asIdx && payablesToday != null)
+      s += `<text x="${cx.toFixed(1)}" y="${(cpY + 56).toFixed(1)}" text-anchor="${cp.anchor}" font-size="13.5" font-weight="700" fill="${BAD}">(${mag(Math.abs(payablesToday))})<tspan font-size="9.5" font-weight="500" fill="${SLATE}"> payables</tspan></text>`
+    else if (cp.i === asIdx)
+      s += `<text x="${cx.toFixed(1)}" y="${(cpY + 56).toFixed(1)}" text-anchor="${cp.anchor}" font-size="11" font-style="italic" fill="#94a3b8">payables — pending</text>`
   }
 
   s += `</svg>`
