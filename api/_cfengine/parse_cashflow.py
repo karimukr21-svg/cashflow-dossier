@@ -498,8 +498,13 @@ def resolve_line(label, section, direction, post_ending, resolver, area, wg_sub=
         if lt.startswith('OVERDRAFT') \
                 or 'ACCUMULATEDOVERDRAFT' in lt or 'ACCOUMULATEDOVERDRAFT' in lt:
             return 'accum_od', direction
-        if lt in ('NETFUNDS',):
-            return None, direction
+        # Nothing below the ending balance is a FLOW line — it's accumulated stocks
+        # (handled above) or memo/notes. Don't fall through to the section blocks, or
+        # a note that happens to carry a stray value and a flow keyword gets
+        # mis-mapped (e.g. KAZH's '- $ 200K Loan from KCC in May'25' note, with a
+        # leftover value, resolving to bf_pay_loans and inflating the file-side bank
+        # section in the compare-to-file view). Return None for everything else.
+        return None, direction
 
     # --- Within Group (transfers) ---
     if section == 'Within Group':
