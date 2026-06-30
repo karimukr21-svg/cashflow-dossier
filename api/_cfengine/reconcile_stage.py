@@ -167,6 +167,17 @@ EXCLUDE_SHEETS = {
     'CCUW_Apr_2026_CashFlow.xlsx': {'TRANSFERS OUTSIDE AREA'},
 }
 
+# Sheets whose name contains 'JV' but which are NOT equity-accounted JVs to exclude —
+# they're CCC's PROPORTIONAL share (already share-adjusted, e.g. 'PM JV 54%') and the
+# area's CONSOLIDATED rollup sums them in. Force them to be treated as normal
+# consolidated entities (summed + reconciled), overriding the is_jv_code heuristic
+# (which otherwise drops any 'JV'-named sheet, correct for UAE/Saudi's 100% JV books).
+JV_INCLUDE_OVERRIDE = {
+    # Morganti CONSOLIDATED = PM JV 54% + FM 100% + MGSA 70% (verified to the cent);
+    # PM JV 54% is the 54% share, part of the consolidation — sum it.
+    'Morganti_Apr_2026_CashFlow.xlsx': {'PM JV 54%'},
+}
+
 # Single-entity areas: no per-project decomposition exists, only an area cash flow.
 # Stage that sheet under project_code='_AREA' (verdict 'single_area' — nothing to tie).
 MAIN_SHEET = {
@@ -464,7 +475,9 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
             return
         raw_code = meta['project_code']
         area_item = is_area_item(raw_code)
-        jv = is_jv_code(raw_code)
+        # 'JV'-named sheet → excluded as equity-accounted, UNLESS this file marks it a
+        # proportional-share entity the rollup consolidates (e.g. Morganti 'PM JV 54%').
+        jv = is_jv_code(raw_code) and n not in JV_INCLUDE_OVERRIDE.get(fn, set())
         # area items (non-JV) fold to the _AREA bucket
         code = '_AREA' if (area_item and not jv) else raw_code
         for r in rows:
