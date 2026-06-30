@@ -8,7 +8,7 @@ import { isDebtStock, flowSections } from '@/lib/cfTaxonomy'
 import { fmt } from '@/lib/format'
 import type { Scope } from './Dossier'
 import { buildNarrativeHtml } from './narrativePrint'
-import { buildLiquidChart } from './narrativeChart'
+import { buildCashStoryChart } from './narrativeChart'
 
 /* ── The Chairman cash-flow story ──────────────────────────────────────────
  * A full-width, single-screen executive read of one area's (or the Group's)
@@ -213,12 +213,12 @@ function ChairmanReport({ d, scopeLabel, year, asOfLabel, unit, mode, payables }
   const payNote = payables
     ? `Suppliers, subcontractors & taxes · as of ${asOfLabel}${payables.currency === 'USD' && !unit.startsWith('USD') ? ' (USD)' : ''}`
     : 'Trade liabilities · no Midas balance for this period'
-  const liqSwing = (d.yearEnd ?? 0) - (d.now ?? 0)               // gross cash swing (strip note)
-  const nfStart = d.netFunds[0]                                  // net funds at the start of the year
-  const fullSwing = d.nfEnd - nfStart                            // net journey, start → year-end
-  const decRetire = d.debtEnd - d.liabilities[10]
-  const plateau = Math.round((d.liabilities.slice(0, 11).reduce((a, b) => a + b, 0) / 11) / 1e6 / 50) * 50
+  const fullSwing = d.nfEnd - d.nfOpen                            // net journey, opening → year-end
   const fullSwingCap = fullSwing >= 0 ? `Net funds recover over ${year}` : `Net funds erode over ${year}`
+  const netFlow = d.recvFull + d.payFull
+  // 13-point series for the cash-story chart: the year's opening + each month-end.
+  const cash13 = [d.opening ?? 0, ...d.cashClosing]
+  const net13 = [d.nfOpen, ...d.netFunds]
 
   return (
     <div className="cnr-page">
@@ -235,12 +235,12 @@ function ChairmanReport({ d, scopeLabel, year, asOfLabel, unit, mode, payables }
         </div>
       </div>
 
-      {/* Region 2 — hero: net liquid funds, start → today → year-end */}
+      {/* Region 2 — hero: net liquid funds, opening → today → year-end */}
       <div className="cnr-hero">
         <div className="cnr-hero-eyebrow">Net liquid funds</div>
         <div className="cnr-hero-row">
           <div className="cnr-hero-pt">
-            <div className={`cnr-hero-num sm ${sign(nfStart)}`}>{fM(nfStart)}</div>
+            <div className={`cnr-hero-num sm ${sign(d.nfOpen)}`}>{fM(d.nfOpen)}</div>
             <div className="cnr-hero-cap">Start · Jan {year}</div>
           </div>
           <div className="cnr-hero-arrow">→</div>
@@ -261,31 +261,39 @@ function ChairmanReport({ d, scopeLabel, year, asOfLabel, unit, mode, payables }
         </div>
       </div>
 
-      {/* Region 3 — net liquid funds across the year (cash less loans & overdrafts) */}
+      {/* Region 3 — the cash story: cash held, financing band, the net line + start/today/year-end timeline */}
       <div className="cnr-chartwrap">
         <div className="cnr-chart-head">
-          <div className="cnr-chart-title">Net liquid funds across {year} <span>· cash less loans &amp; overdrafts, month by month</span></div>
+          <div className="cnr-chart-title">The year's cash story <span>· cash held, financing, and the net position from the year's open to December</span></div>
           <div className="cnr-legend">
+            <span className="cnr-leg"><i className="cnr-leg-cash" />Cash on hand</span>
             <span className="cnr-leg"><i className="cnr-leg-nf" />Net liquid funds</span>
+            <span className="cnr-leg"><i className="cnr-leg-band" />Loans &amp; overdrafts</span>
             <span className="cnr-leg"><i className="cnr-leg-fc" />Forecast</span>
           </div>
         </div>
-        <div className="cnr-chart" dangerouslySetInnerHTML={{ __html: buildLiquidChart({
-          months: MONTHS, series: d.netFunds, asOfMonth: d.asOfMonth,
+        <div className="cnr-chart" dangerouslySetInnerHTML={{ __html: buildCashStoryChart({
+          months: ['', ...MONTHS], cash: cash13, net: net13, asIdx: d.asOfMonth, asOfLabel, year,
         }) }} />
       </div>
 
-      {/* Region 4 — position summary: the cash, financing & payables behind the net */}
-      <div className="cnr-owe-head">Position summary <span>· the cash, financing &amp; payables behind the net</span></div>
-      <div className="cnr-strip">
-        <StatCol label="Cash on hand" from={d.now} to={d.yearEnd}
-          note={`Gross cash · ${fMs(liqSwing)} over the year`} />
-        <StatCol label="Loans &amp; overdrafts" from={-Math.abs(d.debtNow)} to={-Math.abs(d.debtEnd)} bothNeg
-          note={`Financing · held ≈ ${plateau}m all year · ${fMs(decRetire)} in Dec`} />
-        <StatCol label="Payables (suppliers + subcontractors)" single={payables ? -Math.abs(payables.value) : undefined}
-          pending={!payables} note={payNote} />
-        <StatCol label="Full-year flow" single={d.recvFull} singlePos
-          note={`Receipts vs ${fM(Math.abs(d.payFull))} payments · net ${fMs(d.recvFull + d.payFull)}`} />
+      {/* Region 4 — payables (single Midas snapshot) + full-year flow */}
+      <div className="cnr-foot">
+        <div className="cnr-foot-item">
+          <div className="cnr-foot-label">Payables · suppliers &amp; subcontractors</div>
+          <div className="cnr-foot-val">{payables
+            ? <span className="neg">{fM(-Math.abs(payables.value))}</span>
+            : <span className="cnr-stat-pending">Pending</span>}
+            {payables && payables.currency === 'USD' && !unit.startsWith('USD') ? <span className="cnr-foot-ccy"> USD</span> : null}</div>
+          <div className="cnr-foot-note">{payables
+            ? `Midas balance · ${asOfLabel} snapshot only — monthly trail pending Bilal's extracts`
+            : 'No Midas balance for this period'}</div>
+        </div>
+        <div className="cnr-foot-item">
+          <div className="cnr-foot-label">Full-year cash flow</div>
+          <div className="cnr-foot-val"><span className="pos">{fM(d.recvFull)}</span> in <span className="cnr-foot-sep">·</span> <span className="neg">{fM(Math.abs(d.payFull))}</span> out</div>
+          <div className="cnr-foot-note">Net movement {fMs(netFlow)} over {year}</div>
+        </div>
       </div>
 
       {/* Region 5 — bottom line */}
@@ -306,29 +314,6 @@ function ChairmanReport({ d, scopeLabel, year, asOfLabel, unit, mode, payables }
   )
 }
 
-function StatCol({ label, from, to, single, note, bothNeg, pending, singlePos }: {
-  label: string; from?: number | null; to?: number | null; single?: number; note: string; bothNeg?: boolean; pending?: boolean; singlePos?: boolean
-}) {
-  return (
-    <div className="cnr-stat">
-      <div className="cnr-stat-label" dangerouslySetInnerHTML={{ __html: label }} />
-      <div className="cnr-stat-val">
-        {pending ? (
-          <span className="cnr-stat-pending">Pending</span>
-        ) : single !== undefined ? (
-          <span className={singlePos ? 'pos' : sign(single)}>{fM(single)}</span>
-        ) : (
-          <>
-            <span className={bothNeg ? 'neg' : sign(from)}>{fM(from)}</span>
-            <span className="cnr-stat-arrow">→</span>
-            <span className={bothNeg ? 'neg' : sign(to)}>{fM(to)}</span>
-          </>
-        )}
-      </div>
-      <div className="cnr-stat-note">{note}</div>
-    </div>
-  )
-}
 
 function Bars({ items, tone }: { items: { label: string; value: number }[]; tone: 'pos' | 'neg' }) {
   const max = Math.max(1, ...items.map(i => Math.abs(i.value)))

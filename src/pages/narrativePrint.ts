@@ -1,5 +1,5 @@
 import type { NarrativeData } from './Narrative'
-import { buildLiquidChart } from './narrativeChart'
+import { buildCashStoryChart } from './narrativeChart'
 
 /* Print mirror of the Chairman cash-flow report (ChairmanReport in
  * Narrative.tsx): header → hero transformation → trajectory chart → before→after
@@ -39,16 +39,12 @@ export function buildNarrativeHtml(
   ctx: { scopeLabel: string; year: number; asOfLabel: string; mode: 'group' | 'area'; unit: string; months: string[];
          payables: { value: number; currency: string } | null },
 ): string {
-  const liqSwing = (d.yearEnd ?? 0) - (d.now ?? 0)               // gross cash swing (strip note)
-  const nfStart = d.netFunds[0]                                  // net funds at the start of the year
-  const fullSwing = d.nfEnd - nfStart                            // net journey, start → year-end
-  const decRetire = d.debtEnd - d.liabilities[10]
-  const plateau = Math.round((d.liabilities.slice(0, 11).reduce((a, b) => a + b, 0) / 11) / 1e6 / 50) * 50
+  const fullSwing = d.nfEnd - d.nfOpen                            // net journey, opening → year-end
   const fullSwingCap = fullSwing >= 0 ? `Net funds recover over ${ctx.year}` : `Net funds erode over ${ctx.year}`
-  const chart = buildLiquidChart({ months: ctx.months || MONTHS, series: d.netFunds, asOfMonth: d.asOfMonth })
-
-  const stat = (label: string, body: string, note: string) =>
-    `<div class="stat"><div class="stat-l">${label}</div><div class="stat-v">${body}</div><div class="stat-n">${note}</div></div>`
+  const netFlow = d.recvFull + d.payFull
+  const cash13 = [d.opening ?? 0, ...d.cashClosing]
+  const net13 = [d.nfOpen, ...d.netFunds]
+  const chart = buildCashStoryChart({ months: ['', ...(ctx.months || MONTHS)], cash: cash13, net: net13, asIdx: d.asOfMonth, asOfLabel: ctx.asOfLabel, year: ctx.year })
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cash Flow Story — ${ctx.scopeLabel}</title>
 <style>
@@ -72,7 +68,7 @@ export function buildNarrativeHtml(
   .chart-title { font-size: 11px; font-weight: 700; color: #15233b; } .chart-title span { color: #94a3b8; font-weight: 500; }
   .legend { font-size: 9.5px; color: #64748b; display: flex; gap: 14px; }
   .leg { display: inline-flex; align-items: center; gap: 5px; } .leg i { width: 16px; height: 3px; display: inline-block; border-radius: 2px; }
-  .leg-nf { background: #15233b; height: 3px; } .leg-fc { background: repeating-linear-gradient(90deg,#64748b 0 4px,transparent 4px 7px); }
+  .leg-cash { background: #3f6aa3; } .leg-nf { background: #15233b; height: 3px; } .leg-band { height: 9px; background: rgba(225,0,32,0.16); } .leg-fc { background: repeating-linear-gradient(90deg,#64748b 0 4px,transparent 4px 7px); }
   .chart svg { display: block; width: 100%; }
   .owe-head { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #15233b; margin: 10px 0 1px; }
   .owe-head span { color: #94a3b8; font-weight: 500; text-transform: none; letter-spacing: 0; }
@@ -82,6 +78,11 @@ export function buildNarrativeHtml(
   .stat-l { font-size: 8.5px; letter-spacing: .5px; text-transform: uppercase; color: #64748b; font-weight: 700; }
   .stat-v { font-size: 19px; font-weight: 800; margin: 3px 0 2px; } .stat-v .arr { color: #94a3b8; font-weight: 400; margin: 0 6px; font-size: 15px; }
   .stat-n { font-size: 9px; color: #64748b; }
+  .foot { display: flex; border-top: 1px solid #e9ecf1; border-bottom: 1px solid #e9ecf1; margin-top: 9px; }
+  .foot-item { flex: 1; padding: 8px 16px; border-left: 1px solid #e9ecf1; } .foot-item:first-child { border-left: none; padding-left: 0; }
+  .foot-label { font-size: 8.5px; letter-spacing: .5px; text-transform: uppercase; color: #64748b; font-weight: 700; }
+  .foot-val { font-size: 18px; font-weight: 800; margin: 3px 0 2px; } .foot-val .sep { color: #cbd5e1; margin: 0 4px; font-weight: 400; } .foot-ccy { font-size: 11px; color: #94a3b8; font-weight: 600; }
+  .foot-note { font-size: 9px; color: #64748b; }
   .bl { margin-top: 11px; background: #15233b; border-radius: 6px; padding: 11px 16px; display: flex; align-items: baseline; gap: 12px; }
   .bl-tag { background: #E10020; color: #fff; font-size: 8.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; padding: 3px 8px; border-radius: 4px; white-space: nowrap; }
   .bl-text { color: #e8edf4; font-size: 12px; line-height: 1.5; } .bl-text b { color: #fff; } .bl-text b.neg { color: #ff6b81; } .bl-text b.pos { color: #34d399; }
@@ -94,7 +95,7 @@ export function buildNarrativeHtml(
 
   <div class="hero">
     <div class="hero-eyebrow">Net liquid<br>funds</div>
-    <div class="hero-pt"><div class="hero-num sm ${sign(nfStart)}">${fM(nfStart)}</div><div class="hero-cap">Start · Jan ${ctx.year}</div></div>
+    <div class="hero-pt"><div class="hero-num sm ${sign(d.nfOpen)}">${fM(d.nfOpen)}</div><div class="hero-cap">Start · Jan ${ctx.year}</div></div>
     <div class="hero-arrow">→</div>
     <div class="hero-pt"><div class="hero-num ${sign(d.nfNow)}">${fM(d.nfNow)}</div><div class="hero-cap">Today · ${ctx.asOfLabel}</div></div>
     <div class="hero-arrow">→</div>
@@ -104,17 +105,22 @@ export function buildNarrativeHtml(
   </div>
 
   <div class="chartwrap">
-    <div class="chart-head"><div class="chart-title">Net liquid funds across ${ctx.year} <span>· cash less loans &amp; overdrafts, month by month</span></div>
-      <div class="legend"><span class="leg"><i class="leg-nf"></i>Net liquid funds</span><span class="leg"><i class="leg-fc"></i>Forecast</span></div></div>
+    <div class="chart-head"><div class="chart-title">The year's cash story <span>· cash held, financing, and the net position from the year's open to December</span></div>
+      <div class="legend"><span class="leg"><i class="leg-cash"></i>Cash on hand</span><span class="leg"><i class="leg-nf"></i>Net liquid funds</span><span class="leg"><i class="leg-band"></i>Loans &amp; overdrafts</span><span class="leg"><i class="leg-fc"></i>Forecast</span></div></div>
     <div class="chart">${chart}</div>
   </div>
 
-  <div class="owe-head">Position summary <span>· the cash, financing &amp; payables behind the net</span></div>
-  <div class="strip">
-    ${stat('Cash on hand', `<span class="${sign(d.now)}">${fM(d.now)}</span><span class="arr">→</span><span class="${sign(d.yearEnd)}">${fM(d.yearEnd)}</span>`, `Gross cash · ${fMs(liqSwing)} over the year`)}
-    ${stat('Loans &amp; overdrafts', `<span class="neg">${fM(-Math.abs(d.debtNow))}</span><span class="arr">→</span><span class="neg">${fM(-Math.abs(d.debtEnd))}</span>`, `Financing · held ≈ ${plateau}m all year · ${fMs(decRetire)} in Dec`)}
-    ${stat('Payables (suppliers + subcontractors)', ctx.payables ? `<span class="neg">${fM(-Math.abs(ctx.payables.value))}</span>` : `<span class="pending">Pending</span>`, ctx.payables ? `Suppliers, subcontractors &amp; taxes · as of ${ctx.asOfLabel}${ctx.payables.currency === 'USD' && !ctx.unit.startsWith('USD') ? ' (USD)' : ''}` : `Trade liabilities · no Midas balance for this period`)}
-    ${stat('Full-year flow', `<span class="pos">${fM(d.recvFull)}</span>`, `Receipts vs ${fM(Math.abs(d.payFull))} payments · net ${fMs(d.recvFull + d.payFull)}`)}
+  <div class="foot">
+    <div class="foot-item">
+      <div class="foot-label">Payables · suppliers &amp; subcontractors</div>
+      <div class="foot-val">${ctx.payables ? `<span class="neg">${fM(-Math.abs(ctx.payables.value))}</span>` : `<span class="pending">Pending</span>`}${ctx.payables && ctx.payables.currency === 'USD' && !ctx.unit.startsWith('USD') ? `<span class="foot-ccy"> USD</span>` : ''}</div>
+      <div class="foot-note">${ctx.payables ? `Midas balance · ${ctx.asOfLabel} snapshot only — monthly trail pending Bilal's extracts` : 'No Midas balance for this period'}</div>
+    </div>
+    <div class="foot-item">
+      <div class="foot-label">Full-year cash flow</div>
+      <div class="foot-val"><span class="pos">${fM(d.recvFull)}</span> in <span class="sep">·</span> <span class="neg">${fM(Math.abs(d.payFull))}</span> out</div>
+      <div class="foot-note">Net movement ${fMs(netFlow)} over ${ctx.year}</div>
+    </div>
   </div>
 
   <div class="bl"><span class="bl-tag">Bottom line</span><span class="bl-text">${bottomLine(d, ctx.scopeLabel, ctx.payables)}</span></div>
