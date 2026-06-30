@@ -149,6 +149,15 @@ EXCLUDE_SHEETS = {
     # Botswana: take only the BOT sheet for now; the file bundles other areas.
     'BOTSWANA_Apr_2026_CashFlow.xlsx': {'CONSOLIDATED', 'BOT (2)', 'IVC', 'RWANDA',
         'BOTSWANA', 'NIGERIA', 'GRENADA', 'ZAMBIA', 'NEW SALES'},
+    # CC (UE): the area's complete cash flow IS the 'CASH FLOW REPORTS' statement,
+    # which already carries the within-group net (PAYMENTS - OUTSIDE AREA, row 45).
+    # The 'TRANSFERS OUTSIDE AREA' sheet is a counterparty breakdown of that same
+    # within-group line — summing it double-counts the transfers (and its TOTAL
+    # doesn't even match the statement's row 45). Drop it; the main statement is
+    # authoritative and is what the area's balance walk uses. ('NEW SALES' is kept:
+    # the main statement's New Sales section is zero, so that sheet is the only
+    # source of new-sales flow, not a duplicate.)
+    'CCUW_Apr_2026_CashFlow.xlsx': {'TRANSFERS OUTSIDE AREA'},
 }
 
 # Single-entity areas: no per-project decomposition exists, only an area cash flow.
