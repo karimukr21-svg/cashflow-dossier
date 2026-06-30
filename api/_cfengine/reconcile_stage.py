@@ -521,6 +521,13 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
                            'sum_projects': sp, 'area_total': tv, 'diff': diff,
                            'classification': cls})
         recon_status = 'tie' if material == 0 else 'break'
+    # No independent area total to reconcile against (a single consolidated/area
+    # sheet, or an area with no rollup): the INCLUDED sheets ARE the area total, so
+    # set the file side = our own section sums. Without this the compare-to-file
+    # toggle diffs against an empty file side and shows every cell as a phantom
+    # variance (the values are correct, there's just nothing to compare to).
+    if not rollup_sections and flowsum:
+        rollup_sections = sections_from_agg(flowsum, ref_lines)
     flow_breaks = [b for b in breaks if b['classification'] in MATERIAL]
     max_abs = max((abs(b['diff']) for b in flow_breaks), default=None)
     cat = {L['line_code']: L['category'] for L in resolver_lines(resolver)}

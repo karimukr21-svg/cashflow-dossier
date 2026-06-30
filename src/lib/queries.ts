@@ -63,6 +63,18 @@ export async function fetchLines(): Promise<CfLine[]> {
   return data as CfLine[]
 }
 
+/** The distinct cf area labels that actually carry pushed forecast rows for a
+ *  version — used to default a view to a populated area rather than a hardcoded
+ *  showcase. One short text column; deduped client-side. */
+export async function fetchPopulatedCfAreas(version: string): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from('cf_forecasts')
+    .select('area')
+    .eq('version', version)
+  if (error) throw error
+  return new Set((data || []).map(r => r.area))
+}
+
 /** Catalog: all known forecast versions, newest first */
 export async function fetchVersions(): Promise<CfVersion[]> {
   const { data, error } = await supabase

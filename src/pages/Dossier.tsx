@@ -110,10 +110,16 @@ export default function Dossier() {
         setVersions(v)
         setAreas(a)
         setLines(l)
-        // Find latest actual month from a cheap query (whole-period, no cf filter)
+        // As-of = latest closed actual month. Prefer the real data (MAX over
+        // cf_actuals); when actuals are empty (the normal pre-publish state),
+        // fall back to the newest version's as_of_date — never a bare literal.
         const sample = await fetchActuals({ fromYear: 2024, fromMonth: 1, toYear: 2030, toMonth: 12 })
         const max = sample.reduce((m, c) => Math.max(m, ymToInt(c.year, c.month)), 0)
         if (max) setLatestActualYM(max)
+        else if (v[0]?.as_of_date) {
+          const [ay, am] = v[0].as_of_date.split('-').map(Number)
+          if (ay && am) setLatestActualYM(ay * 100 + am)
+        }
       } finally {
         setLoadingCatalog(false)
       }
@@ -287,7 +293,7 @@ export default function Dossier() {
     const scope = {
       primaryVersion, compareVersion,
       fromYear: fy, fromMonth: fm, toYear: ty, toMonth: tm,
-      areas, lines, latestActualYM, grain, groupBy, ord,
+      areas, lines, versions, latestActualYM, grain, groupBy, ord,
       selectedAreas, cfToCanonical,
     }
 
@@ -495,6 +501,10 @@ export type Scope = {
    * that fold into this canonical area. */
   areas: CanonicalArea[];
   lines: CfLine[];
+  /* All forecast versions (newest first). The Cash Flow Story derives its
+   * reporting year + as-of from the SELECTED version's cycle_year/as_of_date,
+   * so the period follows the version pills rather than a global actuals scan. */
+  versions: CfVersion[];
   latestActualYM: number;
   grain: Grain;
   groupBy: GroupBy;
