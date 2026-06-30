@@ -477,7 +477,7 @@ def resolve_line(label, section, direction, post_ending, resolver, area, wg_sub=
     # In Interest / Non-Operational a bare RECEIPTS / PAYMENTS row IS the data line,
     # so don't let the SKIP_LABELS guard reject it (it stays a skippable sub-header
     # everywhere else — Operation etc.).
-    section_data = (section in ('Interest', 'Non Operational')
+    section_data = (section in ('Interest', 'Non Operational', 'Within Group')
                     and lt in ('RECEIPTS', 'RECEIPT', 'PAYMENTS', 'PAYMENT'))
     if not lt or (lt in SKIP_LABELS and not section_data):
         return None, direction
@@ -754,8 +754,13 @@ def parse_sheet(ws, area, sheet_name, resolver, as_of, verbose=False):
         # data lines (one receipt + one payment carry the section's whole value) —
         # unlike Operation, where they are sub-headers. So don't let SKIP_LABELS
         # drop them; fall through to resolve_line, which maps them to
-        # interest_recpt/pay and nonop_recpt/pay.
-        is_section_data = (section in ('Interest', 'Non Operational')
+        # interest_recpt/pay and nonop_recpt/pay. Within Group is the same: a bare
+        # 'PAYMENTS -' row under a subsection banner (e.g. CCUW's 'RECEIPTS - WITHIN
+        # AREA' → 'PAYMENTS -') is a real transfer line that resolves via wg_sub —
+        # without this it tightens to 'PAYMENTS' ∈ SKIP_LABELS and the within-area
+        # payments are silently dropped (the OUTSIDE/TREASURY rows survive because
+        # their label keeps the keyword).
+        is_section_data = (section in ('Interest', 'Non Operational', 'Within Group')
                            and lt in ('RECEIPTS', 'RECEIPT', 'PAYMENTS', 'PAYMENT'))
         if lt in SKIP_LABELS and not is_section_data:
             continue
