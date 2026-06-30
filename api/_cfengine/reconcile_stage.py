@@ -87,6 +87,36 @@ CURRENCY_OVERRIDE = {
 CCY_TOKENS = ('USD', 'SAR', 'AED', 'QAR', 'EUR', 'EGP', 'KZT', 'OMR', 'NGN',
               'XOF', 'JOD', 'MAD', 'BWP', 'RWF', 'GBP', 'TND', 'DZD')
 
+# Source-scale normalization to FULL native currency. The area files are NOT uniform:
+# some are denominated in full units (KSA full SAR, Oman full OMR), others in '000 of
+# their native currency. The in-sheet 'Currency XXX "000"' label is NOT a reliable
+# indicator of the actual value scale — verified by comparison to Tony's master (e.g.
+# Qatar/Kazakhstan carry NO '000 label yet are '000; the marker can't be trusted).
+# Canonical stores FULL native (so USD derives at read via fx_rates), so a per-file
+# factor scales the staged values + balances up to full units. Factor is determined
+# per area by Tony-calibration during seeding (default 1.0 = no change), then baked
+# here so a re-stage / cloud re-upload stays consistent instead of reverting to '000.
+SCALE_OVERRIDE = {
+    # pushed + normalized (cf_forecasts already ×1000; config keeps a re-stage consistent)
+    'Libya_Apr_2026_CashFlow.xlsx':    1000.0,   # '000 USD -> full USD
+    'BOTSWANA_Apr_2026_CashFlow.xlsx': 1000.0,   # '000 USD -> full USD
+    'Iraq_Apr_2026_CashFlow.xlsx':     1000.0,   # '000 USD -> full USD
+    'Nigeria_Apr_2026_CashFlow.xlsx':  1000.0,   # '000 NGN -> full NGN
+    'Jordan_Apr_2026_CashFlow.xlsx':   1000.0,   # '000 JOD -> full JOD
+    # staged, verified '000 via Tony-calibration — must RE-STAGE before push so the
+    # values land full (SCALE_OVERRIDE applies at stage time, not at push).
+    'Qatar_Apr_2026_CashFlow_Updated.xlsx': 1000.0,                    # '000 USD
+    'AREA QATAR CASH FLOW ACTUAL APRIL 2026 & FORECAST - MOA.xlsx': 1000.0,  # '000 USD
+    'UAE_Apr_2026_CashFlow.xlsx':      1000.0,   # '000 AED -> full AED
+    'KAZH_Apr_2026_CashFlow.xlsx':     1000.0,   # '000 USD -> full USD
+    'Morganti_Apr_2026_CashFlow.xlsx': 1000.0,   # '000 USD -> full USD
+    'MOZAMBIQUE_Apr_2026_CashFlow.xlsx': 1000.0, # '000 USD -> full USD
+    'CCUW_Apr_2026_CashFlow.xlsx':     1000.0,   # '000 USD -> full USD
+    'Ivory Coast_Apr_2026_CashFlow.xlsx': 1000.0, # '000 XOF -> full XOF
+    # Egypt deferred: its ratio is contaminated by the year-anchoring bug + sheet
+    # double-count — fix those first, then confirm its scale (also '000) and add here.
+}
+
 # Sheets that, despite classifying as 'project', are NOT real projects to sum:
 # by-project In/Out/NET summaries + sub-rollups that would double-count.
 EXCLUDE_SHEETS = {
@@ -562,6 +592,23 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
             n_fc += 1
         staged.append({'kind': kind, 'area': area, 'project_code': pc, 'sheet': sheet,
                        'line_code': lc, 'year': y, 'month': m, 'value': round(v, 4)})
+
+    # Normalize source '000 -> full native (see SCALE_OVERRIDE). Default 1.0 = no-op.
+    # Scales the staged values AND the rollup balance/section series together, so the
+    # compare-to-file tie and the balance tiles stay internally consistent.
+    scale = SCALE_OVERRIDE.get(fn, 1.0)
+    if scale != 1.0:
+        for r in staged:
+            r['value'] = round(r['value'] * scale, 4)
+        for bk in ('opening', 'ending', 'accum_loans', 'accum_od'):
+            if isinstance(rollup_balances.get(bk), dict):
+                rollup_balances[bk] = {k: round(v * scale, 4)
+                                       for k, v in rollup_balances[bk].items()}
+        for bk in ('accum_loans_open', 'accum_od_open'):
+            if isinstance(rollup_balances.get(bk), (int, float)):
+                rollup_balances[bk] = round(rollup_balances[bk] * scale, 4)
+        rollup_sections = {sk: {k: round(v * scale, 4) for k, v in d.items()}
+                           for sk, d in rollup_sections.items()}
 
     summed_set = set(sel)
     # Per summed sheet: each is a project or an area item. Split into ASSIGNED

@@ -20,6 +20,80 @@ const labSigned = (v: number): string => {
   return r < 0 ? `(${s})` : `+${s}`
 }
 
+/* Liquid-funds trajectory — the clean cash position over the year (NOT netted
+ * with debt). Single series, area + line, actual solid / forecast dashed, with
+ * a now marker and a year-end pill. This is the hero chart. */
+export function buildLiquidChart(opts: {
+  months: string[]; liquid: number[]; asOfMonth: number
+}): string {
+  const { months, liquid } = opts
+  const n = 12, asIdx = opts.asOfMonth - 1
+  const v = liquid.map(mm)
+
+  let ymax = Math.max(1, ...v), ymin = Math.min(0, ...v)
+  ymax += (ymax - ymin) * 0.12
+  const range = (ymax - ymin) || 1
+
+  const W = 1360, H = 348
+  const plotL = 66, plotR = 1306, plotW = plotR - plotL
+  const top = 26, plotH = 256, axisY = top + plotH + 22
+  const x = (i: number) => plotL + (i / (n - 1)) * plotW
+  const y = (val: number) => top + ((ymax - val) / range) * plotH
+
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">`
+  s += `<defs><linearGradient id="liqGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${INK}" stop-opacity="0.14"/><stop offset="1" stop-color="${INK}" stop-opacity="0.02"/></linearGradient></defs>`
+
+  // actual tint
+  s += `<rect x="${plotL}" y="${top}" width="${(x(asIdx) - plotL).toFixed(1)}" height="${plotH}" fill="${TINT}"/>`
+
+  // gridlines (rounded) + labels
+  const step = Math.max(50, Math.ceil(ymax / 4 / 50) * 50)
+  for (let g = 0; g <= ymax; g += step) {
+    const yy = y(g).toFixed(1)
+    s += `<line x1="${plotL}" y1="${yy}" x2="${plotR}" y2="${yy}" stroke="${GRID}" stroke-width="1"/>`
+    s += `<text x="${plotL - 10}" y="${(y(g) + 4).toFixed(1)}" text-anchor="end" font-size="11" fill="${SLATE}">${g}</text>`
+  }
+  if (ymin < 0) { const z = y(0).toFixed(1); s += `<line x1="${plotL}" y1="${z}" x2="${plotR}" y2="${z}" stroke="${INK}" stroke-width="1.2"/>` }
+
+  // area
+  let area = `M ${x(0).toFixed(1)} ${y(Math.max(0, ymin)).toFixed(1)}`
+  for (let i = 0; i < n; i++) area += ` L ${x(i).toFixed(1)} ${y(v[i]).toFixed(1)}`
+  area += ` L ${x(n - 1).toFixed(1)} ${y(Math.max(0, ymin)).toFixed(1)} Z`
+  s += `<path d="${area}" fill="url(#liqGrad)"/>`
+
+  const path = (a: number, b: number) => {
+    let p = ''; for (let i = a; i <= b; i++) p += `${i === a ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(v[i]).toFixed(1)} `; return p.trim()
+  }
+  s += `<path d="${path(0, asIdx)}" fill="none" stroke="${INK}" stroke-width="3.2" stroke-linecap="round"/>`
+  s += `<path d="${path(asIdx, n - 1)}" fill="none" stroke="${INK}" stroke-width="3.2" stroke-dasharray="5,4" stroke-linecap="round"/>`
+  for (let i = 0; i < n; i++) s += `<circle cx="${x(i).toFixed(1)}" cy="${y(v[i]).toFixed(1)}" r="2.4" fill="${INK}"/>`
+
+  // divider + labels
+  const divX = ((x(asIdx) + x(asIdx + 1)) / 2).toFixed(1)
+  s += `<line x1="${divX}" y1="${top}" x2="${divX}" y2="${top + plotH}" stroke="${SLATE}" stroke-width="1" stroke-dasharray="3,3" opacity="0.7"/>`
+  s += `<text x="${x(Math.max(0, asIdx - 1)).toFixed(1)}" y="${top + 14}" text-anchor="middle" font-size="10" font-weight="700" letter-spacing="1" fill="${SLATE}">ACTUAL</text>`
+  s += `<text x="${x(asIdx + 2).toFixed(1)}" y="${top + 14}" text-anchor="middle" font-size="10" font-weight="700" letter-spacing="1" fill="${SLATE}">FORECAST</text>`
+
+  // year-end pill + now marker
+  const pill = (cx: number, cy: number, txt: string) => {
+    const w = 8 + txt.length * 7.6
+    return `<g><rect x="${(cx - w / 2).toFixed(1)}" y="${(cy - 11).toFixed(1)}" width="${w.toFixed(1)}" height="22" rx="11" fill="${INK}"/><text x="${cx.toFixed(1)}" y="${(cy + 4).toFixed(1)}" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">${txt}</text></g>`
+  }
+  s += pill(x(n - 1) - 6, y(v[n - 1]) - 16, lab(liquid[n - 1]))
+  const nx = x(asIdx), ny = y(v[asIdx])
+  s += `<circle cx="${nx.toFixed(1)}" cy="${ny.toFixed(1)}" r="5" fill="#fff" stroke="${INK}" stroke-width="2"/>`
+  const chip = `${lab(liquid[asIdx])} · TODAY`
+  const cw = 12 + chip.length * 6.4
+  s += `<g><rect x="${(nx - cw / 2).toFixed(1)}" y="${(ny + 17).toFixed(1)}" width="${cw.toFixed(1)}" height="22" rx="5" fill="${INK}"/><text x="${nx.toFixed(1)}" y="${(ny + 32).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">${chip}</text></g>`
+
+  for (let i = 0; i < n; i++) {
+    const isDec = i === n - 1
+    s += `<text x="${x(i).toFixed(1)}" y="${axisY}" text-anchor="middle" font-size="11.5" font-weight="${isDec ? 700 : 400}" fill="${isDec ? INK : SLATE}">${months[i]}</text>`
+  }
+  s += `</svg>`
+  return s
+}
+
 export function buildTrajectorySvg(opts: {
   months: string[]
   liabilities: number[]   // 12 raw values (positive stock)

@@ -8,7 +8,7 @@ import { isDebtStock, flowSections } from '@/lib/cfTaxonomy'
 import { fmt } from '@/lib/format'
 import type { Scope } from './Dossier'
 import { buildNarrativeHtml } from './narrativePrint'
-import { buildTrajectorySvg } from './narrativeChart'
+import { buildLiquidChart } from './narrativeChart'
 
 /* ── The Chairman cash-flow story ──────────────────────────────────────────
  * A full-width, single-screen executive read of one area's (or the Group's)
@@ -146,13 +146,10 @@ const sign = (v: number | null | undefined) => (v == null || v === 0) ? '' : (v 
 function ChairmanReport({ d, scopeLabel, year, asOfLabel, unit, mode }: {
   d: NarrativeData; scopeLabel: string; year: number; asOfLabel: string; unit: string; mode: Mode
 }) {
-  const swing = d.nfEnd - d.nfNow
+  const liqSwing = (d.yearEnd ?? 0) - (d.now ?? 0)
   const decRetire = d.debtEnd - d.liabilities[10]
   const plateau = Math.round((d.liabilities.slice(0, 11).reduce((a, b) => a + b, 0) / 11) / 1e6 / 50) * 50
-
-  const swingCaption = d.nfNow < 0 && d.nfEnd >= 0 ? 'Net improvement over the year — from deficit to surplus'
-    : d.nfNow >= 0 && d.nfEnd < 0 ? 'Net deterioration over the year — from surplus to deficit'
-    : swing >= 0 ? 'Net improvement over the year' : 'Net deterioration over the year'
+  const liqSwingCap = liqSwing >= 0 ? `Liquid funds build by year-end` : `Liquid funds drawn down over the year`
 
   return (
     <div className="cnr-page">
@@ -169,50 +166,50 @@ function ChairmanReport({ d, scopeLabel, year, asOfLabel, unit, mode }: {
         </div>
       </div>
 
-      {/* Region 2 — hero net-funds transformation */}
+      {/* Region 2 — hero: liquid funds position */}
       <div className="cnr-hero">
-        <div className="cnr-hero-eyebrow">Net funds position</div>
+        <div className="cnr-hero-eyebrow">Liquid funds position</div>
         <div className="cnr-hero-row">
           <div className="cnr-hero-pt">
-            <div className={`cnr-hero-num ${sign(d.nfNow)}`}>{fM(d.nfNow)}</div>
+            <div className={`cnr-hero-num ${sign(d.now)}`}>{fM(d.now)}</div>
             <div className="cnr-hero-cap">Today · {asOfLabel}</div>
           </div>
           <div className="cnr-hero-arrow">→</div>
           <div className="cnr-hero-pt">
-            <div className={`cnr-hero-num ${sign(d.nfEnd)}`}>{fMs(d.nfEnd)}</div>
+            <div className={`cnr-hero-num ${sign(d.yearEnd)}`}>{fM(d.yearEnd)}</div>
             <div className="cnr-hero-cap">Forecast · Dec {year}</div>
           </div>
           <div className="cnr-hero-unit">{unit.replace(' millions', ' m')}</div>
           <div className="cnr-hero-swing">
-            <div className={`cnr-swing-num ${sign(swing)}`}>{fMs(swing)}</div>
-            <div className="cnr-swing-cap">{swingCaption}</div>
+            <div className={`cnr-swing-num ${sign(liqSwing)}`}>{fMs(liqSwing)}</div>
+            <div className="cnr-swing-cap">{liqSwingCap} · cash only, before financing &amp; payables</div>
           </div>
         </div>
       </div>
 
-      {/* Region 3 — the year in one shape */}
+      {/* Region 3 — liquid funds across the year (clean, not netted with debt) */}
       <div className="cnr-chartwrap">
         <div className="cnr-chart-head">
-          <div className="cnr-chart-title">The year in one shape <span>· net funds &amp; debt across {year}</span></div>
+          <div className="cnr-chart-title">Liquid funds across {year} <span>· cash on hand, month by month</span></div>
           <div className="cnr-legend">
-            <span className="cnr-leg"><i className="cnr-leg-band" />Liabilities (debt)</span>
-            <span className="cnr-leg"><i className="cnr-leg-nf" />Net funds</span>
+            <span className="cnr-leg"><i className="cnr-leg-nf" />Liquid funds</span>
             <span className="cnr-leg"><i className="cnr-leg-fc" />Forecast</span>
           </div>
         </div>
-        <div className="cnr-chart" dangerouslySetInnerHTML={{ __html: buildTrajectorySvg({
-          months: MONTHS, liabilities: d.liabilities, netFunds: d.netFunds, asOfMonth: d.asOfMonth,
+        <div className="cnr-chart" dangerouslySetInnerHTML={{ __html: buildLiquidChart({
+          months: MONTHS, liquid: d.cashClosing, asOfMonth: d.asOfMonth,
         }) }} />
       </div>
 
-      {/* Region 4 — before → after stat strip */}
+      {/* Region 4 — position summary: liquid funds / financing / payables, kept separate */}
+      <div className="cnr-owe-head">Position summary <span>· liquid funds, financing &amp; payables — kept separate</span></div>
       <div className="cnr-strip">
-        <StatCol label="Cash position" from={d.now} to={d.yearEnd}
-          note={`Today → year-end · ${fMs(((d.yearEnd ?? 0) - (d.now ?? 0)))} over the year`} />
-        <StatCol label="Liabilities (debt)" from={-Math.abs(d.debtNow)} to={-Math.abs(d.debtEnd)} bothNeg
-          note={`Held ≈ ${plateau}m all year · ${fMs(decRetire)} in Dec`} />
-        <StatCol label="Net funds" from={d.nfNow} to={d.nfEnd}
-          note={d.nfNow < 0 && d.nfEnd >= 0 ? 'Deficit → surplus · positive only at year-end' : 'Cash net of debt'} />
+        <StatCol label="Liquid funds" from={d.now} to={d.yearEnd}
+          note={`Cash on hand · ${fMs(liqSwing)} over the year`} />
+        <StatCol label="Loans &amp; overdrafts" from={-Math.abs(d.debtNow)} to={-Math.abs(d.debtEnd)} bothNeg
+          note={`Financing · held ≈ ${plateau}m all year · ${fMs(decRetire)} in Dec`} />
+        <StatCol label="Payables (suppliers + subcontractors)" pending
+          note="Trade liabilities · awaiting Amr's figures" />
         <StatCol label="Full-year flow" single={d.recvFull}
           note={`Receipts vs ${fM(Math.abs(d.payFull))} payments · net ${fMs(d.recvFull + d.payFull)}`} />
       </div>
@@ -235,14 +232,16 @@ function ChairmanReport({ d, scopeLabel, year, asOfLabel, unit, mode }: {
   )
 }
 
-function StatCol({ label, from, to, single, note, bothNeg }: {
-  label: string; from?: number | null; to?: number | null; single?: number; note: string; bothNeg?: boolean
+function StatCol({ label, from, to, single, note, bothNeg, pending }: {
+  label: string; from?: number | null; to?: number | null; single?: number; note: string; bothNeg?: boolean; pending?: boolean
 }) {
   return (
     <div className="cnr-stat">
-      <div className="cnr-stat-label">{label}</div>
+      <div className="cnr-stat-label" dangerouslySetInnerHTML={{ __html: label }} />
       <div className="cnr-stat-val">
-        {single !== undefined ? (
+        {pending ? (
+          <span className="cnr-stat-pending">Pending</span>
+        ) : single !== undefined ? (
           <span className="pos">{fM(single)}</span>
         ) : (
           <>
@@ -274,17 +273,13 @@ function Bars({ items, tone }: { items: { label: string; value: number }[]; tone
 }
 
 function bottomLine(d: NarrativeData, scopeLabel: string): string {
-  const m = MONTHS[d.minNf.idx] ?? ''
-  const gap = d.nfNow < 0
-    ? `carries a net funding gap of ${fM(d.nfNow)}m today — debt of ${fM(d.debtNow)}m against ${fM(d.now)}m of cash`
-    : `holds net funds of ${fM(d.nfNow)}m today — ${fM(d.now)}m of cash against ${fM(d.debtNow)}m of debt`
-  const trough = d.minNf.value < d.nfNow
-    ? `The gap deepens to ${fM(d.minNf.value)}m in ${m}, then collections recover and `
+  let lowIdx = 0; d.cashClosing.forEach((v, i) => { if (v < d.cashClosing[lowIdx]) lowIdx = i })
+  const dip = d.cashClosing[lowIdx] < (d.now ?? 0)
+    ? ` It dips to ${fM(d.cashClosing[lowIdx])}m in ${MONTHS[lowIdx]} before recovering,`
     : ``
-  const end = d.nfEnd >= 0
-    ? `net funds turn positive (${fMs(d.nfEnd)}m) by year-end`
-    : `net funds remain at ${fM(d.nfEnd)}m by year-end`
-  return `${cap(scopeLabel)} ${gap}. ${trough}debt is paid down from ${fM(d.debtPeak)}m to ${fM(d.debtEnd)}m — ${end}.`
+  return `${cap(scopeLabel)} holds ${fM(d.now)}m of liquid cash today,${dip} and is forecast to build to ${fM(d.yearEnd)}m by year-end. `
+    + `Set against this, loans and overdrafts of ${fM(d.debtNow)}m are paid down to ${fM(d.debtEnd)}m by December. `
+    + `Payables to suppliers and subcontractors are tracked separately — figures pending.`
 }
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 

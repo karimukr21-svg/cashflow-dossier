@@ -1537,3 +1537,8 @@ body, html, #root {
 .cnr-bar-fill.neg { background: var(--crimson); } .cnr-bar-fill.pos { background: var(--good); }
 .cnr-bar-val { font-size: 11.5px; text-align: right; font-variant-numeric: tabular-nums; }
 .cnr-bar-val.pos { color: var(--good); } .cnr-bar-val.neg { color: var(--crimson); }
+
+/* What-we-owe header + pending stat (segregated model) */
+.cnr-owe-head { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--ink); margin: 14px 0 2px; }
+.cnr-owe-head span { color: #94a3b8; font-weight: 500; text-transform: none; letter-spacing: 0; }
+.cnr-stat-pending { color: #94a3b8; font-weight: 600; font-style: italic; font-size: 16px; }

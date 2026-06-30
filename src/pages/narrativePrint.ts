@@ -1,5 +1,5 @@
 import type { NarrativeData } from './Narrative'
-import { buildTrajectorySvg } from './narrativeChart'
+import { buildLiquidChart } from './narrativeChart'
 
 /* Print mirror of the Chairman cash-flow report (ChairmanReport in
  * Narrative.tsx): header → hero transformation → trajectory chart → before→after
@@ -25,26 +25,24 @@ const sign = (v: number | null | undefined) => (v == null || v === 0) ? '' : (v 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 function bottomLine(d: NarrativeData, scopeLabel: string): string {
-  const m = MONTHS[d.minNf.idx] ?? ''
-  const gap = d.nfNow < 0
-    ? `carries a net funding gap of <b class="neg">${fM(d.nfNow)}m</b> today — debt of <b>${fM(d.debtNow)}m</b> against <b>${fM(d.now)}m</b> of cash`
-    : `holds net funds of <b class="pos">${fM(d.nfNow)}m</b> today — <b>${fM(d.now)}m</b> of cash against <b>${fM(d.debtNow)}m</b> of debt`
-  const trough = d.minNf.value < d.nfNow ? `The gap deepens to <b class="neg">${fM(d.minNf.value)}m</b> in ${m}, then collections recover and ` : ``
-  const end = d.nfEnd >= 0 ? `net funds turn positive (<b class="pos">${fMs(d.nfEnd)}m</b>) by year-end` : `net funds remain at <b class="neg">${fM(d.nfEnd)}m</b> by year-end`
-  return `${cap(scopeLabel)} ${gap}. ${trough}debt is paid down from <b>${fM(d.debtPeak)}m</b> to <b>${fM(d.debtEnd)}m</b> — ${end}.`
+  let lowIdx = 0; d.cashClosing.forEach((v, i) => { if (v < d.cashClosing[lowIdx]) lowIdx = i })
+  const dip = d.cashClosing[lowIdx] < (d.now ?? 0)
+    ? ` It dips to <b class="neg">${fM(d.cashClosing[lowIdx])}m</b> in ${MONTHS[lowIdx]} before recovering,`
+    : ``
+  return `${cap(scopeLabel)} holds <b class="pos">${fM(d.now)}m</b> of liquid cash today,${dip} and is forecast to build to <b class="pos">${fM(d.yearEnd)}m</b> by year-end. `
+    + `Set against this, loans and overdrafts of <b>${fM(d.debtNow)}m</b> are paid down to <b>${fM(d.debtEnd)}m</b> by December. `
+    + `Payables to suppliers and subcontractors are tracked separately — <b>figures pending</b>.`
 }
 
 export function buildNarrativeHtml(
   d: NarrativeData,
   ctx: { scopeLabel: string; year: number; asOfLabel: string; mode: 'group' | 'area'; unit: string; months: string[] },
 ): string {
-  const swing = d.nfEnd - d.nfNow
+  const liqSwing = (d.yearEnd ?? 0) - (d.now ?? 0)
   const decRetire = d.debtEnd - d.liabilities[10]
   const plateau = Math.round((d.liabilities.slice(0, 11).reduce((a, b) => a + b, 0) / 11) / 1e6 / 50) * 50
-  const swingCaption = d.nfNow < 0 && d.nfEnd >= 0 ? 'From deficit to surplus'
-    : d.nfNow >= 0 && d.nfEnd < 0 ? 'From surplus to deficit'
-    : swing >= 0 ? 'Net improvement over the year' : 'Net deterioration over the year'
-  const chart = buildTrajectorySvg({ months: ctx.months || MONTHS, liabilities: d.liabilities, netFunds: d.netFunds, asOfMonth: d.asOfMonth })
+  const liqSwingCap = liqSwing >= 0 ? 'Liquid funds build by year-end' : 'Liquid funds drawn down over the year'
+  const chart = buildLiquidChart({ months: ctx.months || MONTHS, liquid: d.cashClosing, asOfMonth: d.asOfMonth })
 
   const stat = (label: string, body: string, note: string) =>
     `<div class="stat"><div class="stat-l">${label}</div><div class="stat-v">${body}</div><div class="stat-n">${note}</div></div>`
@@ -73,6 +71,9 @@ export function buildNarrativeHtml(
   .leg { display: inline-flex; align-items: center; gap: 5px; } .leg i { width: 16px; height: 3px; display: inline-block; border-radius: 2px; }
   .leg-band { height: 9px !important; background: rgba(225,0,32,0.18); } .leg-nf { background: #15233b; height: 3px; } .leg-fc { background: repeating-linear-gradient(90deg,#64748b 0 4px,transparent 4px 7px); }
   .chart svg { display: block; width: 100%; }
+  .owe-head { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #15233b; margin: 10px 0 1px; }
+  .owe-head span { color: #94a3b8; font-weight: 500; text-transform: none; letter-spacing: 0; }
+  .pending { color: #94a3b8; font-weight: 600; font-style: italic; font-size: 15px; }
   .strip { display: flex; border-top: 1px solid #e9ecf1; border-bottom: 1px solid #e9ecf1; }
   .stat { flex: 1; padding: 9px 16px; border-left: 1px solid #e9ecf1; } .stat:first-child { border-left: none; }
   .stat-l { font-size: 8.5px; letter-spacing: .5px; text-transform: uppercase; color: #64748b; font-weight: 700; }
@@ -89,24 +90,25 @@ export function buildNarrativeHtml(
   </div>
 
   <div class="hero">
-    <div class="hero-eyebrow">Net funds<br>position</div>
-    <div class="hero-pt"><div class="hero-num ${sign(d.nfNow)}">${fM(d.nfNow)}</div><div class="hero-cap">Today · ${ctx.asOfLabel}</div></div>
+    <div class="hero-eyebrow">Liquid funds<br>position</div>
+    <div class="hero-pt"><div class="hero-num ${sign(d.now)}">${fM(d.now)}</div><div class="hero-cap">Today · ${ctx.asOfLabel}</div></div>
     <div class="hero-arrow">→</div>
-    <div class="hero-pt"><div class="hero-num ${sign(d.nfEnd)}">${fMs(d.nfEnd)}</div><div class="hero-cap">Forecast · Dec ${ctx.year}</div></div>
+    <div class="hero-pt"><div class="hero-num ${sign(d.yearEnd)}">${fM(d.yearEnd)}</div><div class="hero-cap">Forecast · Dec ${ctx.year}</div></div>
     <div class="hero-unit">${ctx.unit.replace(' millions', ' m')}</div>
-    <div class="hero-swing"><div class="swing-num ${sign(swing)}">${fMs(swing)}</div><div class="swing-cap">${swingCaption}</div></div>
+    <div class="hero-swing"><div class="swing-num ${sign(liqSwing)}">${fMs(liqSwing)}</div><div class="swing-cap">${liqSwingCap} · cash only, before financing &amp; payables</div></div>
   </div>
 
   <div class="chartwrap">
-    <div class="chart-head"><div class="chart-title">The year in one shape <span>· net funds &amp; debt across ${ctx.year}</span></div>
-      <div class="legend"><span class="leg"><i class="leg-band"></i>Liabilities (debt)</span><span class="leg"><i class="leg-nf"></i>Net funds</span><span class="leg"><i class="leg-fc"></i>Forecast</span></div></div>
+    <div class="chart-head"><div class="chart-title">Liquid funds across ${ctx.year} <span>· cash on hand, month by month</span></div>
+      <div class="legend"><span class="leg"><i class="leg-nf"></i>Liquid funds</span><span class="leg"><i class="leg-fc"></i>Forecast</span></div></div>
     <div class="chart">${chart}</div>
   </div>
 
+  <div class="owe-head">Position summary <span>· liquid funds, financing &amp; payables — kept separate</span></div>
   <div class="strip">
-    ${stat('Cash position', `<span class="${sign(d.now)}">${fM(d.now)}</span><span class="arr">→</span><span class="${sign(d.yearEnd)}">${fM(d.yearEnd)}</span>`, `Today → year-end · ${fMs((d.yearEnd ?? 0) - (d.now ?? 0))} over the year`)}
-    ${stat('Liabilities (debt)', `<span class="neg">${fM(-Math.abs(d.debtNow))}</span><span class="arr">→</span><span class="neg">${fM(-Math.abs(d.debtEnd))}</span>`, `Held ≈ ${plateau}m all year · ${fMs(decRetire)} in Dec`)}
-    ${stat('Net funds', `<span class="${sign(d.nfNow)}">${fM(d.nfNow)}</span><span class="arr">→</span><span class="${sign(d.nfEnd)}">${fM(d.nfEnd)}</span>`, d.nfNow < 0 && d.nfEnd >= 0 ? 'Deficit → surplus · positive only at year-end' : 'Cash net of debt')}
+    ${stat('Liquid funds', `<span class="${sign(d.now)}">${fM(d.now)}</span><span class="arr">→</span><span class="${sign(d.yearEnd)}">${fM(d.yearEnd)}</span>`, `Cash on hand · ${fMs(liqSwing)} over the year`)}
+    ${stat('Loans &amp; overdrafts', `<span class="neg">${fM(-Math.abs(d.debtNow))}</span><span class="arr">→</span><span class="neg">${fM(-Math.abs(d.debtEnd))}</span>`, `Financing · held ≈ ${plateau}m all year · ${fMs(decRetire)} in Dec`)}
+    ${stat('Payables (suppliers + subcontractors)', `<span class="pending">Pending</span>`, `Trade liabilities · awaiting Amr's figures`)}
     ${stat('Full-year flow', `<span class="pos">${fM(d.recvFull)}</span>`, `Receipts vs ${fM(Math.abs(d.payFull))} payments · net ${fMs(d.recvFull + d.payFull)}`)}
   </div>
 
