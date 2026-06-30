@@ -1534,3 +1534,17 @@ body, html, #root {
 .narr-area-table td.num.pos { color: var(--good); }
 
 .narr-foot { margin-top: 24px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 10px; color: #9ca3af; }
+
+/* Cash bridge (hero) + position table */
+.narr-bridge { margin: 4px 0 18px; padding: 6px 0; }
+.narr-bridge svg { display: block; }
+.narr-position { margin: 0 0 22px; }
+.narr-pos-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.narr-pos-table th { text-align: right; font-size: 9px; text-transform: uppercase; letter-spacing: .5px;
+  color: var(--mute); padding: 4px 12px; border-bottom: 1px solid #d1d5db; }
+.narr-pos-table th:first-child { text-align: left; }
+.narr-pos-table td { text-align: right; padding: 5px 12px; font-variant-numeric: tabular-nums; }
+.narr-pos-table td:first-child { text-align: left; color: #374151; }
+.narr-pos-table td.num.neg { color: var(--bad); } .narr-pos-table td.num.pos { color: var(--good); }
+.narr-pos-table tr.pt-net td { font-weight: 700; font-size: 15px; border-top: 2px solid var(--ink); padding-top: 7px; }
+.narr-pos-note { font-size: 9.5px; color: #9ca3af; margin-top: 5px; }

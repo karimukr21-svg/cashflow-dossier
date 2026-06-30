@@ -4,6 +4,7 @@ import { computeDerivedBalances } from '@/lib/derivedBalances'
 import { fmt } from '@/lib/format'
 import type { Scope } from './Dossier'
 import { buildNarrativeHtml } from './narrativePrint'
+import { buildBridgeSvg } from './narrativeBridge'
 
 /* ── The narrative cash-flow story ─────────────────────────────────────────
  * Karim's brief: a page that "tells a story", not tables. Seven beats, in
@@ -26,11 +27,16 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
 export type NarrativeData = {
   opening: number | null
   yearEnd: number | null
+  now: number | null            // cash position at the as-of cutover
   recvFull: number; payFull: number
   recvYTD: number; payYTD: number
   netYTD: number
   recvRem: number; payRem: number
   netRem: number
+  // liability balances (accumulated loans + overdrafts) as stocks
+  debtOpen: number; debtNow: number; debtEnd: number
+  // net funds = cash − liabilities (ties to Treasury's "net funds per area")
+  nfOpen: number; nfNow: number; nfEnd: number
   // where it goes: payments by section, receipts by section (full year)
   paySections: { label: string; value: number }[]
   recvSections: { label: string; value: number }[]
@@ -140,7 +146,6 @@ function NarrativeBody({ data, scopeLabel, year, asOfLabel, mode, currency }: {
 }) {
   const d = data
   const consumed = d.netYTD < 0
-  const projUp = (d.yearEnd ?? 0) >= (d.opening ?? 0)
 
   return (
     <div className="narr-page">
@@ -149,48 +154,43 @@ function NarrativeBody({ data, scopeLabel, year, asOfLabel, mode, currency }: {
         <div className="narr-sub">Year {year} · actuals through {asOfLabel}, forecast to year-end · {unitLine(mode, currency)}</div>
       </div>
 
+      {/* Hero — the cash bridge */}
+      <div className="narr-bridge" dangerouslySetInnerHTML={{ __html: buildBridgeSvg(d) }} />
+
+      {/* Position table — cash, liabilities, net funds across the three points */}
+      <PositionTable d={d} year={year} asOfLabel={asOfLabel} />
+
+      {/* The story in words */}
       <div className="narr-beats">
         <Beat n="01" lead="We started the year with"
               value={d.opening} accent="ink"
-              tail="in cash on hand." />
+              tail="in cash, against borrowings of" value2={d.debtOpen} accent2="neg" tail2="." />
 
         <Beat n="02" lead={`Across ${year} we expect to bring in`}
               value={d.recvFull} accent="pos"
-              tail="from operations, claims and financing." />
-
-        <Beat n="03" lead="And we have liabilities to pay of"
-              value={-Math.abs(d.payFull)} accent="neg"
-              tail="over the same year." />
+              tail="and to pay out" value2={-Math.abs(d.payFull)} accent2="neg" tail2="." />
 
         <div className="narr-divider"><span>So far ({asOfLabel})</span></div>
 
-        <Beat n="04" lead="We have actually received"
+        <Beat n="03" lead="We have received"
               value={d.recvYTD} accent="pos"
-              tail={`— ${pct(d.recvYTD, d.recvFull)} of the year's expected inflow.`} />
+              tail={`(${pct(d.recvYTD, d.recvFull)} of the year) and paid`}
+              value2={-Math.abs(d.payYTD)} accent2="neg"
+              tail2={`(${pct(Math.abs(d.payYTD), Math.abs(d.payFull))}).`} />
 
-        <Beat n="05" lead="And we have actually paid"
-              value={-Math.abs(d.payYTD)} accent="neg"
-              tail={`— ${pct(Math.abs(d.payYTD), Math.abs(d.payFull))} of the year's liabilities.`} />
-
-        <Beat n="06" lead={consumed ? 'Our net position has fallen by' : 'Our net position has risen by'}
+        <Beat n="04" lead="Cash has"
               value={d.netYTD} accent={consumed ? 'neg' : 'pos'}
-              tail={consumed
-                ? 'over the period — this gap was funded from cash and borrowing.'
-                : 'over the period — the period generated cash.'} />
+              tail="and borrowings have moved by"
+              value2={d.debtNow - d.debtOpen} accent2={(d.debtNow - d.debtOpen) > 0 ? 'neg' : 'pos'}
+              tail2={`— so net funds ${d.nfNow < d.nfOpen ? 'worsened' : 'improved'} to ` + fM(d.nfNow) + '.'} />
 
         <div className="narr-divider"><span>Looking ahead</span></div>
 
-        <Beat n="07" lead="For the rest of the year we still expect to net"
+        <Beat n="05" lead="For the rest of the year we expect to net"
               value={d.netRem} accent={d.netRem < 0 ? 'neg' : 'pos'}
-              tail={`, ending ${year} at a projected cash position of`} />
-
-        <div className="narr-bottomline">
-          <div className="narr-bl-label">Projected year-end cash</div>
-          <div className={`narr-bl-value ${projUp ? 'pos' : 'neg'}`}>{fM(d.yearEnd)}</div>
-          <div className="narr-bl-note">
-            from {fM(d.opening)} at the start of {year} — a {projUp ? 'rise' : 'drawdown'} of {fM(Math.abs((d.yearEnd ?? 0) - (d.opening ?? 0)))}.
-          </div>
-        </div>
+              tail="and to repay/draw borrowings to"
+              value2={d.debtEnd} accent2="neg"
+              tail2={`, ending ${year} at net funds of ` + fM(d.nfEnd) + '.'} />
       </div>
 
       {/* Where the money goes */}
@@ -232,8 +232,10 @@ function NarrativeBody({ data, scopeLabel, year, asOfLabel, mode, currency }: {
   )
 }
 
-function Beat({ n, lead, value, tail, accent }: {
-  n: string; lead: string; value: number | null; tail: string; accent: 'pos' | 'neg' | 'ink'
+type Accent = 'pos' | 'neg' | 'ink'
+function Beat({ n, lead, value, tail, accent, value2, accent2, tail2 }: {
+  n: string; lead: string; value: number | null; tail: string; accent: Accent;
+  value2?: number | null; accent2?: Accent; tail2?: string;
 }) {
   return (
     <div className="narr-beat">
@@ -242,7 +244,42 @@ function Beat({ n, lead, value, tail, accent }: {
         <span className="narr-beat-lead">{lead} </span>
         <span className={`narr-beat-val ${accent}`}>{fM(value)}</span>
         <span className="narr-beat-lead"> {tail}</span>
+        {value2 !== undefined && (
+          <>
+            {' '}<span className={`narr-beat-val ${accent2}`}>{fM(value2)}</span>
+            <span className="narr-beat-lead"> {tail2}</span>
+          </>
+        )}
       </div>
+    </div>
+  )
+}
+
+/* Cash / Liabilities / Net funds across Started · Now · Year-end. Ties the
+ * liability balances into the story; net funds = cash − liabilities, the
+ * basis of Treasury's "net funds per area" headline. */
+function PositionTable({ d, year, asOfLabel }: { d: NarrativeData; year: number; asOfLabel: string }) {
+  const row = (label: string, a: number | null, b: number | null, c: number | null, strong?: boolean) => (
+    <tr className={strong ? 'pt-net' : ''}>
+      <td>{label}</td>
+      <td className={cls(a)}>{fM(a)}</td>
+      <td className={cls(b)}>{fM(b)}</td>
+      <td className={cls(c)}>{fM(c)}</td>
+    </tr>
+  )
+  return (
+    <div className="narr-position">
+      <table className="narr-pos-table">
+        <thead>
+          <tr><th></th><th>Started {year}</th><th>Now ({asOfLabel})</th><th>Year-end {year}</th></tr>
+        </thead>
+        <tbody>
+          {row('Cash on hand', d.opening, d.now, d.yearEnd)}
+          {row('Liabilities (loans + overdrafts)', -Math.abs(d.debtOpen), -Math.abs(d.debtNow), -Math.abs(d.debtEnd))}
+          {row('Net funds', d.nfOpen, d.nfNow, d.nfEnd, true)}
+        </tbody>
+      </table>
+      <div className="narr-pos-note">Net funds = cash − liabilities · reconciling to Treasury's net-funds-per-area basis</div>
     </div>
   )
 }
@@ -315,12 +352,25 @@ export function computeNarrative(
   const payRem = sumIf(all, c => isP(c) && ym(c) > asOf)
   const netRem = recvRem + payRem
 
-  // Derived opening / year-end cash (full year chain)
+  // Derived opening / year-end / as-of cash (full year chain)
   const derived = computeDerivedBalances({
     cells: all, lines, fromYear: year, fromMonth: 1, toYear: year, toMonth: 12,
   })
   const opening = derived.openingByYM.get(year * 100 + 1) ?? null
   const yearEnd = derived.closingByYM.get(year * 100 + 12) ?? null
+  const now = derived.closingByYM.get(asOf) ?? null
+
+  // Liability balances (stocks): accumulated loans + overdrafts at a point in time
+  const debtCats = ['Accumulated Loans', 'Overdrafts']
+  const asOfM = asOf % 100
+  const debtAt = (mm: number) => sumIf(all, c => debtCats.includes(catOf(c)) && c.month === mm)
+  const debtOpen = debtAt(1)
+  const debtNow = debtAt(asOfM)
+  const debtEnd = debtAt(12)
+  // Net funds = cash − liabilities (Treasury's "net funds per area" basis)
+  const nfOpen = (opening ?? 0) - debtOpen
+  const nfNow = (now ?? 0) - debtNow
+  const nfEnd = (yearEnd ?? 0) - debtEnd
 
   // Where it goes — by section (full year)
   const SECTION_CATS: [string, string[]][] = [
@@ -361,5 +411,8 @@ export function computeNarrative(
     }).sort((a, b) => (a.netYTD) - (b.netYTD))
   }
 
-  return { opening, yearEnd, recvFull, payFull, recvYTD, payYTD, netYTD, recvRem, payRem, netRem, paySections, recvSections, byArea }
+  return {
+    opening, yearEnd, now, recvFull, payFull, recvYTD, payYTD, netYTD, recvRem, payRem, netRem,
+    debtOpen, debtNow, debtEnd, nfOpen, nfNow, nfEnd, paySections, recvSections, byArea,
+  }
 }

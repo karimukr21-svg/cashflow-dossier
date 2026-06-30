@@ -1,4 +1,5 @@
 import type { NarrativeData } from './Narrative'
+import { buildBridgeSvg } from './narrativeBridge'
 
 /* Self-contained printable version of the cash-flow narrative.
  * Mirrors NarrativeBody. Opens in a new window and auto-prints (A4 portrait,
@@ -21,14 +22,24 @@ export function buildNarrativeHtml(
   const unitLine = ctx.mode === 'group'
     ? 'figures in millions · native currencies summed — USD consolidation via the FX layer is in progress'
     : `figures in ${ctx.currency || 'local currency'} millions`
-  const consumed = d.netYTD < 0
-  const projUp = (d.yearEnd ?? 0) >= (d.opening ?? 0)
 
-  const beat = (n: string, lead: string, value: number | null, accent: string, tail: string) => `
+  const beat = (n: string, lead: string, value: number | null, accent: string, tail: string,
+                value2?: number | null, accent2?: string, tail2?: string) => `
     <div class="beat">
       <div class="bn">${n}</div>
-      <div class="bb"><span class="lead">${lead} </span><span class="val ${accent}">${fmt(value)}</span><span class="lead"> ${tail}</span></div>
+      <div class="bb"><span class="lead">${lead} </span><span class="val ${accent}">${fmt(value)}</span><span class="lead"> ${tail}</span>${
+        value2 !== undefined ? ` <span class="val ${accent2}">${fmt(value2)}</span><span class="lead"> ${tail2}</span>` : ''
+      }</div>
     </div>`
+
+  const posTable = `
+    <table class="postable"><thead><tr><th></th><th>Started ${ctx.year}</th><th>Now (${ctx.asOfLabel})</th><th>Year-end ${ctx.year}</th></tr></thead>
+    <tbody>
+      <tr><td>Cash on hand</td><td class="${cls(d.opening)}">${fmt(d.opening)}</td><td class="${cls(d.now)}">${fmt(d.now)}</td><td class="${cls(d.yearEnd)}">${fmt(d.yearEnd)}</td></tr>
+      <tr><td>Liabilities (loans + overdrafts)</td><td class="num neg">${fmt(-Math.abs(d.debtOpen))}</td><td class="num neg">${fmt(-Math.abs(d.debtNow))}</td><td class="num neg">${fmt(-Math.abs(d.debtEnd))}</td></tr>
+      <tr class="pt-net"><td>Net funds</td><td class="${cls(d.nfOpen)}">${fmt(d.nfOpen)}</td><td class="${cls(d.nfNow)}">${fmt(d.nfNow)}</td><td class="${cls(d.nfEnd)}">${fmt(d.nfEnd)}</td></tr>
+    </tbody></table>
+    <div class="pos-note">Net funds = cash − liabilities · reconciling to Treasury's net-funds-per-area basis</div>`
 
   const bars = (items: { label: string; value: number }[], tone: string) => {
     const max = Math.max(1, ...items.map(i => Math.abs(i.value)))
@@ -91,6 +102,15 @@ export function buildNarrativeHtml(
   td { text-align: right; padding: 2.4px 7px; font-variant-numeric: tabular-nums; }
   td:first-child { text-align: left; }
   .num { color: #1a1f2b; }
+  .bridge { margin: 6px 0 14px; }
+  .bridge svg { display: block; width: 100%; }
+  .postable { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 16px; }
+  .postable th { text-align: right; font-size: 8px; text-transform: uppercase; letter-spacing: .5px; color: #6b7280; padding: 3px 10px; border-bottom: 1px solid #d1d5db; }
+  .postable th:first-child { text-align: left; }
+  .postable td { text-align: right; padding: 4px 10px; font-variant-numeric: tabular-nums; }
+  .postable td:first-child { text-align: left; color: #374151; }
+  .postable tr.pt-net td { font-weight: 700; font-size: 14px; border-top: 2px solid #1a1f2b; padding-top: 6px; }
+  .pos-note { font-size: 8.5px; color: #9ca3af; margin: -10px 0 4px; }
   .foot { margin-top: 22px; padding-top: 8px; border-top: 1px solid #e5e7eb; font-size: 8.5px; color: #9ca3af; }
 </style></head><body>
   <div class="head">
@@ -99,21 +119,16 @@ export function buildNarrativeHtml(
     <div class="sub">Year ${ctx.year} · actuals through ${ctx.asOfLabel}, forecast to year-end · ${unitLine}</div>
   </div>
 
-  ${beat('01', 'We started the year with', d.opening, 'ink', 'in cash on hand.')}
-  ${beat('02', `Across ${ctx.year} we expect to bring in`, d.recvFull, 'pos', 'from operations, claims and financing.')}
-  ${beat('03', 'And we have liabilities to pay of', -Math.abs(d.payFull), 'neg', 'over the same year.')}
-  <div class="divider"><span>So far (${ctx.asOfLabel})</span></div>
-  ${beat('04', 'We have actually received', d.recvYTD, 'pos', `— ${pct(d.recvYTD, d.recvFull)} of the year's expected inflow.`)}
-  ${beat('05', 'And we have actually paid', -Math.abs(d.payYTD), 'neg', `— ${pct(Math.abs(d.payYTD), Math.abs(d.payFull))} of the year's liabilities.`)}
-  ${beat('06', consumed ? 'Our net position has fallen by' : 'Our net position has risen by', d.netYTD, consumed ? 'neg' : 'pos', consumed ? 'over the period — funded from cash and borrowing.' : 'over the period — the period generated cash.')}
-  <div class="divider"><span>Looking ahead</span></div>
-  ${beat('07', 'For the rest of the year we still expect to net', d.netRem, d.netRem < 0 ? 'neg' : 'pos', `, ending ${ctx.year} at a projected cash position of`)}
+  <div class="bridge">${buildBridgeSvg(d)}</div>
+  ${posTable}
 
-  <div class="bottomline">
-    <div class="bl-label">Projected year-end cash</div>
-    <div class="bl-value ${projUp ? 'pos' : 'neg'}">${fmt(d.yearEnd)}</div>
-    <div class="bl-note">from ${fmt(d.opening)} at the start of ${ctx.year} — a ${projUp ? 'rise' : 'drawdown'} of ${fmt(Math.abs((d.yearEnd ?? 0) - (d.opening ?? 0)))}.</div>
-  </div>
+  ${beat('01', 'We started the year with', d.opening, 'ink', 'in cash, against borrowings of', -Math.abs(d.debtOpen), 'neg', '.')}
+  ${beat('02', `Across ${ctx.year} we expect to bring in`, d.recvFull, 'pos', 'and to pay out', -Math.abs(d.payFull), 'neg', '.')}
+  <div class="divider"><span>So far (${ctx.asOfLabel})</span></div>
+  ${beat('03', 'We have received', d.recvYTD, 'pos', `(${pct(d.recvYTD, d.recvFull)} of the year) and paid`, -Math.abs(d.payYTD), 'neg', `(${pct(Math.abs(d.payYTD), Math.abs(d.payFull))}).`)}
+  ${beat('04', 'Cash has', d.netYTD, d.netYTD < 0 ? 'neg' : 'pos', 'and borrowings have moved by', d.debtNow - d.debtOpen, (d.debtNow - d.debtOpen) > 0 ? 'neg' : 'pos', `— net funds ${d.nfNow < d.nfOpen ? 'worsened' : 'improved'} to ${fmt(d.nfNow)}.`)}
+  <div class="divider"><span>Looking ahead</span></div>
+  ${beat('05', 'For the rest of the year we expect to net', d.netRem, d.netRem < 0 ? 'neg' : 'pos', 'and to settle borrowings to', -Math.abs(d.debtEnd), 'neg', `, ending ${ctx.year} at net funds of ${fmt(d.nfEnd)}.`)}
 
   <div class="where">
     <div><h3>Where the money goes <span>· payments, full year</span></h3>${bars(d.paySections, 'neg')}</div>
