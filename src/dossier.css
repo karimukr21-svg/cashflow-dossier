@@ -1508,7 +1508,6 @@ body, html, #root {
 .cnr-legend { font-size: 10px; color: var(--mute); display: flex; gap: 16px; }
 .cnr-leg { display: inline-flex; align-items: center; gap: 5px; }
 .cnr-leg i { width: 17px; display: inline-block; border-radius: 2px; }
-.cnr-leg-band { height: 10px; background: rgba(225,0,32,0.16); }
 .cnr-leg-nf { height: 3px; background: var(--ink); }
 .cnr-leg-fc { height: 3px; background: repeating-linear-gradient(90deg, var(--mute) 0 4px, transparent 4px 7px); }
 .cnr-chart svg { display: block; width: 100%; }

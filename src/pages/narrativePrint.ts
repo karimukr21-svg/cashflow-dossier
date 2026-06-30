@@ -72,7 +72,7 @@ export function buildNarrativeHtml(
   .chart-title { font-size: 11px; font-weight: 700; color: #15233b; } .chart-title span { color: #94a3b8; font-weight: 500; }
   .legend { font-size: 9.5px; color: #64748b; display: flex; gap: 14px; }
   .leg { display: inline-flex; align-items: center; gap: 5px; } .leg i { width: 16px; height: 3px; display: inline-block; border-radius: 2px; }
-  .leg-band { height: 9px !important; background: rgba(225,0,32,0.18); } .leg-nf { background: #15233b; height: 3px; } .leg-fc { background: repeating-linear-gradient(90deg,#64748b 0 4px,transparent 4px 7px); }
+  .leg-nf { background: #15233b; height: 3px; } .leg-fc { background: repeating-linear-gradient(90deg,#64748b 0 4px,transparent 4px 7px); }
   .chart svg { display: block; width: 100%; }
   .owe-head { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #15233b; margin: 10px 0 1px; }
   .owe-head span { color: #94a3b8; font-weight: 500; text-transform: none; letter-spacing: 0; }
@@ -88,7 +88,7 @@ export function buildNarrativeHtml(
 </style></head><body>
   <div class="head">
     <div><h1>Group Cash Flow — ${ctx.scopeLabel} · ${ctx.year}</h1>
-      <div class="sub">Actuals through ${ctx.asOfLabel} · forecast to year-end · figures in ${ctx.unit}</div></div>
+      <div class="sub">Actuals through ${ctx.asOfLabel} · forecast to year-end · figures in ${ctx.unit}${ctx.mode === 'group' && ctx.unit.startsWith('mixed') ? ' (native currencies summed — USD consolidation pending the FX layer)' : ''}</div></div>
     <div class="brand"><div class="brand-mark"><span class="glyph">C</span>CCC · Treasury</div><div class="asof">AS OF ${ctx.asOfLabel}</div></div>
   </div>
 
