@@ -1491,8 +1491,9 @@ body, html, #root {
 
 .cnr-hero { display: flex; align-items: center; gap: 30px; padding: 18px 0 16px; border-bottom: 1px solid var(--border); }
 .cnr-hero-eyebrow { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--mute); font-weight: 700; align-self: flex-start; padding-top: 8px; max-width: 70px; }
-.cnr-hero-row { display: flex; align-items: center; gap: 26px; flex: 1; }
-.cnr-hero-num { font-size: 64px; font-weight: 800; line-height: 1; letter-spacing: -1px; }
+.cnr-hero-row { display: flex; align-items: center; gap: 18px; flex: 1; }
+.cnr-hero-num { font-size: 60px; font-weight: 800; line-height: 1; letter-spacing: -1px; }
+.cnr-hero-num.sm { font-size: 38px; opacity: .82; }
 .cnr-hero-cap { font-size: 10.5px; color: var(--mute); margin-top: 5px; }
 .cnr-hero-arrow { font-size: 30px; color: #94a3b8; }
 .cnr-hero-unit { font-size: 15px; color: var(--mute); font-weight: 600; align-self: flex-end; padding-bottom: 10px; }

@@ -213,10 +213,12 @@ function ChairmanReport({ d, scopeLabel, year, asOfLabel, unit, mode, payables }
   const payNote = payables
     ? `Suppliers, subcontractors & taxes · as of ${asOfLabel}${payables.currency === 'USD' && !unit.startsWith('USD') ? ' (USD)' : ''}`
     : 'Trade liabilities · no Midas balance for this period'
-  const liqSwing = (d.yearEnd ?? 0) - (d.now ?? 0)
+  const liqSwing = (d.yearEnd ?? 0) - (d.now ?? 0)               // gross cash swing (strip note)
+  const nfStart = d.netFunds[0]                                  // net funds at the start of the year
+  const fullSwing = d.nfEnd - nfStart                            // net journey, start → year-end
   const decRetire = d.debtEnd - d.liabilities[10]
   const plateau = Math.round((d.liabilities.slice(0, 11).reduce((a, b) => a + b, 0) / 11) / 1e6 / 50) * 50
-  const liqSwingCap = liqSwing >= 0 ? `Liquid funds build by year-end` : `Liquid funds drawn down over the year`
+  const fullSwingCap = fullSwing >= 0 ? `Net funds recover over ${year}` : `Net funds erode over ${year}`
 
   return (
     <div className="cnr-page">
@@ -233,46 +235,51 @@ function ChairmanReport({ d, scopeLabel, year, asOfLabel, unit, mode, payables }
         </div>
       </div>
 
-      {/* Region 2 — hero: liquid funds position */}
+      {/* Region 2 — hero: net liquid funds, start → today → year-end */}
       <div className="cnr-hero">
-        <div className="cnr-hero-eyebrow">Liquid funds position</div>
+        <div className="cnr-hero-eyebrow">Net liquid funds</div>
         <div className="cnr-hero-row">
           <div className="cnr-hero-pt">
-            <div className={`cnr-hero-num ${sign(d.now)}`}>{fM(d.now)}</div>
+            <div className={`cnr-hero-num sm ${sign(nfStart)}`}>{fM(nfStart)}</div>
+            <div className="cnr-hero-cap">Start · Jan {year}</div>
+          </div>
+          <div className="cnr-hero-arrow">→</div>
+          <div className="cnr-hero-pt">
+            <div className={`cnr-hero-num ${sign(d.nfNow)}`}>{fM(d.nfNow)}</div>
             <div className="cnr-hero-cap">Today · {asOfLabel}</div>
           </div>
           <div className="cnr-hero-arrow">→</div>
           <div className="cnr-hero-pt">
-            <div className={`cnr-hero-num ${sign(d.yearEnd)}`}>{fM(d.yearEnd)}</div>
+            <div className={`cnr-hero-num sm ${sign(d.nfEnd)}`}>{fM(d.nfEnd)}</div>
             <div className="cnr-hero-cap">Forecast · Dec {year}</div>
           </div>
           <div className="cnr-hero-unit">{unit.replace(' millions', ' m')}</div>
           <div className="cnr-hero-swing">
-            <div className={`cnr-swing-num ${sign(liqSwing)}`}>{fMs(liqSwing)}</div>
-            <div className="cnr-swing-cap">{liqSwingCap} · cash only, before financing &amp; payables</div>
+            <div className={`cnr-swing-num ${sign(fullSwing)}`}>{fMs(fullSwing)}</div>
+            <div className="cnr-swing-cap">{fullSwingCap} · cash less loans &amp; overdrafts</div>
           </div>
         </div>
       </div>
 
-      {/* Region 3 — liquid funds across the year (clean, not netted with debt) */}
+      {/* Region 3 — net liquid funds across the year (cash less loans & overdrafts) */}
       <div className="cnr-chartwrap">
         <div className="cnr-chart-head">
-          <div className="cnr-chart-title">Liquid funds across {year} <span>· cash on hand, month by month</span></div>
+          <div className="cnr-chart-title">Net liquid funds across {year} <span>· cash less loans &amp; overdrafts, month by month</span></div>
           <div className="cnr-legend">
-            <span className="cnr-leg"><i className="cnr-leg-nf" />Liquid funds</span>
+            <span className="cnr-leg"><i className="cnr-leg-nf" />Net liquid funds</span>
             <span className="cnr-leg"><i className="cnr-leg-fc" />Forecast</span>
           </div>
         </div>
         <div className="cnr-chart" dangerouslySetInnerHTML={{ __html: buildLiquidChart({
-          months: MONTHS, liquid: d.cashClosing, asOfMonth: d.asOfMonth,
+          months: MONTHS, series: d.netFunds, asOfMonth: d.asOfMonth,
         }) }} />
       </div>
 
-      {/* Region 4 — position summary: liquid funds / financing / payables, kept separate */}
-      <div className="cnr-owe-head">Position summary <span>· liquid funds, financing &amp; payables — kept separate</span></div>
+      {/* Region 4 — position summary: the cash, financing & payables behind the net */}
+      <div className="cnr-owe-head">Position summary <span>· the cash, financing &amp; payables behind the net</span></div>
       <div className="cnr-strip">
-        <StatCol label="Liquid funds" from={d.now} to={d.yearEnd}
-          note={`Cash on hand · ${fMs(liqSwing)} over the year`} />
+        <StatCol label="Cash on hand" from={d.now} to={d.yearEnd}
+          note={`Gross cash · ${fMs(liqSwing)} over the year`} />
         <StatCol label="Loans &amp; overdrafts" from={-Math.abs(d.debtNow)} to={-Math.abs(d.debtEnd)} bothNeg
           note={`Financing · held ≈ ${plateau}m all year · ${fMs(decRetire)} in Dec`} />
         <StatCol label="Payables (suppliers + subcontractors)" single={payables ? -Math.abs(payables.value) : undefined}
@@ -340,17 +347,14 @@ function Bars({ items, tone }: { items: { label: string; value: number }[]; tone
 }
 
 function bottomLine(d: NarrativeData, scopeLabel: string, payables: { value: number; currency: string } | null): string {
-  let lowIdx = 0; d.cashClosing.forEach((v, i) => { if (v < d.cashClosing[lowIdx]) lowIdx = i })
-  const dip = d.cashClosing[lowIdx] < (d.now ?? 0)
-    ? ` It dips to ${fM(d.cashClosing[lowIdx])}m in ${MONTHS[lowIdx]} before recovering,`
-    : ``
+  const arc = d.minNf.value < (d.nfNow ?? 0)
+    ? `dips to ${fM(d.minNf.value)}m in ${MONTHS[d.minNf.idx]} before recovering to`
+    : (d.nfEnd >= (d.nfNow ?? 0) ? 'strengthens to' : 'eases to')
   const pay = payables
     ? `On top of this sit payables to suppliers and subcontractors of ${fM(Math.abs(payables.value))}m.`
     : `Payables to suppliers and subcontractors are tracked separately — figures pending.`
-  return `${cap(scopeLabel)} holds ${fM(d.now)}m of liquid cash today,${dip} and is forecast to build to ${fM(d.yearEnd)}m by year-end. `
-    + `Set against this, loans and overdrafts of ${fM(d.debtNow)}m are paid down to ${fM(d.debtEnd)}m by December. ${pay}`
+  return `After loans and overdrafts, ${scopeLabel}'s net liquid funds stand at ${fM(d.nfNow)}m today — ${fM(d.now)}m of cash against ${fM(d.debtNow)}m of loans and overdrafts. The position ${arc} ${fM(d.nfEnd)}m by year-end as cash builds and financing is paid down. ${pay}`
 }
-const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 /* ── computation ────────────────────────────────────────────────────────── */
 export function computeNarrative(

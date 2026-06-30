@@ -22,18 +22,16 @@ const fMs = (v: number | null | undefined): string => {
   return r < 0 ? `(${s})` : `+${s}`
 }
 const sign = (v: number | null | undefined) => (v == null || v === 0) ? '' : (v < 0 ? 'neg' : 'pos')
-const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
-
 function bottomLine(d: NarrativeData, scopeLabel: string, payables: { value: number; currency: string } | null): string {
-  let lowIdx = 0; d.cashClosing.forEach((v, i) => { if (v < d.cashClosing[lowIdx]) lowIdx = i })
-  const dip = d.cashClosing[lowIdx] < (d.now ?? 0)
-    ? ` It dips to <b class="neg">${fM(d.cashClosing[lowIdx])}m</b> in ${MONTHS[lowIdx]} before recovering,`
-    : ``
+  const nfCls = (d.nfNow ?? 0) < 0 ? 'neg' : 'pos'
+  const endCls = d.nfEnd < 0 ? 'neg' : 'pos'
+  const arc = d.minNf.value < (d.nfNow ?? 0)
+    ? `dips to <b class="neg">${fM(d.minNf.value)}m</b> in ${MONTHS[d.minNf.idx]} before recovering to`
+    : (d.nfEnd >= (d.nfNow ?? 0) ? 'strengthens to' : 'eases to')
   const pay = payables
     ? `On top of this sit payables to suppliers and subcontractors of <b class="neg">${fM(Math.abs(payables.value))}m</b>.`
     : `Payables to suppliers and subcontractors are tracked separately — <b>figures pending</b>.`
-  return `${cap(scopeLabel)} holds <b class="pos">${fM(d.now)}m</b> of liquid cash today,${dip} and is forecast to build to <b class="pos">${fM(d.yearEnd)}m</b> by year-end. `
-    + `Set against this, loans and overdrafts of <b>${fM(d.debtNow)}m</b> are paid down to <b>${fM(d.debtEnd)}m</b> by December. ${pay}`
+  return `After loans and overdrafts, ${scopeLabel}'s net liquid funds stand at <b class="${nfCls}">${fM(d.nfNow)}m</b> today — <b class="pos">${fM(d.now)}m</b> of cash against <b class="neg">${fM(d.debtNow)}m</b> of loans and overdrafts. The position ${arc} <b class="${endCls}">${fM(d.nfEnd)}m</b> by year-end as cash builds and financing is paid down. ${pay}`
 }
 
 export function buildNarrativeHtml(
@@ -41,11 +39,13 @@ export function buildNarrativeHtml(
   ctx: { scopeLabel: string; year: number; asOfLabel: string; mode: 'group' | 'area'; unit: string; months: string[];
          payables: { value: number; currency: string } | null },
 ): string {
-  const liqSwing = (d.yearEnd ?? 0) - (d.now ?? 0)
+  const liqSwing = (d.yearEnd ?? 0) - (d.now ?? 0)               // gross cash swing (strip note)
+  const nfStart = d.netFunds[0]                                  // net funds at the start of the year
+  const fullSwing = d.nfEnd - nfStart                            // net journey, start → year-end
   const decRetire = d.debtEnd - d.liabilities[10]
   const plateau = Math.round((d.liabilities.slice(0, 11).reduce((a, b) => a + b, 0) / 11) / 1e6 / 50) * 50
-  const liqSwingCap = liqSwing >= 0 ? 'Liquid funds build by year-end' : 'Liquid funds drawn down over the year'
-  const chart = buildLiquidChart({ months: ctx.months || MONTHS, liquid: d.cashClosing, asOfMonth: d.asOfMonth })
+  const fullSwingCap = fullSwing >= 0 ? `Net funds recover over ${ctx.year}` : `Net funds erode over ${ctx.year}`
+  const chart = buildLiquidChart({ months: ctx.months || MONTHS, series: d.netFunds, asOfMonth: d.asOfMonth })
 
   const stat = (label: string, body: string, note: string) =>
     `<div class="stat"><div class="stat-l">${label}</div><div class="stat-v">${body}</div><div class="stat-n">${note}</div></div>`
@@ -61,9 +61,9 @@ export function buildNarrativeHtml(
   .brand { text-align: right; } .brand-mark { font-size: 11px; font-weight: 700; }
   .glyph { display: inline-block; background: #E10020; color: #fff; width: 15px; height: 15px; border-radius: 3px; text-align: center; line-height: 15px; font-size: 10px; margin-right: 3px; }
   .asof { font-size: 8.5px; letter-spacing: 1px; color: #64748b; margin-top: 2px; }
-  .hero { display: flex; align-items: center; gap: 26px; padding: 12px 0 10px; border-bottom: 1px solid #e9ecf1; }
-  .hero-eyebrow { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: #64748b; font-weight: 700; align-self: flex-start; padding-top: 6px; }
-  .hero-pt { text-align: left; } .hero-num { font-size: 54px; font-weight: 800; line-height: 1; } .hero-cap { font-size: 9.5px; color: #64748b; margin-top: 3px; }
+  .hero { display: flex; align-items: center; gap: 17px; padding: 12px 0 10px; border-bottom: 1px solid #e9ecf1; }
+  .hero-eyebrow { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: #64748b; font-weight: 700; align-self: flex-start; padding-top: 6px; max-width: 64px; }
+  .hero-pt { text-align: left; } .hero-num { font-size: 52px; font-weight: 800; line-height: 1; } .hero-num.sm { font-size: 33px; opacity: .82; } .hero-cap { font-size: 9.5px; color: #64748b; margin-top: 3px; }
   .hero-arrow { font-size: 26px; color: #94a3b8; } .hero-unit { font-size: 13px; color: #64748b; font-weight: 600; align-self: flex-end; padding-bottom: 8px; }
   .hero-swing { margin-left: auto; text-align: right; border-left: 1px solid #e9ecf1; padding-left: 22px; }
   .swing-num { font-size: 30px; font-weight: 800; } .swing-cap { font-size: 9.5px; color: #64748b; max-width: 230px; margin-left: auto; }
@@ -93,23 +93,25 @@ export function buildNarrativeHtml(
   </div>
 
   <div class="hero">
-    <div class="hero-eyebrow">Liquid funds<br>position</div>
-    <div class="hero-pt"><div class="hero-num ${sign(d.now)}">${fM(d.now)}</div><div class="hero-cap">Today · ${ctx.asOfLabel}</div></div>
+    <div class="hero-eyebrow">Net liquid<br>funds</div>
+    <div class="hero-pt"><div class="hero-num sm ${sign(nfStart)}">${fM(nfStart)}</div><div class="hero-cap">Start · Jan ${ctx.year}</div></div>
     <div class="hero-arrow">→</div>
-    <div class="hero-pt"><div class="hero-num ${sign(d.yearEnd)}">${fM(d.yearEnd)}</div><div class="hero-cap">Forecast · Dec ${ctx.year}</div></div>
+    <div class="hero-pt"><div class="hero-num ${sign(d.nfNow)}">${fM(d.nfNow)}</div><div class="hero-cap">Today · ${ctx.asOfLabel}</div></div>
+    <div class="hero-arrow">→</div>
+    <div class="hero-pt"><div class="hero-num sm ${sign(d.nfEnd)}">${fM(d.nfEnd)}</div><div class="hero-cap">Forecast · Dec ${ctx.year}</div></div>
     <div class="hero-unit">${ctx.unit.replace(' millions', ' m')}</div>
-    <div class="hero-swing"><div class="swing-num ${sign(liqSwing)}">${fMs(liqSwing)}</div><div class="swing-cap">${liqSwingCap} · cash only, before financing &amp; payables</div></div>
+    <div class="hero-swing"><div class="swing-num ${sign(fullSwing)}">${fMs(fullSwing)}</div><div class="swing-cap">${fullSwingCap} · cash less loans &amp; overdrafts</div></div>
   </div>
 
   <div class="chartwrap">
-    <div class="chart-head"><div class="chart-title">Liquid funds across ${ctx.year} <span>· cash on hand, month by month</span></div>
-      <div class="legend"><span class="leg"><i class="leg-nf"></i>Liquid funds</span><span class="leg"><i class="leg-fc"></i>Forecast</span></div></div>
+    <div class="chart-head"><div class="chart-title">Net liquid funds across ${ctx.year} <span>· cash less loans &amp; overdrafts, month by month</span></div>
+      <div class="legend"><span class="leg"><i class="leg-nf"></i>Net liquid funds</span><span class="leg"><i class="leg-fc"></i>Forecast</span></div></div>
     <div class="chart">${chart}</div>
   </div>
 
-  <div class="owe-head">Position summary <span>· liquid funds, financing &amp; payables — kept separate</span></div>
+  <div class="owe-head">Position summary <span>· the cash, financing &amp; payables behind the net</span></div>
   <div class="strip">
-    ${stat('Liquid funds', `<span class="${sign(d.now)}">${fM(d.now)}</span><span class="arr">→</span><span class="${sign(d.yearEnd)}">${fM(d.yearEnd)}</span>`, `Cash on hand · ${fMs(liqSwing)} over the year`)}
+    ${stat('Cash on hand', `<span class="${sign(d.now)}">${fM(d.now)}</span><span class="arr">→</span><span class="${sign(d.yearEnd)}">${fM(d.yearEnd)}</span>`, `Gross cash · ${fMs(liqSwing)} over the year`)}
     ${stat('Loans &amp; overdrafts', `<span class="neg">${fM(-Math.abs(d.debtNow))}</span><span class="arr">→</span><span class="neg">${fM(-Math.abs(d.debtEnd))}</span>`, `Financing · held ≈ ${plateau}m all year · ${fMs(decRetire)} in Dec`)}
     ${stat('Payables (suppliers + subcontractors)', ctx.payables ? `<span class="neg">${fM(-Math.abs(ctx.payables.value))}</span>` : `<span class="pending">Pending</span>`, ctx.payables ? `Suppliers, subcontractors &amp; taxes · as of ${ctx.asOfLabel}${ctx.payables.currency === 'USD' && !ctx.unit.startsWith('USD') ? ' (USD)' : ''}` : `Trade liabilities · no Midas balance for this period`)}
     ${stat('Full-year flow', `<span class="pos">${fM(d.recvFull)}</span>`, `Receipts vs ${fM(Math.abs(d.payFull))} payments · net ${fMs(d.recvFull + d.payFull)}`)}
