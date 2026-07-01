@@ -42,7 +42,7 @@ PROPOSED_VERSION = '2026-05-PROJ'   # project-grain version; materialized at Pus
 #     None => single-sheet / no clean decomposition => verdict 'no_total'.
 TARGET_SHEET = {
     'AREA QATAR CASH FLOW ACTUAL APRIL 2026 & FORECAST - MOA.xlsx': 'PROJECTS TOTAL USD',
-    'Qatar_Apr_2026_CashFlow_Updated.xlsx': 'PROJECTS TOTAL USD',
+    'Qatar_Apr_2026_CashFlow_Updated.xlsx': 'CONSOL QAR',   # native QAR consolidation (per Karim)
     'Saudi_Apr_2026_CashFlow.xlsx':         'SAR-CONSOLIDATED',
     'UAE_Apr_2026_CashFlow.xlsx':           'CONSOLIDATED AED',
     'Oman_Apr_2026_CashFlow.xlsx':          'CONSOLIDATED OMR',
@@ -75,7 +75,7 @@ TARGET_SHEET = {
 # Detected from each sheet's "Currency XXX" header; this map is a fallback override.
 CURRENCY_OVERRIDE = {
     'AREA QATAR CASH FLOW ACTUAL APRIL 2026 & FORECAST - MOA.xlsx': 'USD',
-    'Qatar_Apr_2026_CashFlow_Updated.xlsx': 'USD',
+    'Qatar_Apr_2026_CashFlow_Updated.xlsx': 'QAR',   # take the native QAR sheets, not the USD restatement
     'Nigeria_Apr_2026_CashFlow.xlsx': 'USD',
     'Jordan_Apr_2026_CashFlow.xlsx': 'JOD',   # in-sheet currency labels are swapped
     'EPSO_Apr_2026_CashFlow.xlsx': 'AED',     # taking the native AED consolidated sheet
@@ -105,7 +105,7 @@ SCALE_OVERRIDE = {
     'Jordan_Apr_2026_CashFlow.xlsx':   1000.0,   # '000 JOD -> full JOD
     # staged, verified '000 via Tony-calibration — must RE-STAGE before push so the
     # values land full (SCALE_OVERRIDE applies at stage time, not at push).
-    'Qatar_Apr_2026_CashFlow_Updated.xlsx': 1000.0,                    # '000 USD
+    'Qatar_Apr_2026_CashFlow_Updated.xlsx': 1000.0,                    # '000 QAR -> full QAR (native QAR sheets, same '000 scale as the USD ones)
     'AREA QATAR CASH FLOW ACTUAL APRIL 2026 & FORECAST - MOA.xlsx': 1000.0,  # '000 USD
     'UAE_Apr_2026_CashFlow.xlsx':      1000.0,   # '000 AED -> full AED
     'KAZH_Apr_2026_CashFlow.xlsx':     1000.0,   # '000 USD -> full USD
@@ -138,7 +138,16 @@ START_YEAR_OVERRIDE = {
 EXCLUDE_SHEETS = {
     'Saudi_Apr_2026_CashFlow.xlsx': {'SAUDI', 'TOTALAREA', 'PROJECTS', 'NEWPROJECTS',
                                      'AREA - 26 TO 28', 'PMV - NET'},
-    'UAE_Apr_2026_CashFlow.xlsx': {'UAE'},
+    # UAE: 'UAE' is the top rollup. Also exclude the summary/duplicate books Karim
+    # flagged: USD-CONSOLIDATED (the USD restatement of CONSOLIDATED AED, the target),
+    # NEW / NEW 3 / LEGACY / NMDCCC (working copies + legacy entities already summed
+    # into the AREA sheet), TRANSFER OUTSIDE AREA (counterparty breakdown of a
+    # within-group line), and NEW SALES (folded elsewhere) — summing any of them
+    # double-counts. Within-area transfers on the AREA sheet are dropped separately
+    # (see DROP_WITHIN_AREA) since their legs live on these excluded sheets.
+    'UAE_Apr_2026_CashFlow.xlsx': {'UAE', 'USD-CONSOLIDATED', 'NEW', 'NEW 3',
+                                   'LEGACY', 'NMDCCC', 'TRANSFER OUTSIDE AREA',
+                                   'NEW SALES'},
     # transfer/receipts helper tabs that would double-count the area total
     'Oman_Apr_2026_CashFlow.xlsx': {'TRANSFER WITHIN GROUP OMAN', 'Receipts - Completed'},
     # Rwanda: take ONLY the 'RWANDA CONSOLIDATED - CCC share' sheet (it already
@@ -176,6 +185,42 @@ JV_INCLUDE_OVERRIDE = {
     # Morganti CONSOLIDATED = PM JV 54% + FM 100% + MGSA 70% (verified to the cent);
     # PM JV 54% is the 54% share, part of the consolidation — sum it.
     'Morganti_Apr_2026_CashFlow.xlsx': {'PM JV 54%'},
+}
+
+# Drop WITHIN-AREA transfer lines (both legs) for these files. Within-area transfers
+# are internal to the area and net to zero at the area level — the consolidated confirms
+# it (equal-and-opposite each month). UAE routes its within-area transfers through the
+# AREA sheet, which is a rollup that already sums the excluded NEW/LEGACY entities; once
+# those are excluded the AREA sheet's within-area leg is orphaned (its counterparty lived
+# on the excluded sheets), so within-area no longer nets to zero and inflates the tie in
+# 4 months of 2025. Dropping within-area on BOTH sides reconciles the area on its EXTERNAL
+# transfers (outside-area + treasury) only — which is what actually moves area cash.
+DROP_WITHIN_AREA = {'UAE_Apr_2026_CashFlow.xlsx'}
+WITHIN_AREA_CODES = {'wg_recpt_within_area', 'wg_pay_within_area'}
+
+# Force-include sheets the classifier drops as rollups but which carry real area data
+# that must be summed. UAE's 'AREA' sheet is named like a rollup (so pick_usd_sheets
+# skips it), but it is the ONLY source of the area's external within-group transfers
+# (outside-area + treasury) — without it the area's within-group collapses. It does not
+# duplicate project operations, so summing it is correct (its orphaned within-area legs
+# are dropped via DROP_WITHIN_AREA).
+FORCE_INCLUDE_SHEETS = {
+    'UAE_Apr_2026_CashFlow.xlsx': {'AREA'},
+}
+
+# Explicit summed-set override: when present, REPLACES pick_usd_sheets — the run sums
+# exactly these sheets (by stripped name). For multi-currency files where the auto
+# picker would grab the USD restatement but we want the NATIVE-currency sheets (e.g.
+# Qatar carries a parallel USD + QAR book of every project; take the QAR set + the
+# QAR consolidated as target). EXCLUDE_SHEETS / FORCE_INCLUDE_SHEETS still apply after.
+SHEET_INCLUDE_OVERRIDE = {
+    'Qatar_Apr_2026_CashFlow_Updated.xlsx': {
+        'BHP', 'BOP', 'BSNP', 'DHP', 'DIAP', 'DIAR', 'DPCT', 'GSF', 'JSPP', 'LCB',
+        'LMH2', 'LR2', 'MAT', 'MDP1', 'MDP4', 'MPAC', 'NDAB', 'NFE', 'QFIS', 'QIN4',
+        'QRDB', 'QRMS', 'QRMS MAINT', 'RGX', 'RAHP', 'RLP', 'UMRP', 'WMFF', 'WMRP',
+        'NFE BLDG', 'NFE EPC.1', 'QAFCO7', 'NFS', 'RLPP', 'NGL-5', 'HIAR', 'ITCA',
+        'NFW', 'CCG', 'TCC', 'CCG D', 'MORG',
+    },
 }
 
 # Single-entity areas: no per-project decomposition exists, only an area cash flow.
@@ -426,9 +471,18 @@ def reconcile_workbook_bytes(file_bytes, fn, resolver, as_of):
 def _reconcile_with_wb(wb, fn, resolver, as_of):
     area = AREA_BY_FILE.get(fn, fn.split('_')[0])
     all_sheets = list(wb.sheetnames)
-    sel = pick_usd_sheets(wb)
+    if fn in SHEET_INCLUDE_OVERRIDE:
+        _inc = {s.strip() for s in SHEET_INCLUDE_OVERRIDE[fn]}
+        sel = [n for n in all_sheets if n.strip() in _inc]
+    else:
+        sel = pick_usd_sheets(wb)
     excl = EXCLUDE_SHEETS.get(fn, set())
     sel = [s for s in sel if s.strip() not in {e.strip() for e in excl}]
+    # force-include rollup-named sheets that carry real area data (see FORCE_INCLUDE_SHEETS)
+    _excl_strip = {e.strip() for e in excl}
+    for finc in FORCE_INCLUDE_SHEETS.get(fn, set()):
+        if finc in all_sheets and finc not in sel and finc.strip() not in _excl_strip:
+            sel.append(finc)
     currency = CURRENCY_OVERRIDE.get(fn) or detect_currency(wb, sel)
 
     # parse every selected project sheet, assign project_code + flags
@@ -536,6 +590,11 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
                 rollup_sections = sections_from_agg(fb_agg, ref_lines)
                 single_area = True
 
+    # Per-file within-area drop (see DROP_WITHIN_AREA) — internal transfers that net to
+    # zero at the area level; remove both legs so the area ties on external transfers only.
+    if fn in DROP_WITHIN_AREA:
+        proj_rows = [r for r in proj_rows if r['line_code'] not in WITHIN_AREA_CODES]
+
     # aggregate project rows to canonical grain (sum within-run dups, e.g. _AREA)
     agg = defaultdict(float)                    # (proj, line, y, m) -> value (ALL, for staging)
     for r in proj_rows:
@@ -567,6 +626,8 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
             rollup_balances = extract_rollup_balances(wb[ms], as_of)
     if target and target in wb.sheetnames and not single_area:
         tgt, _ = parse_target(wb, area, target, resolver, as_of)
+        if fn in DROP_WITHIN_AREA:
+            tgt = {k: v for k, v in tgt.items() if k[0] not in WITHIN_AREA_CODES}
         target_used = target
         rollup_balances = extract_rollup_balances(wb[target], as_of)
         rollup_sections = sections_from_agg(tgt, ref_lines)
@@ -615,6 +676,8 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
 
     # Staging aggregate keeps the SHEET in the key, so area items that fold to the
     # same _AREA bucket (PMV/CAMP/RMPT/AREA) stay individually toggleable.
+    if fn in DROP_WITHIN_AREA:
+        extra_rows = [r for r in extra_rows if r['line_code'] not in WITHIN_AREA_CODES]
     stage_agg = defaultdict(float)
     for r in proj_rows + extra_rows:
         stage_agg[(r['project_code'], r['sheet'], r['line_code'], r['year'], r['month'])] += r['value']
