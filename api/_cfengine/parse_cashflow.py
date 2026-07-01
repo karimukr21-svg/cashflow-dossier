@@ -660,7 +660,7 @@ def keyword_fallback(lt, direction):
     return None, direction
 
 # ---- per-sheet parse --------------------------------------------------------
-def parse_sheet(ws, area, sheet_name, resolver, as_of, verbose=False):
+def parse_sheet(ws, area, sheet_name, resolver, as_of, verbose=False, wg_sign_flip=True):
     rows = list(ws.iter_rows(min_row=1, max_row=80, max_col=120, values_only=True))
     hdr = detect_header(rows, as_of)
     if not hdr:
@@ -828,8 +828,13 @@ def parse_sheet(ws, area, sheet_name, resolver, as_of, verbose=False):
     def _wg_pay(c):
         return (resolver.nat_by_code.get(c) == 'Payments'
                 and resolver.cat_by_code.get(c) == 'Within Group')
+    # A sheet can carry a legitimate SIGNED-positive within-group payment (a transfer
+    # reversal) amid an otherwise signed convention — indistinguishable from a gross
+    # magnitude by the sheet alone. When the area's rollup proves the whole area is
+    # signed (e.g. Qatar: CONSOL within-area pay is negative and nets to zero only if
+    # the lone positive stays positive), the caller disables the flip via wg_sign_flip.
     wg_pay_sum = sum(rr['value'] for rr in out_rows if _wg_pay(rr['line_code']))
-    if wg_pay_sum > 0:
+    if wg_sign_flip and wg_pay_sum > 0:
         for rr in out_rows:
             if _wg_pay(rr['line_code']):
                 rr['value'] = round(-rr['value'], 4)

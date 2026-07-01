@@ -196,6 +196,17 @@ JV_INCLUDE_OVERRIDE = {
 # 4 months of 2025. Dropping within-area on BOTH sides reconciles the area on its EXTERNAL
 # transfers (outside-area + treasury) only — which is what actually moves area cash.
 DROP_WITHIN_AREA = {'UAE_Apr_2026_CashFlow.xlsx'}
+
+# Disable the per-sheet within-group sign flip for these files. The flip (parse_sheet)
+# negates a sheet's within-group payments when their sum is positive, to catch files
+# that store transfer-OUT detail as gross magnitudes (e.g. CCUW). But when the area is
+# signed throughout — proven by the CONSOL rollup carrying within-area PAY as negative
+# that nets to zero — a lone signed-positive within-group payment (a transfer reversal)
+# must stay positive to keep that netting. Qatar's LCB has exactly one within-area
+# payment (Feb-2025 +90); flipping it to -90 breaks the area's Feb-2025 within-area net
+# (a -180 phantom). Every other Qatar sheet already stores within-group signed, so
+# disabling the flip for the file changes only LCB and matches CONSOL.
+NO_WG_SIGN_FLIP = {'Qatar_Apr_2026_CashFlow_Updated.xlsx'}
 WITHIN_AREA_CODES = {'wg_recpt_within_area', 'wg_pay_within_area'}
 
 # Force-include sheets the classifier drops as rollups but which carry real area data
@@ -445,8 +456,9 @@ def classify_diff(diff, total, sum_proj):
     return 'real'
 
 
-def parse_target(wb, area, sheet, resolver, as_of):
-    rows, meta = parse_sheet(wb[sheet], area, sheet, resolver, as_of)
+def parse_target(wb, area, sheet, resolver, as_of, wg_sign_flip=True):
+    rows, meta = parse_sheet(wb[sheet], area, sheet, resolver, as_of,
+                             wg_sign_flip=wg_sign_flip)
     agg = defaultdict(float)
     if rows:
         for r in rows:
@@ -470,6 +482,7 @@ def reconcile_workbook_bytes(file_bytes, fn, resolver, as_of):
 
 def _reconcile_with_wb(wb, fn, resolver, as_of):
     area = AREA_BY_FILE.get(fn, fn.split('_')[0])
+    wg_flip = fn not in NO_WG_SIGN_FLIP   # per-file within-group sign-flip toggle
     all_sheets = list(wb.sheetnames)
     if fn in SHEET_INCLUDE_OVERRIDE:
         _inc = {s.strip() for s in SHEET_INCLUDE_OVERRIDE[fn]}
@@ -524,7 +537,7 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
         """Parse sheet n, stamp project_code + sheet on every row into `dest`, and
         record sheet_meta. Only default-included sheets feed `projects`/unmatched
         (the recon basis stays exactly today's behaviour)."""
-        rows, meta = parse_sheet(wb[n], area, n, resolver, as_of)
+        rows, meta = parse_sheet(wb[n], area, n, resolver, as_of, wg_sign_flip=wg_flip)
         if rows is None:
             return
         raw_code = meta['project_code']
@@ -570,7 +583,7 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
         fb = (TARGET_SHEET.get(fn) or MAIN_SHEET.get(fn)
               or detect_target_sheet(wb, currency))
         if fb and fb in wb.sheetnames:
-            rows, meta = parse_sheet(wb[fb], area, fb, resolver, as_of)
+            rows, meta = parse_sheet(wb[fb], area, fb, resolver, as_of, wg_sign_flip=wg_flip)
             if rows:
                 for r in rows:
                     r = dict(r); r['project_code'] = '_AREA'; r['sheet'] = fb
@@ -625,7 +638,7 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
         if ms and ms in wb.sheetnames:
             rollup_balances = extract_rollup_balances(wb[ms], as_of)
     if target and target in wb.sheetnames and not single_area:
-        tgt, _ = parse_target(wb, area, target, resolver, as_of)
+        tgt, _ = parse_target(wb, area, target, resolver, as_of, wg_sign_flip=wg_flip)
         if fn in DROP_WITHIN_AREA:
             tgt = {k: v for k, v in tgt.items() if k[0] not in WITHIN_AREA_CODES}
         target_used = target
