@@ -53,12 +53,24 @@ export function waterfallSvg(items: { label: string; value: number }[], total: n
   return s
 }
 
-/* Horizontal diverging bars — a value per area (e.g. net cash from operations). */
-export function areaBarsSvg(rows: { label: string; value: number }[], disp: ChartDisp = DEF): string {
+/* Horizontal diverging bars — a value per area (e.g. net cash from operations).
+ * opts.zoom scales fonts + row height (for print legibility); opts.maxRows caps
+ * to the top-N areas by magnitude and rolls the remainder into one "Other" bar
+ * (so a many-area chart stays short and the print sheet doesn't shrink away). */
+export function areaBarsSvg(rows: { label: string; value: number }[], disp: ChartDisp = DEF, opts: { zoom?: number; maxRows?: number } = {}): string {
+  const zoom = opts.zoom ?? 1
   const lab = (v: number) => labf(v, disp)
-  const data = rows.filter(r => Math.abs(r.value) >= 50000).sort((a, b) => b.value - a.value)
+  let data = rows.filter(r => Math.abs(r.value) >= 50000)
   if (data.length === 0) return `<svg viewBox="0 0 560 40" width="100%"><text x="280" y="24" text-anchor="middle" font-size="12" fill="#94a3b8" font-family="sans-serif">No data</text></svg>`
-  const rowH = 22, padT = 8, padB = 6, W = 560, labW = 104, valW = 56
+  if (opts.maxRows && data.length > opts.maxRows) {
+    const keep = [...data].sort((a, b) => Math.abs(b.value) - Math.abs(a.value)).slice(0, opts.maxRows)
+    const rest = data.filter(d => !keep.includes(d))
+    const otherVal = rest.reduce((t, r) => t + r.value, 0)
+    data = [...keep, ...(Math.abs(otherVal) >= 50000 ? [{ label: `Other (${rest.length})`, value: otherVal }] : [])]
+  }
+  data = data.sort((a, b) => b.value - a.value)
+  const fs = 10 * zoom, off = fs * 0.35
+  const rowH = 22 * zoom, padT = 8, padB = 6, W = 560, labW = 104 * zoom, valW = 56 * zoom
   const H = padT + padB + data.length * rowH
   const plotL = labW, plotR = W - valW, plotW = plotR - plotL
   const max = Math.max(1, ...data.map(r => Math.abs(r.value)))
@@ -69,9 +81,9 @@ export function areaBarsSvg(rows: { label: string; value: number }[], disp: Char
   data.forEach((r, i) => {
     const y = padT + i * rowH, w = Math.abs(r.value) * scale, up = r.value >= 0
     const x = up ? cxZero : cxZero - w
-    s += `<text x="${plotL - 6}" y="${(y + rowH / 2 + 3.5).toFixed(1)}" text-anchor="end" font-size="10" fill="${INK}">${r.label.length > 16 ? r.label.slice(0, 15) + '…' : r.label}</text>`
-    s += `<rect x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" width="${Math.max(1.5, w).toFixed(1)}" height="${rowH - 8}" fill="${up ? GOOD : CRIM}" opacity="0.88" rx="2"/>`
-    s += `<text x="${(W - valW + 6)}" y="${(y + rowH / 2 + 3.5).toFixed(1)}" font-size="10" font-weight="700" fill="${up ? GOOD : CRIM}">${lab(r.value)}</text>`
+    s += `<text x="${(plotL - 6).toFixed(1)}" y="${(y + rowH / 2 + off).toFixed(1)}" text-anchor="end" font-size="${fs.toFixed(1)}" fill="${INK}">${r.label.length > 16 ? r.label.slice(0, 15) + '…' : r.label}</text>`
+    s += `<rect x="${x.toFixed(1)}" y="${(y + rowH * 0.18).toFixed(1)}" width="${Math.max(1.5, w).toFixed(1)}" height="${(rowH * 0.64).toFixed(1)}" fill="${up ? GOOD : CRIM}" opacity="0.88" rx="2"/>`
+    s += `<text x="${(W - valW + 6).toFixed(1)}" y="${(y + rowH / 2 + off).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="700" fill="${up ? GOOD : CRIM}">${lab(r.value)}</text>`
   })
   s += `</svg>`
   return s

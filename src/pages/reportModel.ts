@@ -143,7 +143,7 @@ export const LINE_GROUPS: Record<string, { label: string; order: number }> = {
 export const SECTION_COLUMNS: string[][] = [
   ['Operations', 'New Sales'],
   ['Interest', 'Bank Financing'],
-  ['Non-operational', 'Within Group'],
+  ['Within Group', 'Non-operational'],
 ]
 export function arrangeSectionColumns<T extends { label: string }>(items: T[]): T[][] {
   const byLabel = new Map(items.map(i => [i.label, i]))

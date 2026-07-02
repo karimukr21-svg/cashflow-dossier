@@ -181,7 +181,7 @@ function sectionsSheet(o: SectionsOpts): string {
   const f = fmtFor(o.disp)
   const chartDisp = { div: o.disp.div, dec: o.disp.dec }
   const card = (s: { label: string; net: number; rows: { label: string; value: number }[] }) =>
-    `<div class="chartcard"><div class="ch-h"><span class="sh-t">${s.label}</span><b class="sh-n ${cl(s.net)}">${f.fM(s.net)}</b></div>${areaBarsSvg(s.rows, chartDisp)}</div>`
+    `<div class="chartcard"><div class="ch-h"><span class="sh-t">${s.label}</span><b class="sh-n ${cl(s.net)}">${f.fM(s.net)}</b></div>${areaBarsSvg(s.rows, chartDisp, { zoom: 1.3, maxRows: 16 })}</div>`
   const cols = arrangeSectionColumns(o.sections)
     .map(col => `<div class="seccol">${col.map(card).join('')}</div>`).join('')
   return sheet(head('Cash Flow Report — Sections', `Actual to date · Jan–${o.asOfLabel} · ${o.disp.lineUnit} · ${o.matchedCount} areas · each section's net, by area`)
@@ -194,7 +194,7 @@ const sheet = (inner: string) => `<div class="page"><div class="sheet">${inner}<
 const STYLE = `
   @page { size: A4 landscape; margin: 9mm 11mm; }
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  body { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #15233b; font-size: 11.5px; }
+  body { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #15233b; font-size: 12.5px; }
   .neg { color: #E10020; } .pos { color: #057a55; }
   .page { width: 1040px; height: 726px; overflow: hidden; }
   .page + .page { page-break-before: always; }
@@ -202,7 +202,7 @@ const STYLE = `
   .head { display: flex; align-items: center; gap: 11px; border-bottom: 2.5px solid #E10020; padding-bottom: 7px; margin-bottom: 10px; }
   .logo { height: 34px; width: auto; flex: 0 0 auto; }
   .ht { min-width: 0; }
-  h1 { font-size: 19px; } .sub { font-size: 10px; color: #64748b; margin-top: 2px; }
+  h1 { font-size: 22px; } .sub { font-size: 11.5px; color: #64748b; margin-top: 2px; }
   .brand { margin-left: auto; align-self: flex-end; font-size: 10px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: #64748b; white-space: nowrap; }
   .kpis { display: flex; gap: 10px; margin-bottom: 12px; }
   .kpi { flex: 1; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; border-left: 3px solid #E10020; }
@@ -231,14 +231,14 @@ const STYLE = `
   .chartcard { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; break-inside: avoid; }
   .chartcard svg { display: block; width: 100%; }
   .ch-h { font-size: 11px; font-weight: 700; margin-bottom: 4px; } .ch-h span { color: #94a3b8; font-weight: 500; }
-  .seccols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; align-items: start; }
-  .seccol { display: flex; flex-direction: column; gap: 12px; }
-  .seccol .chartcard { margin-bottom: 0; }
-  .seccol .ch-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-  .sh-t { font-weight: 700; color: #15233b; } .sh-n { font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .seccols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; align-items: start; }
+  .seccol { display: flex; flex-direction: column; gap: 14px; }
+  .seccol .chartcard { margin-bottom: 0; padding: 12px 14px; }
+  .seccol .ch-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+  .sh-t { font-size: 16px; font-weight: 700; color: #15233b; } .sh-n { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .paysum { display: flex; gap: 16px; margin-top: 6px; font-size: 10px; color: #64748b; }
   .paysum b { font-variant-numeric: tabular-nums; }
-  .note { font-size: 9px; color: #64748b; line-height: 1.5; margin-top: 8px; } .note b { color: #15233b; }`
+  .note { font-size: 10.5px; color: #64748b; line-height: 1.5; margin-top: 8px; } .note b { color: #15233b; }`
 
 // Scale each sheet down so it fits exactly one landscape page (never spills).
 const FIT_SCRIPT = `window.onload = function () {

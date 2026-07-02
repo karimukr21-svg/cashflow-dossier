@@ -254,18 +254,25 @@ function CashTimeline({ startCash, endCash, netMovement, drivers, hasCash, start
   )
 }
 
-/* One statement section: receipts grouped, then payments grouped, then net.
- * Per-nature subtotals show only when a nature has more than one bucket. */
-function StmtSectionRows({ sec }: { sec: StmtSection }) {
+/* One statement section as its own card: the section name + net in the header,
+ * then the receipts and payments line items (per-nature subtotal only when a
+ * nature has more than one bucket). */
+function StmtSectionCard({ sec }: { sec: StmtSection }) {
   return (
-    <>
-      <tr className="crp-sec"><td>{sec.label}</td><td className="r" /></tr>
-      {sec.receipts.map(b => <tr key={`r-${b.label}`}><td className="crp-item">{b.label}</td><td className={`r ${cls(b.value)}`}>{fMm(b.value)}</td></tr>)}
-      {sec.receipts.length > 1 && <tr className="crp-natsub"><td>Total receipts</td><td className={`r ${cls(sec.recTotal)}`}>{fMm(sec.recTotal)}</td></tr>}
-      {sec.payments.map(b => <tr key={`p-${b.label}`}><td className="crp-item">{b.label}</td><td className={`r ${cls(b.value)}`}>{fMm(b.value)}</td></tr>)}
-      {sec.payments.length > 1 && <tr className="crp-natsub"><td>Total payments</td><td className={`r ${cls(sec.payTotal)}`}>{fMm(sec.payTotal)}</td></tr>}
-      <tr className="crp-subtot"><td>Net {sec.label.toLowerCase()}</td><td className={`r ${cls(sec.net)}`}>{fMm(sec.net)}</td></tr>
-    </>
+    <div className="crp-card">
+      <div className="crp-sechead">
+        <span className="crp-sechead-t">{sec.label}</span>
+        <b className={`crp-sechead-n ${cls(sec.net)}`}>{fMm(sec.net)}</b>
+      </div>
+      <table className="crp-table">
+        <tbody>
+          {sec.receipts.map(b => <tr key={`r-${b.label}`}><td className="crp-item">{b.label}</td><td className={`r ${cls(b.value)}`}>{fMm(b.value)}</td></tr>)}
+          {sec.receipts.length > 1 && <tr className="crp-natsub"><td>Total receipts</td><td className={`r ${cls(sec.recTotal)}`}>{fMm(sec.recTotal)}</td></tr>}
+          {sec.payments.map(b => <tr key={`p-${b.label}`}><td className="crp-item">{b.label}</td><td className={`r ${cls(b.value)}`}>{fMm(b.value)}</td></tr>)}
+          {sec.payments.length > 1 && <tr className="crp-natsub"><td>Total payments</td><td className={`r ${cls(sec.payTotal)}`}>{fMm(sec.payTotal)}</td></tr>}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -299,16 +306,15 @@ function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLab
       <CashTimeline startCash={startCash} endCash={endCash} netMovement={netMovement} drivers={drivers} hasCash={hasCash} startLabel={cashStartLabel} asOfLabel={asOfLabel} />
 
       <div className="crp-grid">
-        {/* Cash flow statement */}
-        <div className="crp-card">
-          <div className="crp-card-h">Cash flow <span>· actual to date</span></div>
-          <table className="crp-table">
-            <thead><tr><th>Line item</th><th className="r">USD m</th></tr></thead>
-            <tbody>
-              {sections.map(sec => <StmtSectionRows key={sec.label} sec={sec} />)}
-              <tr className="crp-total"><td>Net cash movement</td><td className={`r ${cls(netMovement)}`}>{fMm(netMovement)}</td></tr>
-            </tbody>
-          </table>
+        {/* Cash flow statement — one card per section, net movement footer */}
+        <div className="crp-stmtcards">
+          {sections.map(sec => <StmtSectionCard key={sec.label} sec={sec} />)}
+          <div className="crp-card crp-netcard">
+            <div className="crp-sechead">
+              <span className="crp-sechead-t">Net cash movement</span>
+              <b className={`crp-sechead-n ${cls(netMovement)}`}>{fMm(netMovement)}</b>
+            </div>
+          </div>
         </div>
 
         <div className="crp-rcol">

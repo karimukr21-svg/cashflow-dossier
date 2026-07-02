@@ -1573,9 +1573,9 @@ body, html, #root {
 .crp-tl-move { font-size: 21px; font-weight: 800; color: var(--ink); display: flex; align-items: baseline; gap: 8px; }
 .crp-tl-move.neg { color: var(--crimson); } .crp-tl-move.pos { color: var(--good); }
 .crp-tl-move i { font-size: 8px; letter-spacing: .4px; text-transform: uppercase; color: var(--mute); font-weight: 700; font-style: normal; }
-.crp-tl-chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-.crp-tl-chip { font-size: 10.5px; color: var(--mute); font-weight: 600; border: 1px solid var(--border); border-radius: 20px; padding: 3px 11px; background: #fff; }
-.crp-tl-chip b { font-weight: 800; font-variant-numeric: tabular-nums; }
+.crp-tl-chips { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.crp-tl-chip { font-size: 13.5px; color: var(--mute); font-weight: 600; border: 1px solid var(--border); border-radius: 20px; padding: 6px 15px; background: #fff; }
+.crp-tl-chip b { font-weight: 800; font-variant-numeric: tabular-nums; margin-left: 3px; }
 .crp-tl-chip b.neg { color: var(--crimson); } .crp-tl-chip b.pos { color: var(--good); }
 .crp-paysum { display: flex; gap: 18px; margin-top: 10px; font-size: 12px; color: var(--mute); }
 .crp-paysum b { font-variant-numeric: tabular-nums; color: var(--ink); }
@@ -1594,6 +1594,9 @@ body, html, #root {
 .crp-seccols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; align-items: start; }
 .crp-seccol { display: flex; flex-direction: column; gap: 14px; }
 @media (max-width: 900px) { .crp-seccols { grid-template-columns: 1fr; } }
+.crp-stmtcards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+.crp-netcard { grid-column: 1 / -1; }
+@media (max-width: 700px) { .crp-stmtcards { grid-template-columns: 1fr; } }
 .crp-sechead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; gap: 8px; }
 .crp-sechead-t { font-size: 13px; font-weight: 700; color: var(--ink); }
 .crp-sechead-t span { color: #94a3b8; font-weight: 500; }
