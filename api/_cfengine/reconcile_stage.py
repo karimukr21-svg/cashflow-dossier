@@ -142,6 +142,7 @@ START_YEAR_OVERRIDE = {
 # plan year is dropped at stage time.
 END_YEAR_OVERRIDE = {
     'Qatar_Apr_2026_CashFlow_Updated.xlsx': 2026,
+    'Egypt 2026 Cash flow Consolidated - April 2026-2.xlsx': 2026,   # drop the 2027/2028 plan years
 }
 
 # Sheets that, despite classifying as 'project', are NOT real projects to sum:
