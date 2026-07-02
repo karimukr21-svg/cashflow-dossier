@@ -221,6 +221,8 @@ SHEET_SHARE = {
         # Legacy JV
         'Helwan': 0.5, 'Cairo West': 0.5, 'Mivida': 0.5, 'Zafarana': 0.5, 'Nile Plaza': 0.5,
         'Madinaty CP03': 0.5, 'CFC': 0.5, 'CFC MEP': 0.5, 'CCC  Egypt leg': 0.6,
+        # Offshore (CCIC/CCCE/CCC RE at 100%; CCCEgypt area at 0.6)
+        'CCCEgypt area': 0.6,
     },
 }
 
@@ -275,8 +277,8 @@ SHEET_INCLUDE_OVERRIDE = {
     # OFFSHORE (CCIC/CCCE/CCC RE/CCCEgypt area) is a separate holding/treasury layer, not
     # in CONSOLIDATED — excluded (Karim's call: projects only for now).
     'Egypt 2026 Cash flow Consolidated - April 2026-2.xlsx': {
-        # 2026 CCC (100%)
-        'Central Offshore Main', 'aa', 'cc', 'dd', 'ee', 'ff', 'gg', 'D', 'E', 'F',
+        # 2026 CCC (100%) — E & F excluded per Karim
+        'Central Offshore Main', 'aa', 'cc', 'dd', 'ee', 'ff', 'gg', 'D',
         # 2026 JV (share)
         'Ras Elhekma', 'Central JV CCCE-CCCEgypt', '2', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9',
         # Ongoing CCC (100%)
@@ -291,6 +293,8 @@ SHEET_INCLUDE_OVERRIDE = {
         # Legacy JV (share)
         'Helwan', 'Cairo West', 'Mivida', 'Zafarana', 'Nile Plaza', 'Madinaty CP03',
         'CFC', 'CFC MEP', 'CCC  Egypt leg',
+        # Offshore / holding entities — CONSOLIDATED folds these in (Karim confirmed include)
+        'CCIC', 'CCCE', 'CCC RE', 'CCCEgypt area',
     },
 }
 
