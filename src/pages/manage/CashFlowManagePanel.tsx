@@ -3,17 +3,21 @@ import { useRole, canManageCashFlow } from '@/lib/role'
 import ImportRunsManager from './ImportRunsManager'
 import CycleVersionManager from './CycleVersionManager'
 import LabelsManager from './LabelsManager'
+import AdjustmentsPanel from './AdjustmentsPanel'
 import './cashflow-manage.css'
 
-// Manage mode (Treasury) — the single home, ported from the work dashboard (S8).
+// Manage & Adjust (Treasury) — the data-management module.
 //   Import runs       — upload an area file -> stage + reconcile -> push as a version
 //   Cycles & versions — manage versions in each cycle, set current/final, publish
+//   Adjustments       — edit the adjusted forecast (Adjust / Reclass / Reschedule)
+//   Labels & mappings — the canonical chart / local-label crosswalk
 //
-// Mutations (upload / push / publish) are also enforced by RLS (cf_ tables are
-// super-admin write); the role gate just hides the controls for non-Treasury users.
+// Mutations (upload / push / publish / adjust) are also enforced by RLS (cf_ tables
+// are super-admin write); the role gate just hides the controls for non-Treasury users.
 const TABS = [
   { key: 'runs', label: 'Import runs' },
   { key: 'versions', label: 'Cycles & versions' },
+  { key: 'adjust', label: 'Adjustments' },
   { key: 'labels', label: 'Labels & mappings' },
 ]
 
@@ -48,6 +52,7 @@ export default function CashFlowManagePanel() {
 
       {tab === 'runs' && <ImportRunsManager canManage={canManage} />}
       {tab === 'versions' && <CycleVersionManager canManage={canManage} />}
+      {tab === 'adjust' && <AdjustmentsPanel canManage={canManage} />}
       {tab === 'labels' && <LabelsManager canManage={canManage} />}
     </div>
   )

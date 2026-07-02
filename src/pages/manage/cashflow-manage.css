@@ -676,3 +676,29 @@
 .cfm-lpick-opt:hover { background: #f1f5f9; }
 .cfm-lpick-opt.is-sel { background: #fef2f4; }
 .cfm-lpick-opt-desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Adjustments panel (Manage module) ───────────────────────────── */
+.cfm-body { padding: 2px; }
+.adj-intro { max-width: 720px; }
+.adj-intro h3 { margin: 4px 0 8px; font-size: 18px; display: flex; align-items: center; gap: 10px; }
+.adj-soon { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
+  color: #9a6410; background: #fbf3e1; border: 1px solid #e7d4a8; padding: 2px 8px; border-radius: 999px; }
+.adj-intro p { color: #55606e; font-size: 13.5px; line-height: 1.55; margin: 0 0 14px; }
+.adj-verbs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+.adj-verb { border: 1px solid #e5e7eb; border-radius: 9px; padding: 11px 13px; }
+.adj-verb b { display: block; font-size: 13px; margin-bottom: 3px; }
+.adj-verb span { font-size: 11.5px; color: #6b7280; line-height: 1.4; }
+.adj-status { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.adj-pill { font-size: 12px; color: #55606e; background: #f6f7f9; border: 1px solid #e5e7eb; border-radius: 999px; padding: 4px 11px; }
+.adj-pill b { color: #16181d; font-weight: 600; }
+.adj-err { color: #c4122e; background: #fdecee; border: 1px solid #f3c9cf; border-radius: 8px; padding: 9px 12px; font-size: 13px; margin-bottom: 12px; }
+.adj-tablewrap { overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 10px; }
+.adj-table { border-collapse: collapse; width: 100%; min-width: 480px; }
+.adj-table th { text-align: right; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #6b7280;
+  font-weight: 600; padding: 10px 14px; border-bottom: 1px solid #e5e7eb; background: #fafbfc; }
+.adj-table th:first-child { text-align: left; }
+.adj-table td { padding: 8px 14px; font-size: 13px; border-bottom: 1px solid #f0f1f4; }
+.adj-table tr:last-child td { border-bottom: none; }
+.adj-num { text-align: right; font-variant-numeric: tabular-nums; font-family: "SFMono-Regular", ui-monospace, "Roboto Mono", monospace; }
+.adj-num.up { color: #0e7c4a; } .adj-num.down { color: #c4122e; } .adj-num.zero { color: #aeb4bd; }
+.adj-empty { text-align: center; color: #6b7280; padding: 22px; }

@@ -68,12 +68,31 @@ function AllocationsIcon() {
   )
 }
 
+function ManageIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+         strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 6h16M4 12h16M4 18h16" />
+      <circle cx="9" cy="6" r="2" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="12" r="2" fill="currentColor" stroke="none" />
+      <circle cx="8" cy="18" r="2" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
 export const MODULES: WorkspaceModule[] = [
   {
     key: 'cash-flow',
-    label: 'Cash Flow',
+    label: 'Cash Flow',   // reports / viewing (editing lives in "Manage & Adjust")
     icon: <CashFlowIcon />,
     route: '/',
+  },
+  {
+    key: 'cash-flow-manage',
+    label: 'Manage & Adjust',
+    icon: <ManageIcon />,
+    route: '/manage',
+    requiredRole: 'manage', // import/stage/push, versions, adjustments — admin|treasury only
   },
   {
     key: 'bank-position',

@@ -223,7 +223,8 @@ export default function Dossier() {
   /* SUMMARY = the presentation set: one page per CFO question, in the order
    * a CFO conversation runs. EXPLORE = analyst tools. */
   const navItems: NavItem[] = [
-    ...(canManage ? [{ group: 'MANAGE', label: 'Manage Cash Flow', view: { kind: 'manage' as const } }] : []),
+    // Management & editing lives in its own "Manage & Adjust" module now
+    // (src/modules/manage) — this module is the reports/viewing surface.
     { group: 'REPORT', label: 'Cash Flow Report',      view: { kind: 'summary', lens: 'report' } },
     { group: 'SUMMARY', label: 'Cash Flow Story',       view: { kind: 'summary', lens: 'narrative' } },
     { group: 'SUMMARY', label: 'Debt Position',        view: { kind: 'summary', lens: 'loans' } },
