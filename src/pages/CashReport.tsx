@@ -7,7 +7,7 @@ import {
   type CfCell, type CfLine, type PayablesTrajRow, type GroupDef, type GroupAccount,
 } from '@/lib/queries'
 import { fmt, fmtDelta } from '@/lib/format'
-import { buildModel, buildStatement, buildStatementMatrix, payablesSeries, arrangeSectionColumns, type AreaAgg, type StmtSection, type MatrixSection, type PaySeriesPt } from './reportModel'
+import { buildModel, buildStatement, buildStatementMatrix, payablesSeries, arrangeSectionColumns, arrangeByColumns, STMT_COLUMNS, type AreaAgg, type StmtSection, type MatrixSection, type PaySeriesPt } from './reportModel'
 import { buildReportHtml, buildProjectsPrintHtml } from './reportPrint'
 import { waterfallSvg, areaBarsSvg, netTrendSvg, payablesTrendSvg } from './reportCharts'
 import type { Scope } from './Dossier'
@@ -306,9 +306,17 @@ function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLab
       <CashTimeline startCash={startCash} endCash={endCash} netMovement={netMovement} drivers={drivers} hasCash={hasCash} startLabel={cashStartLabel} asOfLabel={asOfLabel} />
 
       <div className="crp-grid">
-        {/* Cash flow statement — one card per section, net movement footer */}
-        <div className="crp-stmtcards">
-          {sections.map(sec => <StmtSectionCard key={sec.label} sec={sec} />)}
+        {/* Cash flow statement — one card per section, net movement footer.
+         * Operations (+ New Sales) left; Interest/Non-op/Financing/Within Group
+         * stacked right. */}
+        <div className="crp-stmtwrap">
+          <div className="crp-stmtcols">
+            {arrangeByColumns(sections, STMT_COLUMNS).map((col, i) => (
+              <div className="crp-seccol" key={i}>
+                {col.map(sec => <StmtSectionCard key={sec.label} sec={sec} />)}
+              </div>
+            ))}
+          </div>
           <div className="crp-card crp-netcard">
             <div className="crp-sechead">
               <span className="crp-sechead-t">Net cash movement</span>

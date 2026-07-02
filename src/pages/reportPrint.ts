@@ -1,4 +1,4 @@
-import { arrangeSectionColumns, type StmtSection, type MatrixSection } from './reportModel'
+import { arrangeSectionColumns, arrangeByColumns, STMT_COLUMNS, type StmtSection, type MatrixSection } from './reportModel'
 import { waterfallSvg, areaBarsSvg, netTrendSvg, payablesTrendSvg } from './reportCharts'
 
 /* Print mirror of the Cash Flow Report (CashReport.tsx), A4 LANDSCAPE, one sheet
@@ -50,17 +50,6 @@ function head(title: string, sub: string): string {
     <div class="brand">Treasury</div></div>`
 }
 
-function sectionRows(sec: StmtSection, f: Fmt): string {
-  const item = (label: string, v: number) => `<tr><td class="item">${label}</td><td class="r ${cl(v)}">${f.fM(v)}</td></tr>`
-  const sub = (label: string, v: number) => `<tr class="natsub"><td>${label}</td><td class="r ${cl(v)}">${f.fM(v)}</td></tr>`
-  let s = `<tr class="sec"><td>${sec.label}</td><td></td></tr>`
-  s += sec.receipts.map(b => item(b.label, b.value)).join('')
-  if (sec.receipts.length > 1) s += sub('Total receipts', sec.recTotal)
-  s += sec.payments.map(b => item(b.label, b.value)).join('')
-  if (sec.payments.length > 1) s += sub('Total payments', sec.payTotal)
-  s += `<tr class="subtot"><td>Net ${sec.label.toLowerCase()}</td><td class="r ${cl(sec.net)}">${f.fM(sec.net)}</td></tr>`
-  return s
-}
 
 function matrixRows(sec: MatrixSection, months: number[], f: Fmt): string {
   const sum = (rows: { monthly: number[] }[], i: number) => rows.reduce((t, r) => t + r.monthly[i], 0)
@@ -85,38 +74,50 @@ type GroupOpts = {
   paySeries?: { label: string; value: number }[]
   disp: PrintDisp
 }
+// short section labels for the timeline driver chips (mirror the screen)
+const SHORT_SEC: Record<string, string> = { 'Bank Financing': 'Financing', 'Within Group': 'Within group', 'Non-operational': 'Non-op', 'New Sales': 'New sales' }
+
 function groupSheet(o: GroupOpts): string {
   const f = fmtFor(o.disp)
   const chartDisp = { div: o.disp.div, dec: o.disp.dec }
-  const secBy = (label: string) => o.statement.sections.find(s => s.label === label)?.net ?? 0
-  const opsNet = secBy('Operations'), finNet = secBy('Bank Financing')
+  const nm = o.statement.netMovement
   const payDelta = o.hasPay ? (o.payEnd ?? 0) - (o.payStart ?? 0) : null
   const hasCash = Math.abs(o.startCash ?? 0) > 1 || Math.abs(o.endCash ?? 0) > 1
-  const cashWalk = hasCash ? `<div class="cashwalk">
-      <div class="cw-pt"><div class="cw-l">Starting cash · ${o.cashStartLabel ?? o.startLabel}</div><div class="cw-v ${cl(o.startCash)}">${f.fM(o.startCash)}</div></div>
-      <div class="cw-arrow"><span class="${cl(o.statement.netMovement)}">${o.statement.netMovement < 0 ? '−' : '+'}${f.fM(Math.abs(o.statement.netMovement))}</span><i>net movement</i></div>
-      <div class="cw-pt"><div class="cw-l">Ending cash · ${o.asOfLabel}</div><div class="cw-v ${cl(o.endCash)}">${f.fM(o.endCash)}</div></div>
+
+  // Cash-journey timeline — start → net movement (+ driver chips) → end.
+  const chips = o.statement.sections.filter(s => Math.abs(s.net) >= 50000)
+    .map(s => `<span class="tl-chip">${SHORT_SEC[s.label] ?? s.label} <b class="${cl(s.net)}">${f.fD(s.net)}</b></span>`).join('')
+  const timeline = hasCash ? `<div class="timeline">
+      <div class="tl-node"><div class="tl-cap">Starting cash · ${o.cashStartLabel ?? o.startLabel}</div><div class="tl-val ${cl(o.startCash)}">${f.fM(o.startCash)}</div></div>
+      <div class="tl-flow"><div class="tl-move ${cl(nm)}">${nm < 0 ? '−' : '+'}${f.fM(Math.abs(nm))} <i>net cash movement · of which</i></div><div class="tl-chips">${chips}</div></div>
+      <div class="tl-node tl-end"><div class="tl-cap">Ending cash · ${o.asOfLabel}</div><div class="tl-val ${cl(o.endCash)}">${f.fM(o.endCash)}</div></div>
     </div>` : ''
-  const band = kpis([
-    { label: 'Net from operations', value: f.fM(opsNet), cls: cl(opsNet) },
-    { label: 'Net financing', value: f.fM(finNet), cls: cl(finNet) },
-    { label: 'Net cash movement', value: f.fM(o.statement.netMovement), cls: cl(o.statement.netMovement) },
-    { label: `Trade payables · ${o.asOfLabel} · USD`, value: f.fM(o.payEnd), cls: cl(o.payEnd), sub: o.hasPay ? `${f.fD(payDelta)} since ${o.startLabel}` : '' },
-  ])
-  const left = `<table class="t"><thead><tr><th>Line item</th><th class="r">${o.disp.lineUnit}</th></tr></thead><tbody>
-      ${o.statement.sections.map(s => sectionRows(s, f)).join('')}
-      <tr class="total"><td>Net cash movement</td><td class="r ${cl(o.statement.netMovement)}">${f.fM(o.statement.netMovement)}</td></tr>
-    </tbody></table>`
+
+  // Statement — one card per section (name + net header, line items), Operations
+  // (+ New Sales) left; Interest/Non-op/Financing/Within Group stacked right.
+  const secCard = (s: StmtSection) => {
+    const item = (label: string, v: number) => `<tr><td class="item">${label}</td><td class="r ${cl(v)}">${f.fM(v)}</td></tr>`
+    let rows = s.receipts.map(b => item(b.label, b.value)).join('')
+    if (s.receipts.length > 1) rows += `<tr class="natsub"><td>Total receipts</td><td class="r ${cl(s.recTotal)}">${f.fM(s.recTotal)}</td></tr>`
+    rows += s.payments.map(b => item(b.label, b.value)).join('')
+    if (s.payments.length > 1) rows += `<tr class="natsub"><td>Total payments</td><td class="r ${cl(s.payTotal)}">${f.fM(s.payTotal)}</td></tr>`
+    return `<div class="chartcard stmtcard"><div class="ch-h"><span class="sh-t">${s.label}</span><b class="sh-n ${cl(s.net)}">${f.fM(s.net)}</b></div><table class="t"><tbody>${rows}</tbody></table></div>`
+  }
+  const stmtCols = arrangeByColumns(o.statement.sections, STMT_COLUMNS)
+    .map(col => `<div class="seccol">${col.map(secCard).join('')}</div>`).join('')
+  const netcard = `<div class="chartcard netcard"><div class="ch-h"><span class="sh-t">Net cash movement</span><b class="sh-n ${cl(nm)}">${f.fM(nm)}</b></div></div>`
+  const left = `<div class="stmtwrap"><div class="stmtcols">${stmtCols}</div>${netcard}</div>`
+
   const right = `
     <div class="chartcard"><div class="ch-h">How the cash moved <span>· sections → net movement</span></div>
-      ${waterfallSvg(o.statement.sections.map(s => ({ label: s.label, value: s.net })), o.statement.netMovement, chartDisp)}</div>
+      ${waterfallSvg(o.statement.sections.map(s => ({ label: s.label, value: s.net })), nm, chartDisp)}</div>
     <div class="chartcard"><div class="ch-h">Trade payables · monthly · ${o.startLabel} → ${o.asOfLabel} · ${o.disp.payUnit}</div>
       ${o.hasPay ? `${payablesTrendSvg(o.paySeries ?? [], chartDisp)}
         <div class="paysum"><span>${o.startLabel} <b class="${cl(o.payStart)}">${f.fM(o.payStart)}</b></span><span>${o.asOfLabel} <b class="${cl(o.payEnd)}">${f.fM(o.payEnd)}</b></span><span>Δ <b class="${cl(payDelta)}">${f.fD(payDelta)}</b></span></div>
         <div class="note">Suppliers, subcontractors &amp; taxes — the editable <b>trade_payables</b> group (Midas TB, USD). Δ positive = paid down. Recent months still posting.</div>`
         : `<div class="note">No matched payables for this scope.</div>`}</div>`
-  return sheet(head(`Cash Flow Report — ${o.scopeLabel}`, `Actual to date · Jan–${o.asOfLabel} · ${o.disp.lineUnit}${o.matchedCount != null ? ` · ${o.matchedCount} matched areas` : ''}`)
-    + band + cashWalk + `<div class="cols"><div>${left}</div><div>${right}</div></div>`)
+  return sheet(head(`Cash Flow Report — ${o.scopeLabel}`, `Actual to date · Jan–${o.asOfLabel} · ${o.disp.lineUnit}${o.matchedCount != null ? ` · ${o.matchedCount} areas` : ''}`)
+    + timeline + `<div class="cols"><div>${left}</div><div>${right}</div></div>`)
 }
 
 type AreaOpts = {
@@ -234,8 +235,24 @@ const STYLE = `
   .seccols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; align-items: start; }
   .seccol { display: flex; flex-direction: column; gap: 14px; }
   .seccol .chartcard { margin-bottom: 0; padding: 12px 14px; }
-  .seccol .ch-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+  .seccol .ch-h, .netcard .ch-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
   .sh-t { font-size: 16px; font-weight: 700; color: #15233b; } .sh-n { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  /* Group page — cash-journey timeline (mirrors the screen) */
+  .timeline { display: flex; align-items: stretch; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; margin-bottom: 12px; }
+  .tl-node { padding: 9px 15px; min-width: 150px; }
+  .tl-cap { font-size: 9px; letter-spacing: .4px; text-transform: uppercase; color: #64748b; font-weight: 700; }
+  .tl-val { font-size: 23px; font-weight: 800; margin-top: 2px; }
+  .tl-flow { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 8px 16px; background: #f6f7f9; border-left: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; }
+  .tl-move { font-size: 17px; font-weight: 800; }
+  .tl-move i { font-size: 9px; letter-spacing: .4px; text-transform: uppercase; color: #64748b; font-weight: 700; font-style: normal; margin-left: 6px; }
+  .tl-chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .tl-chip { font-size: 12px; color: #64748b; font-weight: 600; border: 1px solid #e2e8f0; border-radius: 20px; padding: 4px 11px; background: #fff; }
+  .tl-chip b { font-weight: 800; margin-left: 3px; }
+  /* Group page — statement section cards */
+  .stmtwrap { display: flex; flex-direction: column; gap: 10px; }
+  .stmtcols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
+  .stmtcols .seccol { gap: 10px; }
+  .stmtcard table.t, .stmtcard .t td { padding-top: 2px; padding-bottom: 2px; }
   .paysum { display: flex; gap: 16px; margin-top: 6px; font-size: 10px; color: #64748b; }
   .paysum b { font-variant-numeric: tabular-nums; }
   .note { font-size: 10.5px; color: #64748b; line-height: 1.5; margin-top: 8px; } .note b { color: #15233b; }`

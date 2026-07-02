@@ -137,25 +137,36 @@ export const LINE_GROUPS: Record<string, { label: string; order: number }> = {
   bf_pay_od:           { label: 'Financing repaid', order: 1 },
 }
 
-/* Sections-page column layout: Operations full-height on the left, Interest +
- * Bank Financing stacked in the middle, Non-operational + Within Group on the
- * right. New Sales (and any other section) falls under Operations in column 1. */
+/* Lay items (sections) into columns per a label layout; anything not named in
+ * the layout falls into column 1. Shared by the Sections page + the Group
+ * statement + their prints. */
+export function arrangeByColumns<T extends { label: string }>(items: T[], layout: string[][]): T[][] {
+  const byLabel = new Map(items.map(i => [i.label, i]))
+  const placed = new Set<string>()
+  const cols = layout.map(labels => {
+    const col = labels.map(l => byLabel.get(l)).filter((x): x is T => !!x)
+    col.forEach(c => placed.add(c.label))
+    return col
+  })
+  cols[0].push(...items.filter(i => !placed.has(i.label)))
+  return cols
+}
+
+/* Sections-page layout: Operations full-height left, Interest + Bank Financing
+ * middle, Within Group + Non-operational right. */
 export const SECTION_COLUMNS: string[][] = [
   ['Operations', 'New Sales'],
   ['Interest', 'Bank Financing'],
   ['Within Group', 'Non-operational'],
 ]
-export function arrangeSectionColumns<T extends { label: string }>(items: T[]): T[][] {
-  const byLabel = new Map(items.map(i => [i.label, i]))
-  const placed = new Set<string>()
-  const cols = SECTION_COLUMNS.map(labels => {
-    const col = labels.map(l => byLabel.get(l)).filter((x): x is T => !!x)
-    col.forEach(c => placed.add(c.label))
-    return col
-  })
-  cols[0].push(...items.filter(i => !placed.has(i.label)))   // any extra → column 1
-  return cols
-}
+export const arrangeSectionColumns = <T extends { label: string }>(items: T[]) => arrangeByColumns(items, SECTION_COLUMNS)
+
+/* Group-page statement layout: Operations (+ New Sales) on the left; Interest,
+ * Non-operational, Bank Financing and Within Group stacked on the right. */
+export const STMT_COLUMNS: string[][] = [
+  ['Operations', 'New Sales'],
+  ['Interest', 'Non-operational', 'Bank Financing', 'Within Group'],
+]
 
 export type StmtBucket = { label: string; value: number }
 export type StmtSection = { label: string; receipts: StmtBucket[]; payments: StmtBucket[]; recTotal: number; payTotal: number; net: number }

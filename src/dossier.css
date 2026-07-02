@@ -1594,9 +1594,9 @@ body, html, #root {
 .crp-seccols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; align-items: start; }
 .crp-seccol { display: flex; flex-direction: column; gap: 14px; }
 @media (max-width: 900px) { .crp-seccols { grid-template-columns: 1fr; } }
-.crp-stmtcards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
-.crp-netcard { grid-column: 1 / -1; }
-@media (max-width: 700px) { .crp-stmtcards { grid-template-columns: 1fr; } }
+.crp-stmtwrap { display: flex; flex-direction: column; gap: 12px; }
+.crp-stmtcols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+@media (max-width: 700px) { .crp-stmtcols { grid-template-columns: 1fr; } }
 .crp-sechead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; gap: 8px; }
 .crp-sechead-t { font-size: 13px; font-weight: 700; color: var(--ink); }
 .crp-sechead-t span { color: #94a3b8; font-weight: 500; }
