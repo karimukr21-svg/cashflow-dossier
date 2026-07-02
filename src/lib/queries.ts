@@ -317,6 +317,48 @@ export async function fetchProjectCells(opts: {
     .map(r => ({ ...r, value: Number(r.value) }))
 }
 
+/* ── Account-group definitions (for the Report → Definitions view) ──────────
+ * What liability account-groups exist and exactly which accounts feed each —
+ * so inclusions can be reviewed (e.g. with Amr). Groups are defined/edited in
+ * the Chart of Accounts module (Group Accounts Workspace); this is read-only. */
+export type GroupDef = { key: string; label: string; accountCount: number }
+export type GroupAccount = { account: string; name: string; balance: number }
+
+export async function fetchAccountGroups(): Promise<GroupDef[]> {
+  const [grpRes, memRes] = await Promise.all([
+    supabase.from('coa_account_groups').select('key, label'),
+    supabase.from('coa_group_accounts').select('key, account_key'),
+  ])
+  if (grpRes.error) throw grpRes.error
+  if (memRes.error) throw memRes.error
+  const count = new Map<string, number>()
+  for (const m of memRes.data || []) count.set(m.key, (count.get(m.key) ?? 0) + 1)
+  return (grpRes.data || []).map(g => ({ key: g.key, label: g.label, accountCount: count.get(g.key) ?? 0 }))
+    .sort((a, b) => b.accountCount - a.accountCount)
+}
+
+/** The accounts that make up an account-group, with their latest (period) USD
+ *  balance from the TB. Accounts in the group with no TB rows show a 0 balance. */
+export async function fetchGroupAccounts(groupKey: string, period: number): Promise<{ accounts: GroupAccount[]; total: number }> {
+  const memRes = await supabase.from('coa_group_accounts').select('account_key').eq('key', groupKey)
+  if (memRes.error) throw memRes.error
+  const keys = [...new Set((memRes.data || []).map(m => m.account_key as string))]
+  if (keys.length === 0) return { accounts: [], total: 0 }
+  const balRes = await supabase.from('tb_balances').select('account, account_name_src, usd_bal').eq('period', period).in('account', keys)
+  if (balRes.error) throw balRes.error
+  const byAcct = new Map<string, { name: string; balance: number }>()
+  for (const k of keys) byAcct.set(k, { name: k, balance: 0 })
+  for (const r of balRes.data || []) {
+    const cur = byAcct.get(r.account) || { name: r.account, balance: 0 }
+    cur.balance += Number(r.usd_bal || 0)
+    if (r.account_name_src) cur.name = r.account_name_src
+    byAcct.set(r.account, cur)
+  }
+  const accounts = [...byAcct.entries()].map(([account, x]) => ({ account, name: x.name, balance: x.balance }))
+    .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance))
+  return { accounts, total: accounts.reduce((t, a) => t + a.balance, 0) }
+}
+
 export type BridgeEntry = { area_id: string; area_label: string; sort_order: number }
 
 /** Maps ANY cf label — cf_area (old vintages) or cf_country (2026-05+) — to its

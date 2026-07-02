@@ -1571,6 +1571,15 @@ body, html, #root {
 .crp-posbar-fill { height: 100%; background: rgba(225,0,32,0.55); border-radius: 3px; }
 .crp-posbar-val { font-size: 11.5px; font-weight: 700; color: var(--crimson); font-variant-numeric: tabular-nums; }
 
+.crp-pill { display: inline-block; font-size: 10.5px; font-weight: 600; padding: 2px 9px; border-radius: 999px; }
+.crp-pill--ok { background: rgba(5,122,85,0.12); color: #057a55; }
+.crp-pill--warn { background: rgba(180,83,9,0.12); color: #b45309; }
+.crp-pill--mute { background: #eef1f5; color: #64748b; }
+.crp-list { margin: 4px 0 0; padding-left: 18px; font-size: 12px; color: var(--ink); columns: 2; }
+.crp-list li { margin: 1px 0; }
+.crp-hl td { background: rgba(225,0,32,0.05); font-weight: 700; }
+.crp-key { color: #94a3b8; font-weight: 400; font-size: 11px; }
+.crp-mono { font-variant-numeric: tabular-nums; font-family: 'DM Mono', ui-monospace, monospace; font-size: 11.5px; color: #475569; }
 .crp-note { font-size: 10px; line-height: 1.5; color: var(--mute); margin-top: 10px; }
 .crp-note b { color: var(--ink); font-weight: 700; }
 .crp-note--empty { font-style: italic; color: #94a3b8; padding: 8px 0; margin-top: 0; }
