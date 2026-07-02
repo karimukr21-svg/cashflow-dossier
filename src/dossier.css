@@ -275,15 +275,13 @@ body, html, #root {
   margin-top: 8px;
   font-size: 12px;
 }
-/* per-area page: currency + denomination display toggles (verify vs source Excel) */
-.area-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 10px 0 4px; }
-.area-toolbar .unit-cap { font-size: 12px; color: var(--mute); }
-.unit-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
-.unit-seg button { padding: 5px 11px; border: 0; background: var(--surface, #fff); font-size: 12px; font-weight: 600; color: var(--mute); cursor: pointer; }
-.unit-seg button + button { border-left: 1px solid var(--border); }
-.unit-seg button:hover:not(:disabled):not(.active) { color: var(--ink); }
-.unit-seg button.active { background: var(--ink); color: #fff; }
-.unit-seg button:disabled { opacity: .45; cursor: not-allowed; }
+/* per-area page: currency + denomination display toggles (verify vs source Excel).
+   Normally portaled into the top bar's Row 2 (next to Grain/Sections); the slot
+   is display:contents so the pills flow into that flex row. Fallback bar used
+   only if the slot is unavailable. */
+.topbar-extras { display: contents; }
+.area-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 4px; }
+.pill-btn:disabled { opacity: .45; cursor: not-allowed; }
 .area-includes-label {
   font-size: 10.5px;
   text-transform: uppercase;

@@ -18,6 +18,7 @@ import AreasFunders from './AreasFunders'
 import TreasuryHeatmap from './TreasuryHeatmap'
 import CustomPeriodPopover from '@/components/CustomPeriodPopover'
 import AreaFilterPopover from '@/components/AreaFilterPopover'
+import { TopbarExtrasCtx } from '@/lib/displayFmt'
 
 export type Grain = 'monthly' | 'quarterly' | 'yearly'
 export type GroupBy = 'category' | 'nature'
@@ -169,6 +170,8 @@ export default function Dossier() {
 
   const [showCustom, setShowCustom] = useState(false)
   const [showAreaFilter, setShowAreaFilter] = useState(false)
+  // Top-bar slot (Row 2) the active page can portal its own display controls into.
+  const [extrasNode, setExtrasNode] = useState<HTMLDivElement | null>(null)
 
   /* All Areas page filter — stores EXCLUDED canonical area_ids so newly-added
    * areas default in without Karim having to re-tick them. Bumped to v2
@@ -325,6 +328,7 @@ export default function Dossier() {
   ]
 
   return (
+    <TopbarExtrasCtx.Provider value={extrasNode}>
     <div className="shell">
       <div className="topbar">
         {/* Row 1 — data context: what is being viewed.
@@ -424,6 +428,9 @@ export default function Dossier() {
               </div>
             </>
           )}
+          {/* Slot for the active page's own display controls (AreaDrill's
+              currency + denomination pills portal in here). */}
+          <div className="topbar-extras" ref={setExtrasNode} />
         </div>
       </div>
 
@@ -492,6 +499,7 @@ export default function Dossier() {
 
       <div className="content">{renderContent()}</div>
     </div>
+    </TopbarExtrasCtx.Provider>
   )
 }
 

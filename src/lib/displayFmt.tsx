@@ -26,3 +26,9 @@ export const makeDisp = (rate: number, d: Denom): DispFmt =>
 const defaultDisp: DispFmt = (v) => v == null ? '' : fmt(v)
 export const DispFmtCtx = createContext<DispFmt>(defaultDisp)
 export const useDisp = () => useContext(DispFmtCtx)
+
+/* A slot on the Dossier top bar (Row 2, next to Grain/Sections) that the
+ * active page can portal its own display controls into. AreaDrill uses it to
+ * render the currency + denomination pills up in the shared top bar. */
+export const TopbarExtrasCtx = createContext<HTMLElement | null>(null)
+export const useTopbarExtras = () => useContext(TopbarExtrasCtx)

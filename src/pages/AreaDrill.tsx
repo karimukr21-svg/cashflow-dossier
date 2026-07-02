@@ -1,9 +1,10 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { fetchActuals, fetchForecasts, fetchFxRate, type CfCell, type CfLine } from '@/lib/queries'
 import { classNum } from '@/lib/format'
 import { EditableCell } from '@/components/EditableCell'
 import { computeDerivedBalances, getColumnYMEndpoints } from '@/lib/derivedBalances'
-import { DispFmtCtx, useDisp, makeDisp, DENOM, unitLabel, type Denom } from '@/lib/displayFmt'
+import { DispFmtCtx, useDisp, makeDisp, DENOM, type Denom, useTopbarExtras } from '@/lib/displayFmt'
 import type { Scope, Grain, GroupBy } from './Dossier'
 
 /* `area` is now the canonical area_id (e.g. 'KSA', 'ACR', 'CYP'). The
@@ -62,8 +63,32 @@ export default function AreaDrill({ area, scope }: { area: string; scope: Scope 
   const localAvail = nativeCur !== 'USD'
   const useUsd = ccy === 'usd' && localAvail && fxRate != null
   const rate = useUsd ? (fxRate as number) : 1
-  const dispCur = useUsd ? 'USD' : nativeCur
   const disp = useMemo(() => makeDisp(rate, denom), [rate, denom])
+  const slot = useTopbarExtras()
+
+  // Currency + denomination pills — rendered up in the Dossier top bar (Row 2,
+  // next to Grain/Sections) via the slot; falls back to an inline bar if absent.
+  const controls = (
+    <>
+      <div className="ctrl" style={{ marginLeft: 8 }}><label>Currency</label></div>
+      <div className="pill-row">
+        <button className={`pill-btn ${!useUsd ? 'active' : ''}`} disabled={!localAvail}
+          onClick={() => setCcy('local')}
+          title={localAvail ? 'Native currency, no FX — ties to the source Excel' : 'This area is already reported in USD'}
+        >{localAvail ? nativeCur : 'Local'}</button>
+        <button className={`pill-btn ${useUsd ? 'active' : ''}`} disabled={!localAvail || fxRate == null}
+          onClick={() => setCcy('usd')}
+          title={localAvail && fxRate == null ? 'No FX rate for this area/period' : 'Convert to USD at the cycle rate'}
+        >USD</button>
+      </div>
+      <div className="ctrl" style={{ marginLeft: 8 }}><label>Units</label></div>
+      <div className="pill-row">
+        {(['m', 'k', 'u'] as Denom[]).map(d => (
+          <button key={d} className={`pill-btn ${denom === d ? 'active' : ''}`} onClick={() => setDenom(d)}>{DENOM[d].btn}</button>
+        ))}
+      </div>
+    </>
+  )
 
   if (loading) return <div className="placeholder-box">Loading {titleLabel}…</div>
   if (!canonical) return <div className="placeholder-box">Unknown area: {area}</div>
@@ -83,24 +108,7 @@ export default function AreaDrill({ area, scope }: { area: string; scope: Scope 
         </div>
       )}
 
-      <div className="area-toolbar no-print">
-        <div className="unit-seg">
-          <button className={!useUsd ? 'active' : ''} disabled={!localAvail}
-            onClick={() => setCcy('local')}
-            title={localAvail ? 'Native currency, no FX — ties to the source Excel' : 'This area is already reported in USD'}
-          >{localAvail ? nativeCur : 'Local'}</button>
-          <button className={useUsd ? 'active' : ''} disabled={!localAvail || fxRate == null}
-            onClick={() => setCcy('usd')}
-            title={localAvail && fxRate == null ? 'No FX rate for this area/period' : 'Convert to USD at the cycle rate'}
-          >USD</button>
-        </div>
-        <div className="unit-seg">
-          {(['m', 'k', 'u'] as Denom[]).map(d => (
-            <button key={d} className={denom === d ? 'active' : ''} onClick={() => setDenom(d)}>{DENOM[d].btn}</button>
-          ))}
-        </div>
-        <span className="unit-cap">Showing {unitLabel(dispCur, denom)}</span>
-      </div>
+      {slot ? createPortal(controls, slot) : <div className="area-toolbar no-print">{controls}</div>}
 
       <DispFmtCtx.Provider value={disp}>
         <AreaCategoryCards

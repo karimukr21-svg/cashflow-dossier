@@ -147,6 +147,7 @@ type GridData = {
   area: string; currency: string
   accum_loans_open?: number | null
   accum_od_open?: number | null
+  opening_adj?: Record<string, number> | null   // non-cash opening-balance restatements (ym -> amount)
   years: number[]
   by_year: Record<string, GridYear>
 }
@@ -224,10 +225,15 @@ function CashflowGrid({ runId, currency, nonce }: { runId: string; currency: str
     let bal = firstG && firstYm ? at(firstG.opening, firstYm) : 0
     let loanBal = Number(data.accum_loans_open ?? 0)
     let odBal = Number(data.accum_od_open ?? 0)
+    // Non-cash opening-balance restatements (e.g. a share-step top-up): applied to the
+    // opening of the given month so the derived walk matches the file's NET balance,
+    // without touching any cash-flow section. See cf_opening_adjustments.
+    const openingAdj = (ym: string) => at(data.opening_adj, ym)
     for (const yy of data.years) {
       const g = data.by_year[String(yy)]
       if (!g) continue
       for (const mo of g.months) {
+        bal = bal + openingAdj(mo.ym)
         derivedOpen[mo.ym] = bal
         bal = bal + netMoveOf(g, mo.ym)
         derivedEnd[mo.ym] = bal
