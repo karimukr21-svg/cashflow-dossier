@@ -1520,6 +1520,55 @@ body, html, #root {
 .cnr-paynote b { color: var(--ink); font-weight: 700; }
 .cnr-paynote--empty { font-style: italic; color: #94a3b8; padding: 14px 0; }
 
+/* ── Cash Flow Report (Group / Area / Project) ─────────────────────────────── */
+.crp { display: flex; flex-direction: column; gap: 14px; }
+.crp-toolbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.crp-levels { display: inline-flex; background: var(--surface, #fff); border: 1px solid var(--border); border-radius: 9px; padding: 3px; }
+.crp-lvl { border: 0; background: transparent; padding: 6px 15px; font-size: 12.5px; font-weight: 600; color: var(--mute); border-radius: 6px; cursor: pointer; }
+.crp-lvl:hover { color: var(--ink); }
+.crp-lvl.active { background: var(--crimson); color: #fff; }
+.crp-select { border: 1px solid var(--border); border-radius: 7px; padding: 6px 10px; font-size: 12.5px; color: var(--ink); background: var(--surface, #fff); }
+
+.crp-page { display: flex; flex-direction: column; gap: 14px; }
+.crp-head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2.5px solid var(--crimson); padding-bottom: 8px; }
+.crp-head h1 { font-size: 20px; font-weight: 800; color: var(--ink); }
+.crp-sub { font-size: 11px; color: var(--mute); margin-top: 3px; }
+.crp-brand { font-size: 11px; font-weight: 700; color: var(--ink); white-space: nowrap; }
+.crp-glyph { display: inline-block; background: var(--crimson); color: #fff; width: 16px; height: 16px; border-radius: 3px; text-align: center; line-height: 16px; font-size: 11px; margin-right: 4px; }
+
+.crp-grid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 14px; align-items: start; }
+@media (max-width: 900px) { .crp-grid { grid-template-columns: 1fr; } }
+.crp-card { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; background: var(--surface, #fff); }
+.crp-card-h { font-size: 13px; font-weight: 700; color: var(--ink); margin-bottom: 8px; }
+.crp-card-h span { color: #94a3b8; font-weight: 500; }
+
+.crp-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.crp-table th { text-align: left; font-size: 9.5px; letter-spacing: .4px; text-transform: uppercase; color: var(--mute); font-weight: 700; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+.crp-table th.r, .crp-table td.r { text-align: right; font-variant-numeric: tabular-nums; }
+.crp-table td { padding: 4px 8px; color: var(--ink); }
+.crp-table .neg { color: var(--crimson); }
+.crp-table .pos { color: var(--good); }
+.crp-sec td { font-size: 9.5px; letter-spacing: .4px; text-transform: uppercase; color: var(--mute); font-weight: 700; padding-top: 9px; }
+.crp-item td, td.crp-item { padding-left: 16px; color: #334155; }
+.crp-subtot td { font-weight: 700; border-top: 1px solid var(--border); }
+.crp-total td { font-weight: 800; border-top: 2px solid var(--ink); padding-top: 6px; }
+.crp-table--pos .crp-total td { border-top: 0; }
+.crp-sep-l { border-left: 1px solid var(--border); }
+
+.crp-clickable { cursor: pointer; }
+.crp-clickable:hover td { background: rgba(225,0,32,0.04); }
+
+.crp-posbar { margin-top: 12px; display: flex; flex-direction: column; gap: 7px; }
+.crp-posbar-row { display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: 8px; }
+.crp-posbar-lab { font-size: 10px; color: var(--mute); font-weight: 600; }
+.crp-posbar-track { height: 12px; background: #f1f3f6; border-radius: 3px; overflow: hidden; }
+.crp-posbar-fill { height: 100%; background: rgba(225,0,32,0.55); border-radius: 3px; }
+.crp-posbar-val { font-size: 11.5px; font-weight: 700; color: var(--crimson); font-variant-numeric: tabular-nums; }
+
+.crp-note { font-size: 10px; line-height: 1.5; color: var(--mute); margin-top: 10px; }
+.crp-note b { color: var(--ink); font-weight: 700; }
+.crp-note--empty { font-style: italic; color: #94a3b8; padding: 8px 0; margin-top: 0; }
+
 /* Payables + full-year flow footer (cash-story layout) */
 .cnr-foot { display: flex; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); margin-top: 10px; }
 .cnr-foot-item { flex: 1; padding: 11px 20px; border-left: 1px solid var(--border); }
