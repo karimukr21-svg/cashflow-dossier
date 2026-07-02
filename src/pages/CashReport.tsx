@@ -7,7 +7,7 @@ import {
   type CfCell, type CfLine, type PayablesTrajRow, type GroupDef, type GroupAccount,
 } from '@/lib/queries'
 import { fmt, fmtDelta } from '@/lib/format'
-import { buildModel, buildStatement, buildStatementMatrix, payablesSeries, type AreaAgg, type StmtSection, type MatrixSection, type PaySeriesPt } from './reportModel'
+import { buildModel, buildStatement, buildStatementMatrix, payablesSeries, arrangeSectionColumns, type AreaAgg, type StmtSection, type MatrixSection, type PaySeriesPt } from './reportModel'
 import { buildReportHtml, buildProjectsPrintHtml } from './reportPrint'
 import { waterfallSvg, areaBarsSvg, netTrendSvg, payablesTrendSvg } from './reportCharts'
 import type { Scope } from './Dossier'
@@ -62,10 +62,15 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
           fetchPayablesTrajectory(),
         ])
         if (cancel) return
-        // published actuals (if any) override the elapsed forecast cells
+        // Merge/override at PROJECT grain: cf data is project-grain (many rows
+        // per area|line|month), so the key MUST include project_code — else the
+        // areas collapse to one project's value (undercounting multi-project
+        // areas). Published actuals still override the matching forecast cell.
+        const key = (c: CfCell & { project_code?: string | null }) =>
+          `${c.area}|${c.project_code ?? ''}|${c.line_code}|${c.year}|${c.month}`
         const merged = new Map<string, CfCell & { currency?: string }>()
-        for (const c of f) merged.set(`${c.area}|${c.line_code}|${c.year}|${c.month}`, c)
-        for (const c of a) merged.set(`${c.area}|${c.line_code}|${c.year}|${c.month}`, c)
+        for (const c of f) merged.set(key(c), c)
+        for (const c of a) merged.set(key(c), c)
         const mc = [...merged.values()]
         setCells(mc); setPayTraj(pt)
         const curs = [...new Set(mc.map(c => c.currency).filter(Boolean))] as string[]
@@ -340,8 +345,7 @@ function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLab
 function SectionsView({ scope, matched, asOfLabel }: {
   scope: Scope; matched: AreaAgg[]; asOfLabel: string
 }) {
-  const cards = useMemo(() => sectionCards(matched, scope.lines), [matched, scope.lines])
-  const netMovement = cards.reduce((t, c) => t + c.net, 0)
+  const columns = useMemo(() => arrangeSectionColumns(sectionCards(matched, scope.lines)), [matched, scope.lines])
 
   return (
     <div className="crp-page">
@@ -354,24 +358,22 @@ function SectionsView({ scope, matched, asOfLabel }: {
         <div className="crp-brand">Treasury</div>
       </div>
 
-      {/* Overview — every section's net at a glance + how they sum to net movement */}
-      <KpiBand cards={[
-        ...cards.map(c => ({ label: c.label, value: fMm(c.net), cls: cls(c.net) })),
-        { label: 'Net cash movement', value: fMm(netMovement), cls: cls(netMovement) },
-      ]} />
-
-      <div className="crp-secgrid">
-        {cards.map(c => (
-          <div className="crp-card" key={c.label}>
-            <div className="crp-sechead">
-              <span className="crp-sechead-t">{c.label}<span> · by area</span></span>
-              <b className={`crp-sechead-n ${cls(c.net)}`}>{fMm(c.net)}</b>
-            </div>
-            <Svg html={areaBarsSvg(c.rows.map(r => ({ label: r.label, value: r.value })))} />
+      <div className="crp-seccols">
+        {columns.map((col, i) => (
+          <div className="crp-seccol" key={i}>
+            {col.map(c => (
+              <div className="crp-card" key={c.label}>
+                <div className="crp-sechead">
+                  <span className="crp-sechead-t">{c.label}<span> · by area</span></span>
+                  <b className={`crp-sechead-n ${cls(c.net)}`}>{fMm(c.net)}</b>
+                </div>
+                <Svg html={areaBarsSvg(c.rows.map(r => ({ label: r.label, value: r.value })))} />
+              </div>
+            ))}
           </div>
         ))}
       </div>
-      <div className="crp-note">Each card is one cash-flow section; the tiles above are the section nets, which sum to net cash movement. Bars show that section's net cash per area (green = generated, crimson = consumed), USD, year-to-date. Section nets tie the "How the cash moved" waterfall on the Group page.</div>
+      <div className="crp-note">Each card is one cash-flow section; bars show that section's net cash per area (green = generated, crimson = consumed), USD, year-to-date. Section nets tie the "How the cash moved" waterfall on the Group page.</div>
     </div>
   )
 }

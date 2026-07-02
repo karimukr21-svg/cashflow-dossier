@@ -268,10 +268,10 @@ export async function fetchCanonicalAreas(): Promise<CanonicalArea[]> {
 export async function fetchActuals(opts: {
   fromYear: number; fromMonth: number; toYear: number; toMonth: number;
   cfAreas?: string[];
-}): Promise<(CfCell & { source_version: string; currency?: string })[]> {
+}): Promise<(CfCell & { source_version: string; currency?: string; project_code?: string | null })[]> {
   let q = supabase
     .from('cf_actuals')
-    .select('area, line_code, year, month, value, source_version, currency')
+    .select('area, project_code, line_code, year, month, value, source_version, currency')
     .gte('year', opts.fromYear).lte('year', opts.toYear)
   if (opts.cfAreas && opts.cfAreas.length > 0) q = q.in('area', opts.cfAreas)
   const { data, error } = await q
@@ -287,10 +287,10 @@ export async function fetchForecasts(opts: {
   version: string;
   fromYear: number; fromMonth: number; toYear: number; toMonth: number;
   cfAreas?: string[];
-}): Promise<(CfCell & { version: string; currency?: string })[]> {
+}): Promise<(CfCell & { version: string; currency?: string; project_code?: string | null })[]> {
   let q = supabase
     .from('cf_forecasts')
-    .select('area, line_code, year, month, value, version, currency')
+    .select('area, project_code, line_code, year, month, value, version, currency')
     .eq('version', opts.version)
     .gte('year', opts.fromYear).lte('year', opts.toYear)
   if (opts.cfAreas && opts.cfAreas.length > 0) q = q.in('area', opts.cfAreas)
