@@ -1530,6 +1530,14 @@ body, html, #root {
 .crp-select { border: 1px solid var(--border); border-radius: 7px; padding: 6px 10px; font-size: 12.5px; color: var(--ink); background: var(--surface, #fff); }
 .crp-print { margin-left: auto; border: 1px solid var(--border); background: var(--surface, #fff); color: var(--ink); font-size: 12.5px; font-weight: 600; padding: 6px 16px; border-radius: 7px; cursor: pointer; }
 .crp-print:hover { border-color: var(--crimson); color: var(--crimson); }
+/* currency + denomination toggles (value-verification against source Excel) */
+.crp-toggles { display: inline-flex; align-items: center; gap: 8px; }
+.crp-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+.crp-seg button { padding: 5px 11px; border: 0; background: var(--surface, #fff); font-size: 12px; font-weight: 600; color: var(--mute); cursor: pointer; }
+.crp-seg button + button { border-left: 1px solid var(--border); }
+.crp-seg button:hover:not(:disabled):not(.active) { color: var(--ink); }
+.crp-seg button.active { background: var(--ink); color: #fff; }
+.crp-seg button:disabled { opacity: .45; cursor: not-allowed; }
 
 /* lede + KPI band + chart plumbing */
 .crp-lede { font-size: 15px; line-height: 1.55; color: #334155; max-width: 1180px; }
