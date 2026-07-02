@@ -487,6 +487,7 @@ function SectionRow({
   const [open, setOpen] = useState(false)
   const allLineCodes = useMemo(() => new Set(sec.lines.map(l => l.line_code)), [sec.lines])
   const headTotal = sumCells(allLineCodes, null, () => true)
+  if (!hasAnyValue(allLineCodes, columns, sumCells)) return null   // all-blank section
 
   return (
     <>
@@ -513,6 +514,27 @@ function SectionRow({
 }
 
 /* Balance section expanded view: just per-area rows for the balance lines. */
+/* Drop area rows that are entirely blank (no value in any column) for the given
+ * line set — a value of 0 counts as data and stays; only all-null rows hide. */
+function areasWithValues(
+  areas: CanonicalArea[], lineCodes: Set<string>, columns: Column[],
+  sumCells: (lc: Set<string>, ids: Set<string> | null, m: (y: number, mo: number) => boolean) => number | null,
+): CanonicalArea[] {
+  return areas.filter(a => {
+    const set = new Set([a.area_id])
+    return columns.some(col => sumCells(lineCodes, set, col.matches) != null)
+  })
+}
+
+/* True if the line set has at least one non-blank value across the columns
+ * (over all areas) — used to hide fully-empty subgroup / category rows. */
+function hasAnyValue(
+  lineCodes: Set<string>, columns: Column[],
+  sumCells: (lc: Set<string>, ids: Set<string> | null, m: (y: number, mo: number) => boolean) => number | null,
+): boolean {
+  return columns.some(col => sumCells(lineCodes, null, col.matches) != null)
+}
+
 function BalanceAreaRows({
   sec, columns, areas, sumCells, onSelectArea,
 }: {
@@ -525,7 +547,7 @@ function BalanceAreaRows({
   const lineCodes = useMemo(() => new Set(sec.lines.map(l => l.line_code)), [sec.lines])
   return (
     <>
-      {areas.map(area => (
+      {areasWithValues(areas, lineCodes, columns, sumCells).map(area => (
         <AreaLeafRow
           key={`${sec.key}|${area.area_id}`}
           area={area}
@@ -604,6 +626,7 @@ function SubgroupRow({
   const [open, setOpen] = useState(false)
   const lineCodes = useMemo(() => new Set(lines.map(l => l.line_code)), [lines])
   const subtotal = sumCells(lineCodes, null, () => true)
+  if (!hasAnyValue(lineCodes, columns, sumCells)) return null   // all-blank subgroup
   return (
     <>
       <tr className={`pivot-subgroup-row subtotal-row ${subgroupClass} clickable ${open ? 'open' : ''}`}
@@ -618,7 +641,7 @@ function SubgroupRow({
         })}
         <td className={classNum(subtotal)} style={{ fontWeight: 500 }}>{subtotal == null ? '' : disp(subtotal)}</td>
       </tr>
-      {open && areas.map(area => (
+      {open && areasWithValues(areas, lineCodes, columns, sumCells).map(area => (
         <AreaLeafRow
           key={`${sectionKey}|${label}|${area.area_id}`}
           area={area}
@@ -688,6 +711,7 @@ function CategoryRow({
   const disp = useDisp()
   const [open, setOpen] = useState(false)
   const subtotal = sumCells(lineCodes, null, () => true)
+  if (!hasAnyValue(lineCodes, columns, sumCells)) return null   // all-blank category
   return (
     <>
       <tr className={`pivot-subgroup-row subtotal-row category-divider clickable ${open ? 'open' : ''}`}
@@ -702,7 +726,7 @@ function CategoryRow({
         })}
         <td className={classNum(subtotal)} style={{ fontWeight: 500 }}>{subtotal == null ? '' : disp(subtotal)}</td>
       </tr>
-      {open && areas.map(area => (
+      {open && areasWithValues(areas, lineCodes, columns, sumCells).map(area => (
         <AreaLeafRow
           key={`${sectionKey}|${category}|${area.area_id}`}
           area={area}
