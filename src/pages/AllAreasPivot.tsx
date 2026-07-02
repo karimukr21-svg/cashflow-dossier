@@ -22,7 +22,8 @@ const SECTIONS_BY_CATEGORY: SectionDef[] = [
   { key: 'nonop',      label: 'Non-Operational',  kind: 'flow',    categories: ['Non Operational'] },
   { key: 'wg',         label: 'Within Group',     kind: 'flow',    categories: ['Within Group'] },
   { key: 'bf',         label: 'Bank Financing',   kind: 'flow',    categories: ['Bank Financing'] },
-  { key: 'closing',    label: 'Closing Position', kind: 'balance', categories: ['Ending Balance', 'Accumulated Loans', 'Overdrafts'] },
+  { key: 'closing',    label: 'Cash Closing',       kind: 'balance', categories: ['Ending Balance'] },
+  { key: 'loansod',    label: 'Loans & Overdrafts', kind: 'balance', categories: ['Accumulated Loans', 'Overdrafts'] },
 ]
 /* Nature mode top split: 5 buckets keyed by line property. Loans + OD are
  * a SEPARATE balance bucket from cash closing — they're not part of the
@@ -318,11 +319,13 @@ function SectionOuter({ actuals, forecasts, lines, scope, areas, onSelectArea }:
      * cash-balance line (Opening or Ending Balance category). */
     let allOpening = lineCodes.size > 0
     let allClosing = lineCodes.size > 0
+    let allLoansOd = lineCodes.size > 0
     for (const lc of lineCodes) {
       const line = lineByCode.get(lc)
-      if (!line || line.nature !== 'Balance') { allOpening = false; allClosing = false; break }
+      if (!line || line.nature !== 'Balance') { allOpening = false; allClosing = false; allLoansOd = false; break }
       if (line.category !== 'Opening Balance') allOpening = false
       if (line.category !== 'Ending Balance') allClosing = false
+      if (!BALANCE_LOANS_OD_CATS.has(line.category)) allLoansOd = false
     }
     if (allOpening || allClosing) {
       const ep = getColumnYMEndpoints(matches, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth)
@@ -348,6 +351,24 @@ function SectionOuter({ actuals, forecasts, lines, scope, areas, onSelectArea }:
       }
       if (allOpening) return chain.openingByYM.get(ep.first) ?? null
       return chain.closingByYM.get(ep.last) ?? null
+    }
+    /* Loans / Overdrafts are debt STOCKS — show the point-in-time value at the
+     * column's last month (summed across scoped areas), never summed across
+     * months. They are a separate track from the cash closing position. */
+    if (allLoansOd) {
+      const ep = getColumnYMEndpoints(matches, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth)
+      if (!ep) return null
+      let total: number | null = null
+      for (const c of allCells) {
+        if (!lineCodes.has(c.line_code)) continue
+        if (c.year * 100 + c.month !== ep.last) continue
+        if (areaIds) {
+          const aId = cellByAreaCanon.get(c.area)
+          if (!aId || !areaIds.has(aId)) continue
+        }
+        total = (total ?? 0) + c.value
+      }
+      return total
     }
 
     let sum: number | null = null
