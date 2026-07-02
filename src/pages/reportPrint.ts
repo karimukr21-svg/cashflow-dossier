@@ -75,7 +75,7 @@ type GroupOpts = {
   disp: PrintDisp
 }
 // short section labels for the timeline driver chips (mirror the screen)
-const SHORT_SEC: Record<string, string> = { 'Bank Financing': 'Financing', 'Within Group': 'Within group', 'Non-operational': 'Non-op', 'New Sales': 'New sales' }
+const SHORT_SEC: Record<string, string> = { 'Bank Financing': 'Financing', 'Within Group': 'Within group', 'Non Operational': 'Non-op', 'New Sales': 'New sales' }
 
 function groupSheet(o: GroupOpts): string {
   const f = fmtFor(o.disp)

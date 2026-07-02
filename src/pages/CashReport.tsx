@@ -267,7 +267,7 @@ const Svg = ({ html }: { html: string }) => <div className="crp-svg" dangerously
 /* Cash-journey timeline — the top band of the Group page. Starting cash → the
  * net movement (with net operations / net financing as the headline drivers) →
  * ending cash, read left to right. Replaces the KPI tiles + cash-walk strip. */
-const SHORT_SEC: Record<string, string> = { 'Bank Financing': 'Financing', 'Within Group': 'Within group', 'Non-operational': 'Non-op', 'New Sales': 'New sales' }
+const SHORT_SEC: Record<string, string> = { 'Bank Financing': 'Financing', 'Within Group': 'Within group', 'Non Operational': 'Non-op', 'New Sales': 'New sales' }
 function CashTimeline({ startCash, endCash, netMovement, drivers, hasCash, startLabel, asOfLabel }: {
   startCash: number; endCash: number; netMovement: number; drivers: { label: string; value: number }[]
   hasCash: boolean; startLabel: string; asOfLabel: string
@@ -408,7 +408,7 @@ function SectionsView({ scope, matched, asOfLabel }: {
                   <span className="crp-sechead-t">{c.label}<span> · by area</span></span>
                   <b className={`crp-sechead-n ${cls(c.net)}`}>{fMm(c.net)}</b>
                 </div>
-                <Svg html={areaBarsSvg(c.rows.map(r => ({ label: r.label, value: r.value })), undefined, { zoom: 1.35 })} />
+                <Svg html={areaBarsSvg(c.rows.map(r => ({ label: r.label, value: r.value })), undefined, { zoom: 1.55 })} />
               </div>
             ))}
           </div>
