@@ -83,6 +83,7 @@ CURRENCY_OVERRIDE = {
     'CCUW_Apr_2026_CashFlow.xlsx': 'USD',     # no in-sheet currency header; area is USD
     'Nigeria_Apr_2026_CashFlow.xlsx': 'NGN',  # taking the native NGN sheet (header mislabels it USD)
     'Ivory Coast_Apr_2026_CashFlow.xlsx': 'XOF',  # taking the IVORY COAST XOF FINAL sheet
+    'Egypt 2026 Cash flow Consolidated - April 2026-2.xlsx': 'USD',  # '000 USD
 }
 CCY_TOKENS = ('USD', 'SAR', 'AED', 'QAR', 'EUR', 'EGP', 'KZT', 'OMR', 'NGN',
               'XOF', 'JOD', 'MAD', 'BWP', 'RWF', 'GBP', 'TND', 'DZD')
@@ -113,8 +114,7 @@ SCALE_OVERRIDE = {
     'MOZAMBIQUE_Apr_2026_CashFlow.xlsx': 1000.0, # '000 USD -> full USD
     'CCUW_Apr_2026_CashFlow.xlsx':     1000.0,   # '000 USD -> full USD
     'Ivory Coast_Apr_2026_CashFlow.xlsx': 1000.0, # '000 XOF -> full XOF
-    # Egypt deferred: its ratio is contaminated by the year-anchoring bug + sheet
-    # double-count — fix those first, then confirm its scale (also '000) and add here.
+    'Egypt 2026 Cash flow Consolidated - April 2026-2.xlsx': 1000.0,  # '000 USD -> full USD
 }
 
 # Per-file start-year floor (drop history before this year). Default = global MIN_YEAR.
@@ -193,6 +193,31 @@ JV_INCLUDE_OVERRIDE = {
     # Morganti CONSOLIDATED = PM JV 54% + FM 100% + MGSA 70% (verified to the cent);
     # PM JV 54% is the 54% share, part of the consolidation — sum it.
     'Morganti_Apr_2026_CashFlow.xlsx': {'PM JV 54%'},
+    # Egypt: 'Central JV CCCE-CCCEgypt' is a real 50%-share project leaf (its 'JV'-in-name
+    # would otherwise drop it); it's part of the CONSOLIDATED consolidation, sum it.
+    'Egypt 2026 Cash flow Consolidated - April 2026-2.xlsx': {'Central JV CCCE-CCCEgypt'},
+}
+
+# Per-file, per-sheet ownership SHARE. Some areas' project LEAF sheets carry the
+# project's 100% cash flow, and the area CONSOLIDATED applies CCC's ownership share
+# (e.g. a 50%/60% JV). To stage project-grain that ties CONSOLIDATED, scale each such
+# leaf's values by its share at ingest time (before the reconcile). Sheets not listed
+# default to 1.0 (no scaling). Distinct from JV_INCLUDE_OVERRIDE, whose share is already
+# baked into the sheet values (e.g. Morganti 'PM JV 54%'). Verified per group against
+# each sub-rollup (Σ leaves × share == rollup, to the cent).
+SHEET_SHARE = {
+    'Egypt 2026 Cash flow Consolidated - April 2026-2.xlsx': {
+        # 2026 JV
+        'Ras Elhekma': 0.5, 'Central JV CCCE-CCCEgypt': 0.5, '2': 0.6,
+        'A2': 0.5, 'A3': 0.5, 'A4': 0.5, 'A5': 0.5, 'A6': 0.5, 'A7': 0.5, 'A8': 0.5, 'A9': 0.5,
+        # Ongoing JV
+        'Alamein': 0.5, 'Marassi': 0.5, 'Marassi MEP': 0.5, 'Madinaty CP08': 0.5,
+        'Madinaty CP07': 0.5, 'Madinaty CP05': 0.5, 'Arkan': 0.5, 'Arkan Towers': 0.5,
+        'Madinaty CP05 MEP': 0.5, 'FS Luxor MEP': 0.5, 'CCC EGP on': 0.6, 'CCC Egypt 25': 0.6,
+        # Legacy JV
+        'Helwan': 0.5, 'Cairo West': 0.5, 'Mivida': 0.5, 'Zafarana': 0.5, 'Nile Plaza': 0.5,
+        'Madinaty CP03': 0.5, 'CFC': 0.5, 'CFC MEP': 0.5, 'CCC  Egypt leg': 0.6,
+    },
 }
 
 # Drop WITHIN-AREA transfer lines (both legs) for these files. Within-area transfers
@@ -239,6 +264,29 @@ SHEET_INCLUDE_OVERRIDE = {
         'QRDB', 'QRMS', 'QRMS MAINT', 'RGX', 'RAHP', 'RLP', 'UMRP', 'WMFF', 'WMRP',
         'NFE BLDG', 'NFE EPC.1', 'QAFCO7', 'NFS', 'RLPP', 'NGL-5', 'HIAR', 'ITCA',
         'NFW', 'CCG', 'TCC', 'CCG D', 'MORG',
+    },
+    # Egypt: sum the project LEAF sheets only (JV leaves scaled by SHEET_SHARE), tie
+    # CONSOLIDATED. Ignore the rollups (CONSOLIDATED / Consolidated 2026|Ongoing|Legacy /
+    # the CCC & JV sub-rollups / AREA / OFFSHORE / Summery / NEW SALES / helper sheets).
+    # OFFSHORE (CCIC/CCCE/CCC RE/CCCEgypt area) is a separate holding/treasury layer, not
+    # in CONSOLIDATED — excluded (Karim's call: projects only for now).
+    'Egypt 2026 Cash flow Consolidated - April 2026-2.xlsx': {
+        # 2026 CCC (100%)
+        'Central Offshore Main', 'aa', 'cc', 'dd', 'ee', 'ff', 'gg', 'D', 'E', 'F',
+        # 2026 JV (share)
+        'Ras Elhekma', 'Central JV CCCE-CCCEgypt', '2', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9',
+        # Ongoing CCC (100%)
+        'WE CCCE', 'City Gate 3D', 'City Gate MEP', 'City Gate Infra', 'I-City', 'I-City MEP',
+        'City Gate 3D Infra,Villas Comp', 'City Gate 2C', 'City Gate 3D Compo MEP1',
+        'Shepheard CCCE', 'SQ1 CCCE1', 'Derna', 'City Gate 2C MEP',
+        # Ongoing JV (share)
+        'Alamein', 'Marassi', 'Marassi MEP', 'Madinaty CP08', 'Madinaty CP07', 'Madinaty CP05',
+        'Arkan', 'Arkan Towers', 'Madinaty CP05 MEP', 'FS Luxor MEP', 'CCC EGP on', 'CCC Egypt 25',
+        # Legacy (100%)
+        'YY', 'YYY', 'WE', 'City Gate 2D',
+        # Legacy JV (share)
+        'Helwan', 'Cairo West', 'Mivida', 'Zafarana', 'Nile Plaza', 'Madinaty CP03',
+        'CFC', 'CFC MEP', 'CCC  Egypt leg',
     },
 }
 
@@ -555,8 +603,13 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
         jv = is_jv_code(raw_code) and n not in JV_INCLUDE_OVERRIDE.get(fn, set())
         # area items (non-JV) fold to the _AREA bucket
         code = '_AREA' if (area_item and not jv) else raw_code
+        # per-sheet ownership share (see SHEET_SHARE): leaf carries 100%, scale to CCC's
+        # share so Σ-projects ties the share-based CONSOLIDATED. Applied before reconcile.
+        share = SHEET_SHARE.get(fn, {}).get(n, 1.0)
         for r in rows:
             r = dict(r); r['project_code'] = code; r['sheet'] = n
+            if share != 1.0:
+                r['value'] = round(r['value'] * share, 4)
             dest.append(r)
         gi = resolver.gacc.get(tight(code))
         sheet_meta[n] = {'sheet': n, 'code': code,

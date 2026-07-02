@@ -89,6 +89,56 @@ export async function fetchPayables(opts: {
   }
 }
 
+/* ── Payables trajectory (monthly, from the canonical TB) ──────────────────
+ * Replaces the single point-in-time bs_positions snapshot: the full monthly
+ * trade-payables line from public.tb_balances (USD, pre-converted), summed over
+ * the LIVE, editable trade_payables account-group (public.coa_group_accounts —
+ * defined in the Chart of Accounts module, NOT hardcoded to 212). Served by the
+ * v_cf_payables_trajectory view, one row per (period, org_chart subgroup).
+ * Group mode sums all rows per period; area mode filters subgroups by name
+ * (subgroupMatchesArea) pending the canonical main-tree crosswalk. n_books is
+ * the payables-carrying books posted that period — the coverage/posting-lag
+ * signal (a period with fewer books than the fullest month is provisional). */
+export type PayablesTrajRow = { period: number; subgroup: string | null; usdTotal: number; nBooks: number }
+
+export async function fetchPayablesTrajectory(): Promise<PayablesTrajRow[]> {
+  const { data, error } = await supabase
+    .from('v_cf_payables_trajectory')
+    .select('period, subgroup, usd_total, n_books')
+  if (error) throw error
+  return (data || []).map(r => ({
+    period: Number(r.period), subgroup: r.subgroup as string | null,
+    usdTotal: Number(r.usd_total || 0), nBooks: Number(r.n_books || 0),
+  }))
+}
+
+/** Normalize an area / org_chart.subgroup name for best-effort matching:
+ *  uppercase, drop JV ("JO'S"), city ("- ATYRAU") and "AREA" suffixes, then
+ *  strip non-letters. Best-effort only — pending the canonical main-tree
+ *  crosswalk (org_chart.subgroup ↔ canonical area has no shared key yet). */
+export function normAreaName(s: string): string {
+  return (s || '').toUpperCase()
+    .replace(/\bJO'?S\b/g, ' ')
+    .replace(/\s*-\s*[A-Z.() ]+$/g, ' ')
+    .replace(/\bAREA\b/g, ' ')
+    .replace(/[^A-Z]/g, '')
+}
+/** Report area (cf_country) → org_chart.subgroup base names a plain normalize
+ *  misses. Extend / replace with the real crosswalk table when it lands. */
+const AREA_SUBGROUP_ALIAS: Record<string, string[]> = {
+  KSA: ['SAUDIARABIA', 'KSA'],
+  UAE: ['ABUDHABI', 'UAE'],
+  LYBIA: ['LIBYA'],            // Tony spells it "Lybia"
+}
+/** Does an org_chart.subgroup roll up to the report area (cf_country)? */
+export function subgroupMatchesArea(subgroup: string | null, areaId: string): boolean {
+  if (!subgroup) return false
+  const base = normAreaName(areaId)
+  if (!base) return false
+  const targets = new Set<string>([base, ...(AREA_SUBGROUP_ALIAS[base] || [])])
+  return targets.has(normAreaName(subgroup))
+}
+
 /** USD-per-1-unit rate for a currency at a date, from gacc.fx_rates (latest
  *  cycle effective on/before the date). Used to show an area's native-currency
  *  story in USD. Returns null when no rate is found. */
