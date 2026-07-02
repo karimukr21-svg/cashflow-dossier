@@ -1,5 +1,6 @@
-import type { NarrativeData } from './Narrative'
-import { buildCashStoryChart } from './narrativeChart'
+import type { NarrativeData, PayTrack } from './Narrative'
+import { idxLabel } from './Narrative'
+import { buildCashStoryChart, buildPayablesTrack } from './narrativeChart'
 
 /* Print mirror of the Chairman cash-flow report (ChairmanReport in
  * Narrative.tsx): header → hero transformation → trajectory chart → before→after
@@ -22,29 +23,42 @@ const fMs = (v: number | null | undefined): string => {
   return r < 0 ? `(${s})` : `+${s}`
 }
 const sign = (v: number | null | undefined) => (v == null || v === 0) ? '' : (v < 0 ? 'neg' : 'pos')
-function bottomLine(d: NarrativeData, scopeLabel: string, payables: { value: number; currency: string } | null): string {
+function bottomLine(d: NarrativeData, scopeLabel: string, pt: PayTrack, year: number): string {
   const nfCls = (d.nfNow ?? 0) < 0 ? 'neg' : 'pos'
   const endCls = d.nfEnd < 0 ? 'neg' : 'pos'
   const arc = d.minNf.value < (d.nfNow ?? 0)
     ? `dips to <b class="neg">${fM(d.minNf.value)}m</b> in ${MONTHS[d.minNf.idx]} before recovering to`
     : (d.nfEnd >= (d.nfNow ?? 0) ? 'strengthens to' : 'eases to')
-  const pay = payables
-    ? `On top of this sit payables to suppliers and subcontractors of <b class="neg">${fM(Math.abs(payables.value))}m</b>.`
-    : `Payables to suppliers and subcontractors are tracked separately — <b>figures pending</b>.`
+  const pay = pt.unavailable
+    ? `Payables to suppliers and subcontractors are tracked separately — <b>no mapped books for this area</b>.`
+    : `Separately, trade payables stand at <b class="neg">${fM(Math.abs(pt.latestValue))}m</b> (USD) as of ${idxLabel(pt.latestIdx, year)}, from ${fM(Math.abs(pt.firstValue))}m at ${idxLabel(pt.firstIdx, year)} — recent months understated while books finish posting.`
   return `After loans and overdrafts, ${scopeLabel}'s net liquid funds stand at <b class="${nfCls}">${fM(d.nfNow)}m</b> today — <b class="pos">${fM(d.now)}m</b> of cash against <b class="neg">${fM(d.debtNow)}m</b> of loans and overdrafts. The position ${arc} <b class="${endCls}">${fM(d.nfEnd)}m</b> by year-end as cash builds and financing is paid down. ${pay}`
+}
+
+/** HTML caveat under the print payables track (mirrors payablesCaveat). */
+function payablesCaveatHtml(pt: PayTrack, year: number, mode: 'group' | 'area'): string {
+  const latestBooks = pt.nBooks13[pt.latestIdx] ?? 0
+  const pending = Math.max(0, pt.maxBooks - latestBooks)
+  const prov = pending > 0
+    ? ` Recent months are <b>provisional</b> — ${pending} of ${pt.maxBooks} books not yet posted for ${idxLabel(pt.latestIdx, year)}, so the latest balance understates (the decline partly reflects books still being rebuilt).`
+    : ''
+  const approx = mode === 'area' ? ` Area mapped from org_chart by name — <b>approximate</b>, pending the canonical crosswalk.` : ''
+  return `Payables = the <b>trade_payables</b> group (suppliers, subcontractors &amp; taxes), defined and editable in the Chart of Accounts module; source is the Midas trial balance, in USD.${prov}${approx}`
 }
 
 export function buildNarrativeHtml(
   d: NarrativeData,
   ctx: { scopeLabel: string; year: number; asOfLabel: string; mode: 'group' | 'area'; unit: string; months: string[];
-         payables: { value: number; currency: string } | null },
+         payTrack: PayTrack },
 ): string {
   const fullSwing = d.nfEnd - d.nfOpen                            // net journey, opening → year-end
   const fullSwingCap = fullSwing >= 0 ? `Net funds recover over ${ctx.year}` : `Net funds erode over ${ctx.year}`
   const netFlow = d.recvFull + d.payFull
   const cash13 = [d.opening ?? 0, ...d.cashClosing]
   const net13 = [d.nfOpen, ...d.netFunds]
-  const chart = buildCashStoryChart({ months: ['', ...(ctx.months || MONTHS)], cash: cash13, net: net13, asIdx: d.asOfMonth, asOfLabel: ctx.asOfLabel, year: ctx.year, payablesToday: ctx.payables ? ctx.payables.value : null })
+  const chart = buildCashStoryChart({ months: ['', ...(ctx.months || MONTHS)], cash: cash13, net: net13, asIdx: d.asOfMonth, asOfLabel: ctx.asOfLabel, year: ctx.year })
+  const pt = ctx.payTrack
+  const payChart = pt.unavailable ? '' : buildPayablesTrack({ months: ['', ...(ctx.months || MONTHS)], payables: pt.payables13, nBooks: pt.nBooks13, maxBooks: pt.maxBooks })
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cash Flow Story — ${ctx.scopeLabel}</title>
 <style>
@@ -70,6 +84,10 @@ export function buildNarrativeHtml(
   .leg { display: inline-flex; align-items: center; gap: 5px; } .leg i { width: 16px; height: 3px; display: inline-block; border-radius: 2px; }
   .leg-cash { background: #3f6aa3; } .leg-nf { background: #15233b; height: 3px; } .leg-band { height: 9px; background: rgba(225,0,32,0.16); } .leg-fc { background: repeating-linear-gradient(90deg,#64748b 0 4px,transparent 4px 7px); }
   .chart svg { display: block; width: 100%; }
+  .paywrap { border-top: 1px solid #e9ecf1; margin-top: 8px; padding-top: 6px; }
+  .paynote { font-size: 9.5px; line-height: 1.5; color: #64748b; margin-top: 3px; }
+  .paynote b { color: #15233b; }
+  .paynote--empty { font-style: italic; color: #94a3b8; padding: 10px 0; }
   .owe-head { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #15233b; margin: 10px 0 1px; }
   .owe-head span { color: #94a3b8; font-weight: 500; text-transform: none; letter-spacing: 0; }
   .pending { color: #94a3b8; font-weight: 600; font-style: italic; font-size: 15px; }
@@ -112,10 +130,19 @@ export function buildNarrativeHtml(
     <div class="chart">${chart}</div>
   </div>
 
+  <div class="chartwrap paywrap">
+    <div class="chart-head"><div class="chart-title">Payables trajectory <span>· trade liabilities to suppliers &amp; subcontractors, by month</span></div></div>
+    ${pt.unavailable
+      ? `<div class="paynote paynote--empty">Payables trail unavailable for ${ctx.scopeLabel} — its books aren’t yet mapped to a cash-flow area (pending the canonical crosswalk). The Group view shows the full trajectory.</div>`
+      : `<div class="chart">${payChart}</div><div class="paynote">${payablesCaveatHtml(pt, ctx.year, ctx.mode)}</div>`}
+  </div>
+
   <div class="foot">
     <div class="foot-item foot-item--note">
       <div class="foot-label">Payables · suppliers &amp; subcontractors</div>
-      <div class="foot-note foot-note--lg">${ctx.payables ? `Current balance shown at Today above · single Midas snapshot (${ctx.asOfLabel})${ctx.payables.currency === 'USD' && !ctx.unit.startsWith('USD') ? ', USD' : ''} — monthly trail pending Bilal's extracts` : 'No Midas balance for this period — payables trail pending'}</div>
+      <div class="foot-note foot-note--lg">${pt.unavailable
+        ? 'No mapped books for this area — see the Group view'
+        : `Now <b class="neg">${fM(Math.abs(pt.latestValue))}m</b> USD (${idxLabel(pt.latestIdx, ctx.year)}), from ${fM(Math.abs(pt.firstValue))}m at ${idxLabel(pt.firstIdx, ctx.year)} · monthly, from the Midas trial balance`}</div>
     </div>
     <div class="foot-item">
       <div class="foot-label">Full-year cash flow</div>
@@ -124,7 +151,7 @@ export function buildNarrativeHtml(
     </div>
   </div>
 
-  <div class="bl"><span class="bl-tag">Bottom line</span><span class="bl-text">${bottomLine(d, ctx.scopeLabel, ctx.payables)}</span></div>
+  <div class="bl"><span class="bl-tag">Bottom line</span><span class="bl-text">${bottomLine(d, ctx.scopeLabel, pt, ctx.year)}</span></div>
 
   <script>window.onload = function () { window.print(); };</script>
 </body></html>`

@@ -207,7 +207,7 @@ export default function Narrative({ scope }: { scope: Scope }) {
   const print = () => {
     const w = window.open('', '_blank')
     if (!w) return
-    w.document.write(buildNarrativeHtml(dispData, { scopeLabel, year, asOfLabel, mode, unit, months: MONTHS, payables }))
+    w.document.write(buildNarrativeHtml(dispData, { scopeLabel, year, asOfLabel, mode, unit, months: MONTHS, payTrack }))
     w.document.close()
   }
 

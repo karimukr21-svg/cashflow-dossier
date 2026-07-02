@@ -182,13 +182,15 @@ export function buildPayablesTrack(opts: {
   area += ` L ${x(present[present.length - 1]).toFixed(1)} ${base} Z`
   svg += `<path d="${area}" fill="${BAND}"/>`
 
-  // line: solid between fully-posted points, dashed into provisional points
-  for (let k = 1; k < present.length; k++) {
-    const a = present[k - 1], b = present[k]
-    const dashed = !(isFull(a) && isFull(b))
-    svg += `<path d="M ${x(a).toFixed(1)} ${y(payables[a] as number).toFixed(1)} L ${x(b).toFixed(1)} ${y(payables[b] as number).toFixed(1)}" fill="none" stroke="${BAD}" stroke-width="2.6" stroke-linecap="round"${dashed ? ' stroke-dasharray="5,4" opacity="0.7"' : ''}/>`
+  // payables line (solid — it is actual TB data); the coverage strip + hollow
+  // dots below carry the "how complete is this month" signal, not dashing.
+  let line = ''
+  for (let k = 0; k < present.length; k++) {
+    const i = present[k]
+    line += `${k === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(payables[i] as number).toFixed(1)} `
   }
-  // dots: solid where fully posted, hollow where provisional
+  svg += `<path d="${line.trim()}" fill="none" stroke="${BAD}" stroke-width="2.6" stroke-linecap="round"/>`
+  // dots: solid where the full book set is posted, hollow where still posting
   for (const i of present) {
     svg += isFull(i)
       ? `<circle cx="${x(i).toFixed(1)}" cy="${y(payables[i] as number).toFixed(1)}" r="3" fill="${BAD}"/>`
