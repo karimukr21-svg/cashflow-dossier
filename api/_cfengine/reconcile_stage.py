@@ -276,25 +276,28 @@ SHEET_INCLUDE_OVERRIDE = {
     # the CCC & JV sub-rollups / AREA / OFFSHORE / Summery / NEW SALES / helper sheets).
     # OFFSHORE (CCIC/CCCE/CCC RE/CCCEgypt area) is a separate holding/treasury layer, not
     # in CONSOLIDATED — excluded (Karim's call: projects only for now).
+    # Egypt: Karim's reviewed 44-sheet set (empty project sheets removed). Leaf projects
+    # + the 4 offshore/holding entities + OFFSHORE; JV/offshore leaves scaled by SHEET_SHARE.
     'Egypt 2026 Cash flow Consolidated - April 2026-2.xlsx': {
-        # 2026 CCC (100%) — E & F excluded per Karim
-        'Central Offshore Main', 'aa', 'cc', 'dd', 'ee', 'ff', 'gg', 'D',
-        # 2026 JV (share)
-        'Ras Elhekma', 'Central JV CCCE-CCCEgypt', '2', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9',
-        # Ongoing CCC (100%)
-        'WE CCCE', 'City Gate 3D', 'City Gate MEP', 'City Gate Infra', 'I-City', 'I-City MEP',
-        'City Gate 3D Infra,Villas Comp', 'City Gate 2C', 'City Gate 3D Compo MEP1',
-        'Shepheard CCCE', 'SQ1 CCCE1', 'Derna', 'City Gate 2C MEP',
-        # Ongoing JV (share)
-        'Alamein', 'Marassi', 'Marassi MEP', 'Madinaty CP08', 'Madinaty CP07', 'Madinaty CP05',
-        'Arkan', 'Arkan Towers', 'Madinaty CP05 MEP', 'FS Luxor MEP', 'CCC EGP on', 'CCC Egypt 25',
-        # Legacy (100%)
-        'YY', 'YYY', 'WE', 'City Gate 2D',
-        # Legacy JV (share)
-        'Helwan', 'Cairo West', 'Mivida', 'Zafarana', 'Nile Plaza', 'Madinaty CP03',
-        'CFC', 'CFC MEP', 'CCC  Egypt leg',
-        # Offshore / holding entities — CONSOLIDATED folds these in (Karim confirmed include)
-        'CCIC', 'CCCE', 'CCC RE', 'CCCEgypt area',
+        'Central JV CCCE-CCCEgypt', 'CCIC', 'I-City MEP', 'Central Offshore Main', 'Cairo West',
+        'City Gate 3D', 'Madinaty CP03', 'City Gate 2D', 'Alamein', 'Derna', 'I-City',
+        'CCC  Egypt leg', 'CFC MEP', 'Arkan Towers', 'Madinaty CP05', 'CFC', 'CCC EGP on',
+        'FS Luxor MEP', 'Madinaty CP08', 'Ras Elhekma', 'Shepheard CCCE', 'WE CCCE',
+        'City Gate 3D Compo MEP1', 'CCCEgypt area', 'City Gate 2C', 'Nile Plaza',
+        'Madinaty CP05 MEP', 'Madinaty CP07', 'WE', 'SQ1 CCCE1', 'City Gate 3D Infra,Villas Comp',
+        'CCCE', 'City Gate 2C MEP', 'OFFSHORE', 'Arkan', 'CCC RE', 'Zafarana', 'Mivida',
+        'Marassi MEP', 'Marassi', 'City Gate Infra', 'CCC Egypt 25', 'City Gate MEP', 'Helwan',
+    },
+}
+
+# Per-file, per-sheet line-code DROP. Some project leaves carry a line the area's
+# CONSOLIDATED rollup does NOT consolidate; to match the file, drop just that line from
+# that sheet (keeping the sheet's other lines). Egypt: CONSOLIDATED omits Ras Elhekma's
+# overdraft financing (bf_od) — draws + repayments are on its sheet but not in CONSOL, so
+# drop them to match (documented in the data-issues report as a file consolidation gap).
+DROP_SHEET_LINES = {
+    'Egypt 2026 Cash flow Consolidated - April 2026-2.xlsx': {
+        'Ras Elhekma': {'bf_recpt_od', 'bf_pay_od'},
     },
 }
 
@@ -614,7 +617,10 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
         # per-sheet ownership share (see SHEET_SHARE): leaf carries 100%, scale to CCC's
         # share so Σ-projects ties the share-based CONSOLIDATED. Applied before reconcile.
         share = SHEET_SHARE.get(fn, {}).get(n, 1.0)
+        drop_lines = DROP_SHEET_LINES.get(fn, {}).get(n, set())
         for r in rows:
+            if r['line_code'] in drop_lines:
+                continue   # line the CONSOLIDATED rollup doesn't consolidate (see DROP_SHEET_LINES)
             r = dict(r); r['project_code'] = code; r['sheet'] = n
             if share != 1.0:
                 r['value'] = round(r['value'] * share, 4)
