@@ -301,16 +301,19 @@ export async function fetchForecasts(opts: {
     .map(r => ({ ...r, value: Number(r.value) }))
 }
 
-/** Project-grain cash-flow cells for ONE cf area (Tony's cf label), a version
- *  and period window. Carries project_code + currency for the Project report. */
+/** Project-grain cash-flow cells for a version + period window. Scoped to ONE
+ *  cf area (Tony's cf label) when `cfArea` is given, or ALL areas when omitted.
+ *  Carries area + project_code + currency for the Project report. */
 export async function fetchProjectCells(opts: {
-  version: string; cfArea: string; fromYear: number; fromMonth: number; toYear: number; toMonth: number;
+  version: string; cfArea?: string; fromYear: number; fromMonth: number; toYear: number; toMonth: number;
 }): Promise<(CfCell & { project_code: string | null; currency?: string })[]> {
-  const { data, error } = await supabase
+  let q = supabase
     .from('cf_forecasts')
     .select('area, project_code, line_code, year, month, value, currency')
-    .eq('version', opts.version).eq('area', opts.cfArea)
+    .eq('version', opts.version)
     .gte('year', opts.fromYear).lte('year', opts.toYear)
+  if (opts.cfArea) q = q.eq('area', opts.cfArea)
+  const { data, error } = await q
   if (error) throw error
   return (data || [])
     .filter(r => inRange(r, opts.fromYear, opts.fromMonth, opts.toYear, opts.toMonth))

@@ -1,17 +1,23 @@
 /* Pure-SVG chart builders for the Cash Flow Report, shared by the screen
  * (CashReport.tsx via dangerouslySetInnerHTML) and print (reportPrint.ts).
- * Values come in RAW (full USD); plotted + labelled in millions. */
+ * Values come in RAW (full native or USD). Bar geometry is relative so the
+ * divisor doesn't matter for it; the value LABELS follow the display
+ * denomination (millions / '000 / units) passed in via `disp`. */
 
 const INK = '#15233b', MUTE = '#64748b', CRIM = '#E10020', GOOD = '#057a55', GRID = '#e2e8f0'
+export type ChartDisp = { div: number; dec: number }
+const DEF: ChartDisp = { div: 1e6, dec: 1 }
 const mm = (v: number) => v / 1e6
-const lab = (v: number): string => {
-  const r = Math.round(mm(v) * 10) / 10
-  const s = Math.abs(r).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+const labf = (v: number, d: ChartDisp): string => {
+  const f = Math.pow(10, d.dec)
+  const r = Math.round((v / d.div) * f) / f
+  const s = Math.abs(r).toLocaleString('en-US', { minimumFractionDigits: d.dec, maximumFractionDigits: d.dec })
   return r < 0 ? `(${s})` : s
 }
 
 /* Waterfall: how the section nets build to net cash movement. */
-export function waterfallSvg(items: { label: string; value: number }[], total: number): string {
+export function waterfallSvg(items: { label: string; value: number }[], total: number, disp: ChartDisp = DEF): string {
+  const lab = (v: number) => labf(v, disp)
   const W = 560, H = 300, padL = 6, padR = 6, top = 30, bottom = 62
   const plotW = W - padL - padR, plotH = H - top - bottom
   const bars = [...items.map(it => ({ label: it.label, value: it.value, total: false })), { label: 'Net movement', value: total, total: true }]
@@ -48,7 +54,8 @@ export function waterfallSvg(items: { label: string; value: number }[], total: n
 }
 
 /* Horizontal diverging bars — a value per area (e.g. net cash from operations). */
-export function areaBarsSvg(rows: { label: string; value: number }[]): string {
+export function areaBarsSvg(rows: { label: string; value: number }[], disp: ChartDisp = DEF): string {
+  const lab = (v: number) => labf(v, disp)
   const data = rows.filter(r => Math.abs(r.value) >= 50000).sort((a, b) => b.value - a.value)
   if (data.length === 0) return `<svg viewBox="0 0 560 40" width="100%"><text x="280" y="24" text-anchor="middle" font-size="12" fill="#94a3b8" font-family="sans-serif">No data</text></svg>`
   const rowH = 22, padT = 8, padB = 6, W = 560, labW = 104, valW = 56
@@ -71,7 +78,8 @@ export function areaBarsSvg(rows: { label: string; value: number }[]): string {
 }
 
 /* Monthly net-cash bars — the project's cash movement per elapsed month. */
-export function netTrendSvg(labels: string[], values: number[]): string {
+export function netTrendSvg(labels: string[], values: number[], disp: ChartDisp = DEF): string {
+  const lab = (v: number) => labf(v, disp)
   const W = 560, H = 210, padL = 8, padR = 8, top = 26, bottom = 34
   const plotW = W - padL - padR, plotH = H - top - bottom
   const vals = values.map(mm)

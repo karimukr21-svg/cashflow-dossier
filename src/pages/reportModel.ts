@@ -6,8 +6,12 @@ import { flowSections } from '@/lib/cfTaxonomy'
 
 export type AreaAgg = {
   areaId: string; label: string; currency: string; fxOk: boolean; hasCf: boolean
-  lineUsd: Map<string, number>; netOps: number
+  lineUsd: Map<string, number>          // FX-converted to USD (rate at as-of)
+  lineLocal: Map<string, number>        // raw native, unconverted (for the Local toggle)
+  netOps: number
   payStart: number | null; payEnd: number | null; hasPay: boolean
+  openCash: number; endCash: number     // cash position (opening Jan / ending as-of), USD
+  openLocal: number; endLocal: number   // same, raw native (for the Local toggle)
   matched: boolean
 }
 
@@ -22,11 +26,12 @@ export function buildModel(
   const OP = new Set(['Operation', 'Claims'])
   const lineCat = new Map(lines.map(l => [l.line_code, l.category]))
   const periodStart = (year - 1) * 100 + 12, periodEnd = asOf
+  const asOfMonth = asOf % 100
 
   const byArea = new Map<string, AreaAgg>()
   const ensure = (areaId: string, label: string): AreaAgg => {
     let a = byArea.get(areaId)
-    if (!a) { a = { areaId, label, currency: 'USD', fxOk: true, hasCf: false, lineUsd: new Map(), netOps: 0, payStart: null, payEnd: null, hasPay: false, matched: false }; byArea.set(areaId, a) }
+    if (!a) { a = { areaId, label, currency: 'USD', fxOk: true, hasCf: false, lineUsd: new Map(), lineLocal: new Map(), netOps: 0, payStart: null, payEnd: null, hasPay: false, openCash: 0, endCash: 0, openLocal: 0, endLocal: 0, matched: false }; byArea.set(areaId, a) }
     return a
   }
 
@@ -37,9 +42,17 @@ export function buildModel(
     const agg = ensure(can.area_id, can.display_name)
     agg.hasCf = true
     if (cur !== 'USD') agg.currency = cur
+    const cat = lineCat.get(c.line_code)
+    // cash position: opening balance at Jan (year start), ending balance at as-of
+    if (cat === 'Opening Balance' && c.month === 1) agg.openLocal += c.value
+    else if (cat === 'Ending Balance' && c.month === asOfMonth) agg.endLocal += c.value
+    // raw native (no FX) — feeds the Local toggle; recorded regardless of FX availability
+    agg.lineLocal.set(c.line_code, (agg.lineLocal.get(c.line_code) ?? 0) + c.value)
     const rate = cur === 'USD' ? 1 : (fxMap.get(cur) ?? null)
     if (rate == null) { agg.fxOk = false; continue }
     agg.lineUsd.set(c.line_code, (agg.lineUsd.get(c.line_code) ?? 0) + c.value * rate)
+    if (cat === 'Opening Balance' && c.month === 1) agg.openCash += c.value * rate
+    else if (cat === 'Ending Balance' && c.month === asOfMonth) agg.endCash += c.value * rate
   }
   for (const agg of byArea.values()) {
     let n = 0

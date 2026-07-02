@@ -1544,6 +1544,17 @@ body, html, #root {
 .crp-rcol { display: flex; flex-direction: column; gap: 14px; }
 .crp-svg { margin-top: 4px; max-width: 760px; }
 
+/* cash-position walk: starting cash → net movement → ending cash */
+.crp-cashwalk { display: flex; align-items: stretch; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--surface, #fff); }
+.crp-cw-pt { flex: 1; padding: 10px 16px; }
+.crp-cw-l { font-size: 8.5px; letter-spacing: .4px; text-transform: uppercase; color: var(--mute); font-weight: 700; }
+.crp-cw-v { font-size: 24px; font-weight: 800; margin-top: 2px; color: var(--ink); }
+.crp-cw-v.neg { color: var(--crimson); } .crp-cw-v.pos { color: var(--good); }
+.crp-cw-arrow { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 20px; background: #f6f7f9; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+.crp-cw-arrow span { font-size: 16px; font-weight: 800; color: var(--ink); }
+.crp-cw-arrow span.neg { color: var(--crimson); } .crp-cw-arrow span.pos { color: var(--good); }
+.crp-cw-arrow i { font-size: 8px; letter-spacing: .4px; text-transform: uppercase; color: var(--mute); font-weight: 700; font-style: normal; margin-top: 2px; }
+
 .crp-page { display: flex; flex-direction: column; gap: 14px; }
 .crp-head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2.5px solid var(--crimson); padding-bottom: 8px; }
 .crp-head h1 { font-size: 20px; font-weight: 800; color: var(--ink); }
@@ -1579,6 +1590,7 @@ body, html, #root {
 .crp-projrow.active { background: rgba(225,0,32,0.05); }
 .crp-projname { border: 0; background: transparent; text-align: left; font-size: 12px; font-weight: 600; color: var(--ink); cursor: pointer; display: flex; align-items: center; gap: 5px; padding: 2px 0; }
 .crp-projname:hover { color: var(--crimson); }
+.crp-projarea { font-size: 9.5px; font-weight: 500; color: #94a3b8; }
 .crp-projbar { height: 8px; background: #f1f3f6; border-radius: 3px; overflow: hidden; }
 .crp-projbar-fill { height: 100%; border-radius: 3px; }
 .crp-projbar-fill.pos { background: rgba(5,122,85,0.6); }

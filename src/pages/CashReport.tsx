@@ -104,10 +104,10 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
       const areaTotals = matched.reduce((t, a) => ({ netOps: t.netOps + a.netOps, payStart: t.payStart + (a.payStart ?? 0), payEnd: t.payEnd + (a.payEnd ?? 0) }), { netOps: 0, payStart: 0, payEnd: 0 })
       html = buildReportHtml({ level: 'area', scopeLabel: 'Areas', year, asOfLabel, startLabel, areaRows, areaTotals, matchedCount: matched.length })
     } else {
-      const { scopeLabel, lineUsd, payStart, payEnd, hasPay } = aggregateScope(model, matched, groupArea)
+      const { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash, endCash } = aggregateScope(model, matched, groupArea)
       html = buildReportHtml({
         level: 'group', scopeLabel, year, asOfLabel, startLabel, matchedCount: groupArea ? undefined : matched.length,
-        statement: buildStatement(lineUsd, scope.lines), payStart, payEnd, hasPay,
+        statement: buildStatement(lineUsd, scope.lines), payStart, payEnd, hasPay, startCash, endCash,
       })
     }
     w.document.write(html); w.document.close()
@@ -145,14 +145,15 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
 function aggregateScope(model: Map<string, AreaAgg>, matched: AreaAgg[], groupArea: string) {
   const aggs = groupArea ? [model.get(groupArea)].filter((a): a is AreaAgg => !!a) : matched
   const lineUsd = new Map<string, number>()
-  let payStart = 0, payEnd = 0, hasPay = false
+  let payStart = 0, payEnd = 0, hasPay = false, startCash = 0, endCash = 0
   for (const a of aggs) {
     for (const [lc, v] of a.lineUsd) lineUsd.set(lc, (lineUsd.get(lc) ?? 0) + v)
     if (a.payStart != null) { payStart += a.payStart; hasPay = true }
     if (a.payEnd != null) { payEnd += a.payEnd; hasPay = true }
+    startCash += a.openCash; endCash += a.endCash
   }
   const scopeLabel = groupArea ? (model.get(groupArea)?.label || 'area') : 'the Group'
-  return { scopeLabel, lineUsd, payStart, payEnd, hasPay }
+  return { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash, endCash }
 }
 
 /* KPI tile band — the headline numbers, shared across the three pages. */
@@ -191,11 +192,12 @@ function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLab
   scope: Scope; model: Map<string, AreaAgg>; matched: AreaAgg[]; groupArea: string
   year: number; asOfLabel: string; startLabel: string
 }) {
-  const { scopeLabel, lineUsd, payStart, payEnd, hasPay } = aggregateScope(model, matched, groupArea)
+  const { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash, endCash } = aggregateScope(model, matched, groupArea)
   const payDelta = hasPay ? payEnd - payStart : null
   const { sections, netMovement } = buildStatement(lineUsd, scope.lines)
   const secNet = (label: string) => sections.find(s => s.label === label)?.net ?? 0
   const opsNet = secNet('Operations'), finNet = secNet('Bank Financing')
+  const hasCash = Math.abs(startCash) > 1 || Math.abs(endCash) > 1
 
   return (
     <div className="crp-page">
@@ -208,9 +210,15 @@ function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLab
       </div>
 
       <div className="crp-lede">
-        From January to {asOfLabel}, {scopeLabel} <b className={cls(netMovement)}>{netMovement < 0 ? 'used' : 'generated'} {fMm(Math.abs(netMovement))}m</b> of cash.
+        From January to {asOfLabel}, {scopeLabel} <b className={cls(netMovement)}>{netMovement < 0 ? 'used' : 'generated'} {fMm(Math.abs(netMovement))}m</b> of cash{hasCash ? <>, taking cash on hand from <b>{fMm(startCash)}m</b> to <b>{fMm(endCash)}m</b></> : null}.
         {hasPay ? <> Trade payables moved from <b>{fMm(Math.abs(payStart))}m</b> to <b>{fMm(Math.abs(payEnd))}m</b> — <b className={cls(payDelta)}>{(payDelta ?? 0) >= 0 ? 'paid down' : 'up'} {fMm(Math.abs(payDelta ?? 0))}m</b>.</> : null}
       </div>
+
+      {hasCash ? <div className="crp-cashwalk">
+        <div className="crp-cw-pt"><div className="crp-cw-l">Starting cash · {startLabel}</div><div className={`crp-cw-v ${cls(startCash)}`}>{fMm(startCash)}</div></div>
+        <div className="crp-cw-arrow"><span className={cls(netMovement)}>{netMovement < 0 ? '−' : '+'}{fMm(Math.abs(netMovement))}</span><i>net movement</i></div>
+        <div className="crp-cw-pt"><div className="crp-cw-l">Ending cash · {asOfLabel}</div><div className={`crp-cw-v ${cls(endCash)}`}>{fMm(endCash)}</div></div>
+      </div> : null}
 
       <KpiBand cards={[
         { label: 'Net from operations', value: fMm(opsNet), cls: cls(opsNet) },
@@ -353,68 +361,76 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
   scope: Scope; fxMap: Map<string, number | null>; areaOptions: { areaId: string; label: string }[]
   projArea: string; setProjArea: (id: string) => void; year: number; asOfMonth: number; asOfLabel: string
 }) {
+  const ALL = '__ALL__', SEP = ''
   const areaId = projArea || areaOptions[0]?.areaId || ''
+  const allMode = areaId === ALL
   const [cells, setCells] = useState<(CfCell & { project_code: string | null; currency?: string })[]>([])
-  const [project, setProject] = useState<string>('')
+  const [project, setProject] = useState<string>('')   // holds the composite key (area|code)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (!areaId || !scope.primaryVersion) { setCells([]); return }
+    if (!scope.primaryVersion || (!allMode && !areaId)) { setCells([]); return }
     let cancel = false; setLoading(true)
-    fetchProjectCells({ version: scope.primaryVersion, cfArea: areaId, fromYear: year, fromMonth: 1, toYear: year, toMonth: asOfMonth })
+    fetchProjectCells({ version: scope.primaryVersion, cfArea: allMode ? undefined : areaId, fromYear: year, fromMonth: 1, toYear: year, toMonth: asOfMonth })
       .then(rows => { if (!cancel) { setCells(rows); setProject(''); setSelected(new Set()) } })
       .catch(() => { if (!cancel) setCells([]) })
       .finally(() => { if (!cancel) setLoading(false) })
     return () => { cancel = true }
-  }, [areaId, scope.primaryVersion, year, asOfMonth])
+  }, [areaId, allMode, scope.primaryVersion, year, asOfMonth])
 
   const months = useMemo(() => Array.from({ length: asOfMonth }, (_, i) => i + 1), [asOfMonth])
   const flowCodes = useMemo(() => new Set(scope.lines.filter(l => l.nature !== 'Balance').map(l => l.line_code)), [scope.lines])
   const rateOf = (cur?: string) => (cur || 'USD') === 'USD' ? 1 : (fxMap.get(cur || '') ?? null)
+  const areaLabelOf = (a: string) => areaOptions.find(o => o.areaId === a)?.label || a
 
-  // Rank the area's projects by |net cash movement| (flow lines, USD) → big movers on top.
+  // Rank projects by |net cash movement| (flow lines, USD) → big movers on top.
+  // Keyed by area+code so All-areas mode ranks every project across areas together.
   const ranking = useMemo(() => {
-    const agg = new Map<string, { net: number; cur: string; fxOk: boolean }>()
+    const agg = new Map<string, { area: string; code: string; net: number; cur: string; fxOk: boolean }>()
     for (const c of cells) {
       const code = c.project_code; if (!code) continue
-      let a = agg.get(code); if (!a) { a = { net: 0, cur: 'USD', fxOk: true }; agg.set(code, a) }
+      const key = c.area + SEP + code
+      let a = agg.get(key); if (!a) { a = { area: c.area, code, net: 0, cur: 'USD', fxOk: true }; agg.set(key, a) }
       if (c.currency && c.currency !== 'USD') a.cur = c.currency
       if (!flowCodes.has(c.line_code)) continue
       const r = rateOf(c.currency); if (r == null) { a.fxOk = false; continue }
       a.net += c.value * r
     }
-    return [...agg.entries()].map(([code, x]) => ({ code, net: x.net, cur: x.cur, fxOk: x.fxOk }))
+    return [...agg.entries()].map(([key, x]) => ({ key, ...x }))
       .sort((p, q) => Math.abs(q.net) - Math.abs(p.net))
   }, [cells, flowCodes, fxMap])
 
   const maxAbs = Math.max(1, ...ranking.map(r => Math.abs(r.net)))
   const bigCut = maxAbs * 0.12
-  const sel = project || ranking[0]?.code || ''
+  const sel = project || ranking[0]?.key || ''
+  const selArea = sel ? sel.slice(0, sel.indexOf(SEP)) : ''
+  const selCode = sel ? sel.slice(sel.indexOf(SEP) + 1) : ''
 
-  const matrixFor = (code: string) => {
+  const matrixFor = (key: string) => {
+    const area = key.slice(0, key.indexOf(SEP)), code = key.slice(key.indexOf(SEP) + 1)
     const perCode = new Map<string, Map<number, number>>()
     let cur = 'USD', ok = true
     for (const c of cells) {
-      if (c.project_code !== code) continue
+      if (c.area !== area || c.project_code !== code) continue
       if (c.currency && c.currency !== 'USD') cur = c.currency
       const r = rateOf(c.currency); if (r == null) { ok = false; continue }
       let m = perCode.get(c.line_code); if (!m) { m = new Map(); perCode.set(c.line_code, m) }
       m.set(c.month, (m.get(c.month) ?? 0) + c.value * r)
     }
-    return { matrix: buildStatementMatrix(perCode, scope.lines, months), currency: cur, fxOk: ok }
+    return { matrix: buildStatementMatrix(perCode, scope.lines, months), currency: cur, fxOk: ok, area, code }
   }
   const { matrix, currency, fxOk } = useMemo(() => matrixFor(sel), [cells, sel, fxMap, scope.lines, months])
-  const areaLabel = areaOptions.find(a => a.areaId === areaId)?.label || areaId
+  const areaLabel = allMode ? 'All areas' : areaLabelOf(areaId)
   const secNet = (label: string) => matrix.sections.find(s => s.label === label)?.netTot ?? 0
   const showBody = !loading && !!sel && fxOk && matrix.sections.length > 0
 
-  const toggle = (code: string) => setSelected(prev => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n })
-  const printProjects = (codes: string[]) => {
+  const toggle = (key: string) => setSelected(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
+  const printProjects = (keys: string[]) => {
     const w = window.open('', '_blank'); if (!w) return
-    const list = codes.map(code => ({ code, ...matrixFor(code) }))
+    const list = keys.map(k => matrixFor(k))
       .filter(x => x.fxOk && x.matrix.sections.length > 0)
-      .map(x => ({ areaLabel, project: x.code, currency: x.currency, asOfLabel, months, matrix: x.matrix }))
+      .map(x => ({ areaLabel: areaLabelOf(x.area), project: x.code, currency: x.currency, asOfLabel, months, matrix: x.matrix }))
     if (list.length === 0) { w.close(); return }
     w.document.write(buildProjectsPrintHtml(list)); w.document.close()
   }
@@ -431,6 +447,7 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
 
       <div className="crp-projtop no-print">
         <select className="crp-select" value={areaId} onChange={e => { setProjArea(e.target.value); setProject('') }}>
+          <option value={ALL}>All areas</option>
           {areaOptions.map(a => <option key={a.areaId} value={a.areaId}>{a.label}</option>)}
         </select>
         <button className="crp-print" disabled={!showBody} onClick={() => printProjects([sel])}>Print this</button>
@@ -445,17 +462,17 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
             {ranking.map(r => {
               const big = Math.abs(r.net) >= bigCut
               return (
-                <div key={r.code} className={`crp-projrow ${r.code === sel ? 'active' : ''}`}>
-                  <input type="checkbox" checked={selected.has(r.code)} onChange={() => toggle(r.code)} title="Select to print" />
-                  <button className="crp-projname" onClick={() => setProject(r.code)} title="View this project">
-                    {big ? <span className="crp-bigdot" /> : null}{r.code}
+                <div key={r.key} className={`crp-projrow ${r.key === sel ? 'active' : ''}`}>
+                  <input type="checkbox" checked={selected.has(r.key)} onChange={() => toggle(r.key)} title="Select to print" />
+                  <button className="crp-projname" onClick={() => setProject(r.key)} title="View this project">
+                    {big ? <span className="crp-bigdot" /> : null}<span className="crp-projcode">{r.code}</span>{allMode ? <span className="crp-projarea">{areaLabelOf(r.area)}</span> : null}
                   </button>
                   <div className="crp-projbar"><div className={`crp-projbar-fill ${r.net < 0 ? 'neg' : 'pos'}`} style={{ width: `${(Math.abs(r.net) / maxAbs) * 100}%` }} /></div>
                   <div className={`crp-projval ${cls(r.net)}`}>{fMm(r.net)}</div>
                 </div>
               )
             })}
-            {ranking.length === 0 ? <div className="crp-note crp-note--empty">No project-grain cash flow for this area.</div> : null}
+            {ranking.length === 0 ? <div className="crp-note crp-note--empty">No project-grain cash flow for this scope.</div> : null}
           </div>
           <div className="crp-note"><span className="crp-bigdot" /> Big movers (largest cash movement) — the ones worth printing. Tick projects, then “Print selected”. Bars USD, net of the elapsed months.</div>
         </div>
@@ -466,7 +483,7 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
             : !sel ? <div className="crp-note crp-note--empty">Pick a project on the left.</div>
             : !fxOk ? <div className="crp-note crp-note--empty">No FX rate for {currency} — cannot show this project in USD.</div>
             : <>
-                <div className="crp-card-h">{sel} <span>· {areaLabel} · USD millions{currency !== 'USD' ? ` (from ${currency})` : ''}</span></div>
+                <div className="crp-card-h">{selCode} <span>· {areaLabelOf(selArea)} · USD millions{currency !== 'USD' ? ` (from ${currency})` : ''}</span></div>
                 <KpiBand cards={[
                   { label: 'Net cash movement · YTD', value: fMm(matrix.netTotal), cls: cls(matrix.netTotal) },
                   { label: 'Net from operations', value: fMm(secNet('Operations')), cls: cls(secNet('Operations')) },
