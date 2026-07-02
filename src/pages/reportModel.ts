@@ -165,7 +165,7 @@ export const arrangeSectionColumns = <T extends { label: string }>(items: T[]) =
  * Non-operational, Bank Financing and Within Group stacked on the right. */
 export const STMT_COLUMNS: string[][] = [
   ['Operations', 'New Sales'],
-  ['Interest', 'Non-operational', 'Bank Financing', 'Within Group'],
+  ['Interest', 'Non-operational', 'Within Group', 'Bank Financing'],
 ]
 
 export type StmtBucket = { label: string; value: number }

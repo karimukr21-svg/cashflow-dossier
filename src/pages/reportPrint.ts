@@ -105,19 +105,18 @@ function groupSheet(o: GroupOpts): string {
   }
   const stmtCols = arrangeByColumns(o.statement.sections, STMT_COLUMNS)
     .map(col => `<div class="seccol">${col.map(secCard).join('')}</div>`).join('')
-  const netcard = `<div class="chartcard netcard"><div class="ch-h"><span class="sh-t">Net cash movement</span><b class="sh-n ${cl(nm)}">${f.fM(nm)}</b></div></div>`
-  const left = `<div class="stmtwrap"><div class="stmtcols">${stmtCols}</div>${netcard}</div>`
 
-  const right = `
+  const charts = `<div class="seccol">
     <div class="chartcard"><div class="ch-h">How the cash moved <span>· sections → net movement</span></div>
       ${waterfallSvg(o.statement.sections.map(s => ({ label: s.label, value: s.net })), nm, chartDisp)}</div>
     <div class="chartcard"><div class="ch-h">Trade payables · monthly · ${o.startLabel} → ${o.asOfLabel} · ${o.disp.payUnit}</div>
       ${o.hasPay ? `${payablesTrendSvg(o.paySeries ?? [], chartDisp)}
         <div class="paysum"><span>${o.startLabel} <b class="${cl(o.payStart)}">${f.fM(o.payStart)}</b></span><span>${o.asOfLabel} <b class="${cl(o.payEnd)}">${f.fM(o.payEnd)}</b></span><span>Δ <b class="${cl(payDelta)}">${f.fD(payDelta)}</b></span></div>
         <div class="note">Suppliers, subcontractors &amp; taxes — the editable <b>trade_payables</b> group (Midas TB, USD). Δ positive = paid down. Recent months still posting.</div>`
-        : `<div class="note">No matched payables for this scope.</div>`}</div>`
+        : `<div class="note">No matched payables for this scope.</div>`}</div>
+  </div>`
   return sheet(head(`Cash Flow Report — ${o.scopeLabel}`, `Actual to date · Jan–${o.asOfLabel} · ${o.disp.lineUnit}${o.matchedCount != null ? ` · ${o.matchedCount} areas` : ''}`)
-    + timeline + `<div class="cols"><div>${left}</div><div>${right}</div></div>`)
+    + timeline + `<div class="groupcols">${stmtCols}${charts}</div>`)
 }
 
 type AreaOpts = {
@@ -129,14 +128,7 @@ type AreaOpts = {
 function areaSheet(o: AreaOpts): string {
   const f = fmtFor(o.disp)
   const chartDisp = { div: o.disp.div, dec: o.disp.dec }
-  const t = o.areaTotals, payDelta = t.payEnd - t.payStart
-  const top = [...o.areaRows].sort((a, b) => b.netOps - a.netOps)[0]
-  const band = kpis([
-    { label: 'Group net from ops', value: f.fM(t.netOps), cls: cl(t.netOps) },
-    { label: `Trade payables · ${o.asOfLabel}`, value: f.fM(t.payEnd), cls: cl(t.payEnd), sub: `${f.fD(payDelta)} since ${o.startLabel}` },
-    { label: 'Matched areas', value: String(o.areaRows.length) },
-    { label: 'Top cash generator', value: top ? top.label : '—', sub: top ? f.fM(top.netOps) : '' },
-  ])
+  const t = o.areaTotals
   const row = (label: string, netOps: number, ps: number | null, pe: number | null, tot = false) => {
     const d = (ps != null && pe != null) ? pe - ps : null
     return `<tr${tot ? ' class="total"' : ''}><td>${label}</td><td class="r ${cl(netOps)}">${f.fM(netOps)}</td>
@@ -144,11 +136,12 @@ function areaSheet(o: AreaOpts): string {
   }
   const left = `<table class="t tarea"><thead><tr><th>Area</th><th class="r">Net cash from ops</th><th class="r sepl">Payables ${o.startLabel}</th><th class="r">Payables ${o.asOfLabel}</th><th class="r">Δ</th></tr></thead>
     <tbody>${o.areaRows.map(a => row(a.label, a.netOps, a.payStart, a.payEnd)).join('')}${row(`Group (${o.areaRows.length} areas)`, t.netOps, t.payStart, t.payEnd, true)}</tbody></table>`
-  const right = `<div class="chartcard"><div class="ch-h">Net cash from operations <span>· by area</span></div>
-    ${areaBarsSvg(o.areaRows.map(a => ({ label: a.label, value: a.netOps })), chartDisp)}
+  const right = `<div class="chartcard areachart"><div class="ch-h">Net cash from operations <span>· by area</span></div>
+    ${areaBarsSvg(o.areaRows.map(a => ({ label: a.label, value: a.netOps })), chartDisp, { zoom: 1.5, maxRows: 20 })}
     <div class="note">Green = cash generated, crimson = cash consumed (${o.disp.lineUnit}, YTD).</div></div>`
-  return sheet(head('Cash Flow Report — Areas', `Actual to date · Jan–${o.asOfLabel} · ${o.disp.lineUnit} · ${o.areaRows.length} matched areas`)
-    + band + `<div class="cols"><div>${left}</div><div>${right}</div></div>`)
+  // No KPI band — chart is the headline, given the full sheet height.
+  return sheet(head('Cash Flow Report — Areas', `Actual to date · Jan–${o.asOfLabel} · ${o.disp.lineUnit} · ${o.areaRows.length} areas`)
+    + `<div class="cols"><div>${left}</div><div>${right}</div></div>`)
 }
 
 export type ProjectPrint = {
@@ -182,7 +175,7 @@ function sectionsSheet(o: SectionsOpts): string {
   const f = fmtFor(o.disp)
   const chartDisp = { div: o.disp.div, dec: o.disp.dec }
   const card = (s: { label: string; net: number; rows: { label: string; value: number }[] }) =>
-    `<div class="chartcard"><div class="ch-h"><span class="sh-t">${s.label}</span><b class="sh-n ${cl(s.net)}">${f.fM(s.net)}</b></div>${areaBarsSvg(s.rows, chartDisp, { zoom: 1.3, maxRows: 16 })}</div>`
+    `<div class="chartcard"><div class="ch-h"><span class="sh-t">${s.label}</span><b class="sh-n ${cl(s.net)}">${f.fM(s.net)}</b></div>${areaBarsSvg(s.rows, chartDisp, { zoom: 1.6, maxRows: 16 })}</div>`
   const cols = arrangeSectionColumns(o.sections)
     .map(col => `<div class="seccol">${col.map(card).join('')}</div>`).join('')
   return sheet(head('Cash Flow Report — Sections', `Actual to date · Jan–${o.asOfLabel} · ${o.disp.lineUnit} · ${o.matchedCount} areas · each section's net, by area`)
@@ -248,10 +241,9 @@ const STYLE = `
   .tl-chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
   .tl-chip { font-size: 12px; color: #64748b; font-weight: 600; border: 1px solid #e2e8f0; border-radius: 20px; padding: 4px 11px; background: #fff; }
   .tl-chip b { font-weight: 800; margin-left: 3px; }
-  /* Group page — statement section cards */
-  .stmtwrap { display: flex; flex-direction: column; gap: 10px; }
-  .stmtcols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
-  .stmtcols .seccol { gap: 10px; }
+  /* Group page — justified 3-column grid: Operations · four sections · charts */
+  .groupcols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; align-items: start; }
+  .groupcols .seccol { gap: 10px; }
   .stmtcard table.t, .stmtcard .t td { padding-top: 2px; padding-bottom: 2px; }
   .paysum { display: flex; gap: 16px; margin-top: 6px; font-size: 10px; color: #64748b; }
   .paysum b { font-variant-numeric: tabular-nums; }

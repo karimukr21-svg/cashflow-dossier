@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTopbarExtras } from '@/lib/displayFmt'
 import {
@@ -43,7 +43,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
   const cashStartLabel = `Jan ${year}`            // cash opening — the Jan-1 / start-of-year position
 
   const [level, setLevel] = useState<Level>('group')
-  const [groupArea, setGroupArea] = useState<string>('')   // '' = all matched (the group)
+  const [excluded, setExcluded] = useState<Set<string>>(new Set())   // areas unticked in the top-bar filter
   const [projArea, setProjArea] = useState<string>('')     // selected area for the Project grain
 
   const [cells, setCells] = useState<(CfCell & { currency?: string })[]>([])
@@ -90,18 +90,21 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
   // converts to USD). NOT gated on the payables mapping — unmapped areas still
   // show their cash flow; their payables columns just stay blank (that mapping
   // gap is surfaced in Coverage and tackled later).
-  const cfAreas = useMemo(() =>
+  const cfAreasAll = useMemo(() =>
     scope.areas.map(a => model.get(a.area_id)).filter((a): a is AreaAgg => !!a && a.hasCf && a.fxOk)
       .sort((x, y) => Math.abs(y.netOps) - Math.abs(x.netOps)),
     [model, scope.areas])
+  // Areas actually in scope = all cash-flow areas minus the ones unticked in the
+  // top-bar area filter. Drives Group / Area / Sections.
+  const cfAreas = useMemo(() => cfAreasAll.filter(a => !excluded.has(a.areaId)), [cfAreasAll, excluded])
 
-  // Monthly trade-payables series (Dec → as-of) for the current Group scope.
+  // Monthly trade-payables series (Dec → as-of) for the in-scope areas.
   // Only mapped areas carry payables, so unmapped areas contribute nothing;
   // endpoints tie payStart/payEnd.
   const paySeries = useMemo(() => {
-    const scopedIds = new Set(groupArea ? [groupArea] : cfAreas.map(a => a.areaId))
+    const scopedIds = new Set(cfAreas.map(a => a.areaId))
     return payablesSeries(payTraj, scopedIds, scope.areas, (year - 1) * 100 + 12, asOf)
-  }, [payTraj, groupArea, cfAreas, scope.areas, year, asOf])
+  }, [payTraj, cfAreas, scope.areas, year, asOf])
 
   // Project grain covers any area with pushed cash flow that is FX-convertible
   // (payables mapping not required — project view is cash-flow only).
@@ -130,10 +133,10 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
         sections: sectionCards(cfAreas, scope.lines),
       })
     } else {
-      const { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash } = aggregateScope(model, cfAreas, groupArea)
+      const { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash } = aggregateScope(cfAreas)
       const stmt = buildStatement(lineUsd, scope.lines)
       html = buildReportHtml({
-        level: 'group', scopeLabel, year, asOfLabel, startLabel, cashStartLabel, matchedCount: groupArea ? undefined : cfAreas.length,
+        level: 'group', scopeLabel, year, asOfLabel, startLabel, cashStartLabel, matchedCount: cfAreas.length,
         statement: stmt, payStart, payEnd, hasPay, startCash, endCash: startCash + stmt.netMovement,   // derived ending
         paySeries: paySeries.map(p => ({ label: MONTHS[(p.period % 100) - 1] ?? '', value: p.usd })),
       })
@@ -141,8 +144,9 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
     w.document.write(html); w.document.close()
   }
 
-  // Report controls (view tabs + area dropdown + Print) — rendered up in the
-  // Dossier top bar (Row 2) via the slot; inline fallback if the slot is absent.
+  // Report controls (view tabs + area include/exclude filter + Print) — rendered
+  // up in the Dossier top bar (Row 2) via the slot; inline fallback if absent.
+  const showAreaFilter = level === 'group' || level === 'area' || level === 'sections'
   const controls = (
     <>
       <div className="crp-levels">
@@ -150,12 +154,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
           <button key={t.key} className={`crp-lvl ${level === t.key ? 'active' : ''}`} onClick={() => setLevel(t.key)}>{t.label}</button>
         ))}
       </div>
-      {level === 'group' && (
-        <select className="crp-select" value={groupArea} onChange={e => setGroupArea(e.target.value)}>
-          <option value="">All areas (Group)</option>
-          {cfAreas.map(a => <option key={a.areaId} value={a.areaId}>{a.label}</option>)}
-        </select>
-      )}
+      {showAreaFilter && <AreaFilter areas={cfAreasAll} excluded={excluded} setExcluded={setExcluded} />}
       {canPrint && <button className="crp-print" style={{ marginLeft: 0 }} onClick={print}>Print</button>}
     </>
   )
@@ -165,7 +164,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
       {slot ? createPortal(controls, slot) : <div className="crp-toolbar no-print">{controls}</div>}
 
       {loading ? <div className="placeholder-box">Loading…</div>
-        : level === 'group' ? <GroupView scope={scope} model={model} matched={cfAreas} groupArea={groupArea} year={year} asOfLabel={asOfLabel} startLabel={startLabel} cashStartLabel={cashStartLabel} paySeries={paySeries} />
+        : level === 'group' ? <GroupView scope={scope} matched={cfAreas} year={year} asOfLabel={asOfLabel} startLabel={startLabel} cashStartLabel={cashStartLabel} paySeries={paySeries} />
         : level === 'area' ? <AreaView matched={cfAreas} year={year} asOfLabel={asOfLabel} startLabel={startLabel} onOpenProjects={(id) => { setProjArea(id); setLevel('project') }} />
         : level === 'sections' ? <SectionsView scope={scope} matched={cfAreas} asOfLabel={asOfLabel} />
         : level === 'project' ? <ProjectView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} projArea={projArea} setProjArea={setProjArea} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} />
@@ -175,19 +174,59 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
   )
 }
 
-/* Merge the scoped areas (all matched = the Group, or one selected area) into a
- * single line→USD map + payables position. Shared by the screen and print. */
-function aggregateScope(model: Map<string, AreaAgg>, matched: AreaAgg[], groupArea: string) {
-  const aggs = groupArea ? [model.get(groupArea)].filter((a): a is AreaAgg => !!a) : matched
+/* Top-bar area filter — a dropdown of tickboxes to include/exclude areas from
+ * the report scope (Group / Area / Sections). All ticked = whole group. */
+function AreaFilter({ areas, excluded, setExcluded }: {
+  areas: AreaAgg[]; excluded: Set<string>; setExcluded: (s: Set<string>) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [open])
+  const included = areas.length - areas.filter(a => excluded.has(a.areaId)).length
+  const toggle = (id: string) => { const n = new Set(excluded); n.has(id) ? n.delete(id) : n.add(id); setExcluded(n) }
+  return (
+    <div className="crp-areafilter" ref={ref}>
+      <button className="crp-select crp-af-btn" onClick={() => setOpen(o => !o)}>
+        Areas: {included}/{areas.length} <span className="crp-af-caret">▾</span>
+      </button>
+      {open && (
+        <div className="crp-af-panel">
+          <div className="crp-af-actions">
+            <button onClick={() => setExcluded(new Set())}>All</button>
+            <button onClick={() => setExcluded(new Set(areas.map(a => a.areaId)))}>None</button>
+          </div>
+          <div className="crp-af-list">
+            {areas.map(a => (
+              <label key={a.areaId} className="crp-af-item">
+                <input type="checkbox" checked={!excluded.has(a.areaId)} onChange={() => toggle(a.areaId)} />
+                <span>{a.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* Merge the in-scope areas into a single line→USD map + payables position.
+ * Shared by the screen and print. Label collapses to the one area's name when
+ * exactly one is in scope, else "the Group". */
+function aggregateScope(matched: AreaAgg[]) {
   const lineUsd = new Map<string, number>()
   let payStart = 0, payEnd = 0, hasPay = false, startCash = 0, endCash = 0
-  for (const a of aggs) {
+  for (const a of matched) {
     for (const [lc, v] of a.lineUsd) lineUsd.set(lc, (lineUsd.get(lc) ?? 0) + v)
     if (a.payStart != null) { payStart += a.payStart; hasPay = true }
     if (a.payEnd != null) { payEnd += a.payEnd; hasPay = true }
     startCash += a.openCash; endCash += a.endCash
   }
-  const scopeLabel = groupArea ? (model.get(groupArea)?.label || 'area') : 'the Group'
+  const scopeLabel = matched.length === 1 ? (matched[0]?.label || 'area') : 'the Group'
   return { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash, endCash }
 }
 
@@ -277,11 +316,11 @@ function StmtSectionCard({ sec }: { sec: StmtSection }) {
 }
 
 /* ── Group view — cash-flow statement + separated payables position ─────────── */
-function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLabel, cashStartLabel, paySeries }: {
-  scope: Scope; model: Map<string, AreaAgg>; matched: AreaAgg[]; groupArea: string
+function GroupView({ scope, matched, year, asOfLabel, startLabel, cashStartLabel, paySeries }: {
+  scope: Scope; matched: AreaAgg[]
   year: number; asOfLabel: string; startLabel: string; cashStartLabel: string; paySeries: PaySeriesPt[]
 }) {
-  const { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash } = aggregateScope(model, matched, groupArea)
+  const { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash } = aggregateScope(matched)
   const payDelta = hasPay ? payEnd - payStart : null
   const { sections, netMovement } = buildStatement(lineUsd, scope.lines)
   const drivers = sections.map(s => ({ label: s.label, value: s.net }))
@@ -298,34 +337,22 @@ function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLab
         <img className="crp-logo" src="/ccc-logo.png" alt="CCC" />
         <div className="crp-head-t">
           <h1>Cash Flow Report — {scopeLabel}</h1>
-          <div className="crp-sub">Actual to date · Jan–{asOfLabel} · USD millions{groupArea ? '' : ` · ${matched.length} areas`}</div>
+          <div className="crp-sub">Actual to date · Jan–{asOfLabel} · USD millions · {matched.length} areas</div>
         </div>
         <div className="crp-brand">Treasury</div>
       </div>
 
       <CashTimeline startCash={startCash} endCash={endCash} netMovement={netMovement} drivers={drivers} hasCash={hasCash} startLabel={cashStartLabel} asOfLabel={asOfLabel} />
 
-      <div className="crp-grid">
-        {/* Cash flow statement — one card per section, net movement footer.
-         * Operations (+ New Sales) left; Interest/Non-op/Financing/Within Group
-         * stacked right. */}
-        <div className="crp-stmtwrap">
-          <div className="crp-stmtcols">
-            {arrangeByColumns(sections, STMT_COLUMNS).map((col, i) => (
-              <div className="crp-seccol" key={i}>
-                {col.map(sec => <StmtSectionCard key={sec.label} sec={sec} />)}
-              </div>
-            ))}
+      {/* Justified 3-column grid: Operations · the four stacked sections · charts */}
+      <div className="crp-groupcols">
+        {arrangeByColumns(sections, STMT_COLUMNS).map((col, i) => (
+          <div className="crp-seccol" key={i}>
+            {col.map(sec => <StmtSectionCard key={sec.label} sec={sec} />)}
           </div>
-          <div className="crp-card crp-netcard">
-            <div className="crp-sechead">
-              <span className="crp-sechead-t">Net cash movement</span>
-              <b className={`crp-sechead-n ${cls(netMovement)}`}>{fMm(netMovement)}</b>
-            </div>
-          </div>
-        </div>
+        ))}
 
-        <div className="crp-rcol">
+        <div className="crp-seccol">
           {/* How the cash moved — waterfall */}
           <div className="crp-card">
             <div className="crp-card-h">How the cash moved <span>· sections → net movement</span></div>
@@ -381,7 +408,7 @@ function SectionsView({ scope, matched, asOfLabel }: {
                   <span className="crp-sechead-t">{c.label}<span> · by area</span></span>
                   <b className={`crp-sechead-n ${cls(c.net)}`}>{fMm(c.net)}</b>
                 </div>
-                <Svg html={areaBarsSvg(c.rows.map(r => ({ label: r.label, value: r.value })))} />
+                <Svg html={areaBarsSvg(c.rows.map(r => ({ label: r.label, value: r.value })), undefined, { zoom: 1.35 })} />
               </div>
             ))}
           </div>
