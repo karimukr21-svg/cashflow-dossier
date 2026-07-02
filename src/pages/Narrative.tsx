@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   fetchActuals, fetchForecasts, fetchPopulatedCfAreas, fetchPayables, fetchFxRate,
-  type CfCell, type CfLine, type CanonicalArea,
+  fetchPayablesTrajectory, subgroupMatchesArea,
+  type CfCell, type CfLine, type CanonicalArea, type PayablesTrajRow,
 } from '@/lib/queries'
 import { computeDerivedBalances } from '@/lib/derivedBalances'
 import { isDebtStock, flowSections } from '@/lib/cfTaxonomy'
 import { fmt } from '@/lib/format'
 import type { Scope } from './Dossier'
 import { buildNarrativeHtml } from './narrativePrint'
-import { buildCashStoryChart } from './narrativeChart'
+import { buildCashStoryChart, buildPayablesTrack } from './narrativeChart'
 
 /* ── The Chairman cash-flow story ──────────────────────────────────────────
  * A full-width, single-screen executive read of one area's (or the Group's)
@@ -20,6 +21,54 @@ import { buildCashStoryChart } from './narrativeChart'
 
 type Mode = 'group' | 'area'
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+/* Monthly payables trajectory, resolved to the report's 13-point x-axis
+ * (index 0 = the prior year's Dec = 'Open', 1..12 = Jan..Dec). USD throughout
+ * (tb_balances is USD). approx = area mapping is name-based (pending the
+ * canonical crosswalk); unavailable = no books mapped to this area. */
+export type PayTrack = {
+  payables13: (number | null)[]; nBooks13: (number | null)[]; maxBooks: number
+  present: number[]; firstIdx: number; firstValue: number; latestIdx: number; latestValue: number
+  approx: boolean; unavailable: boolean
+}
+const periodToIdx = (period: number, year: number): number | null => {
+  const py = Math.floor(period / 100), pm = period % 100
+  if (py === year - 1 && pm === 12) return 0    // prior December → the year's opening
+  if (py === year) return pm                     // Jan..Dec → 1..12
+  return null
+}
+export function buildPayTrack(traj: PayablesTrajRow[], mode: Mode, areaId: string | undefined, year: number): PayTrack {
+  const empty: PayTrack = {
+    payables13: Array(13).fill(null), nBooks13: Array(13).fill(null), maxBooks: 0,
+    present: [], firstIdx: -1, firstValue: 0, latestIdx: -1, latestValue: 0,
+    approx: mode === 'area', unavailable: true,
+  }
+  const rows = mode === 'area'
+    ? traj.filter(r => !!areaId && subgroupMatchesArea(r.subgroup, areaId))
+    : traj
+  if (rows.length === 0) return empty
+  const usd = Array<number | null>(13).fill(null)
+  const bks = Array<number | null>(13).fill(null)
+  for (const r of rows) {
+    const idx = periodToIdx(r.period, year)
+    if (idx == null) continue
+    usd[idx] = (usd[idx] ?? 0) + r.usdTotal
+    bks[idx] = (bks[idx] ?? 0) + r.nBooks
+  }
+  const present = usd.map((v, i) => (v == null ? -1 : i)).filter(i => i >= 0)
+  if (present.length === 0) return empty
+  const maxBooks = Math.max(...present.map(i => bks[i] ?? 0))
+  const firstIdx = present[0], latestIdx = present[present.length - 1]
+  return {
+    payables13: usd, nBooks13: bks, maxBooks, present,
+    firstIdx, firstValue: usd[firstIdx] as number,
+    latestIdx, latestValue: usd[latestIdx] as number,
+    approx: mode === 'area', unavailable: false,
+  }
+}
+/** Human label for a chart index (0 = prior Dec 'Open'). */
+export const idxLabel = (idx: number, year: number): string =>
+  idx === 0 ? `Dec ${year - 1}` : `${MONTHS[idx - 1] ?? ''} ${year}`
 
 export type NarrativeData = {
   asOfMonth: number
@@ -114,6 +163,19 @@ export default function Narrative({ scope }: { scope: Scope }) {
     return () => { cancel = true }
   }, [mode, selArea?.area_id, asOf])
 
+  // Payables MONTHLY trajectory (canonical TB, USD) — its own separate track,
+  // never blended into net liquid funds. Fetched once (mode-agnostic); the
+  // scope-specific series is derived below. Supersedes the single-point path.
+  const [payTraj, setPayTraj] = useState<PayablesTrajRow[]>([])
+  useEffect(() => {
+    let cancel = false
+    fetchPayablesTrajectory().then(r => { if (!cancel) setPayTraj(r) }).catch(() => { if (!cancel) setPayTraj([]) })
+    return () => { cancel = true }
+  }, [])
+  const payTrack = useMemo(
+    () => buildPayTrack(payTraj, mode, mode === 'area' ? selArea?.area_id : undefined, year),
+    [payTraj, mode, selArea?.area_id, year])
+
   // Currency display toggle (area mode): native local or USD via gacc.fx_rates.
   const [ccy, setCcy] = useState<'local' | 'usd'>('local')
   const [fxRate, setFxRate] = useState<number | null>(null)
@@ -172,7 +234,7 @@ export default function Narrative({ scope }: { scope: Scope }) {
 
       {loading
         ? <div className="placeholder-box">Loading…</div>
-        : <ChairmanReport d={dispData} scopeLabel={scopeLabel} year={year} asOfLabel={asOfLabel} unit={unit} mode={mode} payables={payables} />}
+        : <ChairmanReport d={dispData} scopeLabel={scopeLabel} year={year} asOfLabel={asOfLabel} unit={unit} mode={mode} payables={payables} payTrack={payTrack} />}
     </div>
   )
 }
@@ -206,13 +268,10 @@ const fMs = (v: number | null | undefined) => {
 const sign = (v: number | null | undefined) => (v == null || v === 0) ? '' : (v < 0 ? 'neg' : 'pos')
 
 /* ── the report ─────────────────────────────────────────────────────────── */
-function ChairmanReport({ d, scopeLabel, year, asOfLabel, unit, mode, payables }: {
+function ChairmanReport({ d, scopeLabel, year, asOfLabel, unit, mode, payTrack }: {
   d: NarrativeData; scopeLabel: string; year: number; asOfLabel: string; unit: string; mode: Mode;
-  payables: { value: number; currency: string } | null
+  payables: { value: number; currency: string } | null; payTrack: PayTrack
 }) {
-  const payNote = payables
-    ? `Suppliers, subcontractors & taxes · as of ${asOfLabel}${payables.currency === 'USD' && !unit.startsWith('USD') ? ' (USD)' : ''}`
-    : 'Trade liabilities · no Midas balance for this period'
   const fullSwing = d.nfEnd - d.nfOpen                            // net journey, opening → year-end
   const fullSwingCap = fullSwing >= 0 ? `Net funds recover over ${year}` : `Net funds erode over ${year}`
   const netFlow = d.recvFull + d.payFull
@@ -274,17 +333,31 @@ function ChairmanReport({ d, scopeLabel, year, asOfLabel, unit, mode, payables }
         </div>
         <div className="cnr-chart" dangerouslySetInnerHTML={{ __html: buildCashStoryChart({
           months: ['', ...MONTHS], cash: cash13, net: net13, asIdx: d.asOfMonth, asOfLabel, year,
-          payablesToday: payables ? payables.value : null,
         }) }} />
       </div>
 
-      {/* Region 4 — payables data note + full-year flow */}
+      {/* Region 3b — payables, its OWN monthly track (never blended into net funds) */}
+      <div className="cnr-chartwrap cnr-paywrap">
+        <div className="cnr-chart-head">
+          <div className="cnr-chart-title">Payables trajectory <span>· trade liabilities to suppliers &amp; subcontractors, by month</span></div>
+        </div>
+        {payTrack.unavailable
+          ? <div className="cnr-paynote cnr-paynote--empty">Payables trail unavailable for {scopeLabel} — its books aren’t yet mapped to a cash-flow area (pending the canonical crosswalk). Group view shows the full trajectory.</div>
+          : <>
+              <div className="cnr-chart" dangerouslySetInnerHTML={{ __html: buildPayablesTrack({
+                months: ['', ...MONTHS], payables: payTrack.payables13, nBooks: payTrack.nBooks13, maxBooks: payTrack.maxBooks,
+              }) }} />
+              <div className="cnr-paynote">{payablesCaveat(payTrack, year, mode)}</div>
+            </>}
+      </div>
+
+      {/* Region 4 — payables headline + full-year flow */}
       <div className="cnr-foot">
         <div className="cnr-foot-item cnr-foot-item--note">
           <div className="cnr-foot-label">Payables · suppliers &amp; subcontractors</div>
-          <div className="cnr-foot-note cnr-foot-note--lg">{payables
-            ? `Current balance shown at Today above · single Midas snapshot (${asOfLabel})${payables.currency === 'USD' && !unit.startsWith('USD') ? ', USD' : ''} — monthly trail pending Bilal's extracts`
-            : 'No Midas balance for this period — payables trail pending'}</div>
+          <div className="cnr-foot-note cnr-foot-note--lg">{payTrack.unavailable
+            ? 'No mapped books for this area — see Group view'
+            : <>Now <b className="neg">{fM(payTrack.latestValue)}m</b> USD ({idxLabel(payTrack.latestIdx, year)}), from <b>{fM(payTrack.firstValue)}m</b> at {idxLabel(payTrack.firstIdx, year)} · monthly, from the Midas trial balance</>}</div>
         </div>
         <div className="cnr-foot-item">
           <div className="cnr-foot-label">Full-year cash flow</div>
@@ -296,7 +369,7 @@ function ChairmanReport({ d, scopeLabel, year, asOfLabel, unit, mode, payables }
       {/* Region 5 — bottom line */}
       <div className="cnr-bottomline">
         <span className="cnr-bl-tag">Bottom line</span>
-        <span className="cnr-bl-text">{bottomLine(d, scopeLabel, payables)}</span>
+        <span className="cnr-bl-text">{bottomLine(d, scopeLabel, payTrack, year)}</span>
       </div>
 
       {/* Optional analyst detail — below the chairman read */}
@@ -328,13 +401,25 @@ function Bars({ items, tone }: { items: { label: string; value: number }[]; tone
   )
 }
 
-function bottomLine(d: NarrativeData, scopeLabel: string, payables: { value: number; currency: string } | null): string {
+function payablesCaveat(pt: PayTrack, year: number, mode: Mode) {
+  const latestBooks = pt.nBooks13[pt.latestIdx] ?? 0
+  const pending = Math.max(0, pt.maxBooks - latestBooks)
+  return (
+    <>
+      Payables = the <b>trade_payables</b> group (suppliers, subcontractors &amp; taxes), defined and editable in the Chart of Accounts module; source is the Midas trial balance, in USD.
+      {pending > 0 && <> Recent months are <b>provisional</b> — {pending} of {pt.maxBooks} books not yet posted for {idxLabel(pt.latestIdx, year)}, so the latest balance understates and the decline partly reflects books still being rebuilt, not only real paydown.</>}
+      {mode === 'area' && <> Area mapped from org_chart by name — <b>approximate</b>, pending the canonical crosswalk.</>}
+    </>
+  )
+}
+
+function bottomLine(d: NarrativeData, scopeLabel: string, pt: PayTrack, year: number): string {
   const arc = d.minNf.value < (d.nfNow ?? 0)
     ? `dips to ${fM(d.minNf.value)}m in ${MONTHS[d.minNf.idx]} before recovering to`
     : (d.nfEnd >= (d.nfNow ?? 0) ? 'strengthens to' : 'eases to')
-  const pay = payables
-    ? `On top of this sit payables to suppliers and subcontractors of ${fM(Math.abs(payables.value))}m.`
-    : `Payables to suppliers and subcontractors are tracked separately — figures pending.`
+  const pay = pt.unavailable
+    ? `Payables to suppliers and subcontractors are tracked separately — no mapped books for this area.`
+    : `Separately, trade payables to suppliers and subcontractors stand at ${fM(Math.abs(pt.latestValue))}m (USD) as of ${idxLabel(pt.latestIdx, year)}, down from ${fM(Math.abs(pt.firstValue))}m at ${idxLabel(pt.firstIdx, year)} — though recent months are understated while books finish posting.`
   return `After loans and overdrafts, ${scopeLabel}'s net liquid funds stand at ${fM(d.nfNow)}m today — ${fM(d.now)}m of cash against ${fM(d.debtNow)}m of loans and overdrafts. The position ${arc} ${fM(d.nfEnd)}m by year-end as cash builds and financing is paid down. ${pay}`
 }
 

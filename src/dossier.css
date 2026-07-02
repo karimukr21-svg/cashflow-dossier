@@ -1514,6 +1514,12 @@ body, html, #root {
 .cnr-leg-fc { height: 3px; background: repeating-linear-gradient(90deg, var(--mute) 0 4px, transparent 4px 7px); }
 .cnr-chart svg { display: block; width: 100%; }
 
+/* Payables trajectory — its own track (Region 3b) */
+.cnr-paywrap { padding-top: 6px; border-top: 1px solid var(--border); margin-top: 6px; }
+.cnr-paynote { font-size: 10.5px; line-height: 1.55; color: var(--mute); margin-top: 4px; max-width: 1100px; }
+.cnr-paynote b { color: var(--ink); font-weight: 700; }
+.cnr-paynote--empty { font-style: italic; color: #94a3b8; padding: 14px 0; }
+
 /* Payables + full-year flow footer (cash-story layout) */
 .cnr-foot { display: flex; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); margin-top: 10px; }
 .cnr-foot-item { flex: 1; padding: 11px 20px; border-left: 1px solid var(--border); }
