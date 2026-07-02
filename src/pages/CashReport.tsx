@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  fetchActuals, fetchForecasts, fetchPayablesTrajectory, fetchFxRate, subgroupMatchesArea,
-  type CfCell, type CanonicalArea, type PayablesTrajRow,
+  fetchActuals, fetchForecasts, fetchPayablesTrajectory, fetchFxRate,
+  type CfCell, type PayablesTrajRow,
 } from '@/lib/queries'
-import { flowSections } from '@/lib/cfTaxonomy'
 import { fmt, fmtDelta } from '@/lib/format'
+import { buildModel, buildStatement, type AreaAgg, type StmtSection } from './reportModel'
+import { buildReportHtml } from './reportPrint'
 import type { Scope } from './Dossier'
 
 /* ── The Cash Flow Report ───────────────────────────────────────────────────
@@ -22,66 +23,6 @@ import type { Scope } from './Dossier'
 
 type Level = 'group' | 'area' | 'project' | 'coverage' | 'definitions'
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-
-type AreaAgg = {
-  areaId: string; label: string; currency: string; fxOk: boolean; hasCf: boolean
-  lineUsd: Map<string, number>; netOps: number
-  payStart: number | null; payEnd: number | null; hasPay: boolean
-  matched: boolean
-}
-
-/** Aggregate cash flow (→USD) and trade-payables position per area, and flag
- *  which areas are "matched" (present on both sides + convertible). */
-function buildModel(
-  cells: (CfCell & { currency?: string })[], payTraj: PayablesTrajRow[],
-  fxMap: Map<string, number | null>, scope: Scope, year: number, asOf: number,
-): Map<string, AreaAgg> {
-  const OP = new Set(['Operation', 'Claims'])
-  const lineCat = new Map(scope.lines.map(l => [l.line_code, l.category]))
-  const periodStart = (year - 1) * 100 + 12, periodEnd = asOf
-
-  const byArea = new Map<string, AreaAgg>()
-  const ensure = (areaId: string, label: string): AreaAgg => {
-    let a = byArea.get(areaId)
-    if (!a) { a = { areaId, label, currency: 'USD', fxOk: true, hasCf: false, lineUsd: new Map(), netOps: 0, payStart: null, payEnd: null, hasPay: false, matched: false }; byArea.set(areaId, a) }
-    return a
-  }
-
-  // cash flow → USD, per (area, line)
-  for (const c of cells) {
-    const can = scope.cfToCanonical.get(c.area)
-    if (!can) continue
-    const cur = c.currency || 'USD'
-    const agg = ensure(can.area_id, can.display_name)
-    agg.hasCf = true
-    if (cur !== 'USD') agg.currency = cur
-    const rate = cur === 'USD' ? 1 : (fxMap.get(cur) ?? null)
-    if (rate == null) { agg.fxOk = false; continue }   // currency has no rate → area not convertible
-    agg.lineUsd.set(c.line_code, (agg.lineUsd.get(c.line_code) ?? 0) + c.value * rate)
-  }
-  for (const agg of byArea.values()) {
-    let n = 0
-    for (const [lc, v] of agg.lineUsd) if (OP.has(lineCat.get(lc) || '')) n += v
-    agg.netOps = n
-  }
-
-  // trade-payables position (USD, from the TB via the subgroup→area crosswalk)
-  for (const r of payTraj) {
-    if (r.period !== periodStart && r.period !== periodEnd) continue
-    for (const a of scope.areas) {
-      if (!subgroupMatchesArea(r.subgroup, a.area_id)) continue
-      const agg = ensure(a.area_id, a.display_name)
-      if (r.period === periodStart) agg.payStart = (agg.payStart ?? 0) + r.usdTotal
-      else agg.payEnd = (agg.payEnd ?? 0) + r.usdTotal
-      agg.hasPay = true
-      break   // first matching area wins
-    }
-  }
-
-  for (const agg of byArea.values())
-    agg.matched = agg.hasCf && agg.fxOk && agg.hasPay && (agg.payStart != null || agg.payEnd != null)
-  return byArea
-}
 
 const fMm = (v: number | null | undefined) => v == null ? '—' : fmt(v / 1e6, { decimals: 1 })
 const fMd = (v: number | null | undefined) => v == null ? '—' : fmtDelta(v / 1e6, { decimals: 1 })
@@ -131,7 +72,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
     return () => { cancel = true }
   }, [scope.primaryVersion, year, asOfMonth])
 
-  const model = useMemo(() => buildModel(cells, payTraj, fxMap, scope, year, asOf),
+  const model = useMemo(() => buildModel(cells, payTraj, fxMap, scope.areas, scope.cfToCanonical, scope.lines, year, asOf),
     [cells, payTraj, fxMap, scope.areas, scope.cfToCanonical, scope.lines, year, asOf])
 
   const matched = useMemo(() =>
@@ -143,6 +84,24 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
     { key: 'group', label: 'Group' }, { key: 'area', label: 'Area' }, { key: 'project', label: 'Project' },
     { key: 'coverage', label: 'Coverage' }, { key: 'definitions', label: 'Definitions' },
   ]
+  const canPrint = level === 'group' || level === 'area'
+
+  const print = () => {
+    const w = window.open('', '_blank'); if (!w) return
+    let html = ''
+    if (level === 'area') {
+      const areaRows = matched.map(a => ({ label: a.label, netOps: a.netOps, payStart: a.payStart, payEnd: a.payEnd }))
+      const areaTotals = matched.reduce((t, a) => ({ netOps: t.netOps + a.netOps, payStart: t.payStart + (a.payStart ?? 0), payEnd: t.payEnd + (a.payEnd ?? 0) }), { netOps: 0, payStart: 0, payEnd: 0 })
+      html = buildReportHtml({ level: 'area', scopeLabel: 'Areas', year, asOfLabel, startLabel, areaRows, areaTotals, matchedCount: matched.length })
+    } else {
+      const { scopeLabel, lineUsd, payStart, payEnd, hasPay } = aggregateScope(model, matched, groupArea)
+      html = buildReportHtml({
+        level: 'group', scopeLabel, year, asOfLabel, startLabel, matchedCount: groupArea ? undefined : matched.length,
+        statement: buildStatement(lineUsd, scope.lines), payStart, payEnd, hasPay,
+      })
+    }
+    w.document.write(html); w.document.close()
+  }
 
   return (
     <div className="crp">
@@ -158,6 +117,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
             {matched.map(a => <option key={a.areaId} value={a.areaId}>{a.label}</option>)}
           </select>
         )}
+        {canPrint && <button className="crp-print" onClick={print}>Print</button>}
       </div>
 
       {loading ? <div className="placeholder-box">Loading…</div>
@@ -168,15 +128,10 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
   )
 }
 
-/* ── Group view — cash-flow statement + separated payables position ─────────── */
-function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLabel }: {
-  scope: Scope; model: Map<string, AreaAgg>; matched: AreaAgg[]; groupArea: string
-  year: number; asOfLabel: string; startLabel: string
-}) {
+/* Merge the scoped areas (all matched = the Group, or one selected area) into a
+ * single line→USD map + payables position. Shared by the screen and print. */
+function aggregateScope(model: Map<string, AreaAgg>, matched: AreaAgg[], groupArea: string) {
   const aggs = groupArea ? [model.get(groupArea)].filter((a): a is AreaAgg => !!a) : matched
-  const scopeLabel = groupArea ? (model.get(groupArea)?.label || 'area') : 'the Group'
-
-  // merged line totals + payables across the scoped areas
   const lineUsd = new Map<string, number>()
   let payStart = 0, payEnd = 0, hasPay = false
   for (const a of aggs) {
@@ -184,24 +139,33 @@ function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLab
     if (a.payStart != null) { payStart += a.payStart; hasPay = true }
     if (a.payEnd != null) { payEnd += a.payEnd; hasPay = true }
   }
-  const payDelta = hasPay ? payEnd - payStart : null
+  const scopeLabel = groupArea ? (model.get(groupArea)?.label || 'area') : 'the Group'
+  return { scopeLabel, lineUsd, payStart, payEnd, hasPay }
+}
 
-  const sections = flowSections(scope.lines)
-  const linesByCat = new Map<string, typeof scope.lines>()
-  for (const l of scope.lines) {
-    if (l.nature === 'Balance') continue
-    const arr = linesByCat.get(l.category) || []; arr.push(l); linesByCat.set(l.category, arr)
-  }
-  let netMovement = 0
-  const rendered = sections.map(sec => {
-    const lines = sec.categories.flatMap(c => linesByCat.get(c) || [])
-      .map(l => ({ l, v: lineUsd.get(l.line_code) ?? 0 }))
-      .filter(x => Math.abs(x.v) >= 1)
-      .sort((a, b) => a.l.sort_order - b.l.sort_order)
-    const subtotal = lines.reduce((t, x) => t + x.v, 0)
-    netMovement += subtotal
-    return { label: sec.label, lines, subtotal }
-  }).filter(s => s.lines.length > 0)
+/* One statement section: receipts grouped, then payments grouped, then net.
+ * Per-nature subtotals show only when a nature has more than one bucket. */
+function StmtSectionRows({ sec }: { sec: StmtSection }) {
+  return (
+    <>
+      <tr className="crp-sec"><td>{sec.label}</td><td className="r" /></tr>
+      {sec.receipts.map(b => <tr key={`r-${b.label}`}><td className="crp-item">{b.label}</td><td className={`r ${cls(b.value)}`}>{fMm(b.value)}</td></tr>)}
+      {sec.receipts.length > 1 && <tr className="crp-natsub"><td>Total receipts</td><td className={`r ${cls(sec.recTotal)}`}>{fMm(sec.recTotal)}</td></tr>}
+      {sec.payments.map(b => <tr key={`p-${b.label}`}><td className="crp-item">{b.label}</td><td className={`r ${cls(b.value)}`}>{fMm(b.value)}</td></tr>)}
+      {sec.payments.length > 1 && <tr className="crp-natsub"><td>Total payments</td><td className={`r ${cls(sec.payTotal)}`}>{fMm(sec.payTotal)}</td></tr>}
+      <tr className="crp-subtot"><td>Net {sec.label.toLowerCase()}</td><td className={`r ${cls(sec.net)}`}>{fMm(sec.net)}</td></tr>
+    </>
+  )
+}
+
+/* ── Group view — cash-flow statement + separated payables position ─────────── */
+function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLabel }: {
+  scope: Scope; model: Map<string, AreaAgg>; matched: AreaAgg[]; groupArea: string
+  year: number; asOfLabel: string; startLabel: string
+}) {
+  const { scopeLabel, lineUsd, payStart, payEnd, hasPay } = aggregateScope(model, matched, groupArea)
+  const payDelta = hasPay ? payEnd - payStart : null
+  const { sections, netMovement } = buildStatement(lineUsd, scope.lines)
 
   return (
     <div className="crp-page">
@@ -220,15 +184,7 @@ function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLab
           <table className="crp-table">
             <thead><tr><th>Line item</th><th className="r">USD m</th></tr></thead>
             <tbody>
-              {rendered.map(sec => (
-                <>
-                  <tr className="crp-sec" key={`s-${sec.label}`}><td>{sec.label}</td><td className="r" /></tr>
-                  {sec.lines.map(x => (
-                    <tr key={x.l.line_code}><td className="crp-item">{x.l.description}</td><td className={`r ${cls(x.v)}`}>{fMm(x.v)}</td></tr>
-                  ))}
-                  <tr className="crp-subtot" key={`t-${sec.label}`}><td>Net {sec.label.toLowerCase()}</td><td className={`r ${cls(sec.subtotal)}`}>{fMm(sec.subtotal)}</td></tr>
-                </>
-              ))}
+              {sections.map(sec => <StmtSectionRows key={sec.label} sec={sec} />)}
               <tr className="crp-total"><td>Net cash movement</td><td className={`r ${cls(netMovement)}`}>{fMm(netMovement)}</td></tr>
             </tbody>
           </table>

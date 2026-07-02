@@ -1528,6 +1528,8 @@ body, html, #root {
 .crp-lvl:hover { color: var(--ink); }
 .crp-lvl.active { background: var(--crimson); color: #fff; }
 .crp-select { border: 1px solid var(--border); border-radius: 7px; padding: 6px 10px; font-size: 12.5px; color: var(--ink); background: var(--surface, #fff); }
+.crp-print { margin-left: auto; border: 1px solid var(--border); background: var(--surface, #fff); color: var(--ink); font-size: 12.5px; font-weight: 600; padding: 6px 16px; border-radius: 7px; cursor: pointer; }
+.crp-print:hover { border-color: var(--crimson); color: var(--crimson); }
 
 .crp-page { display: flex; flex-direction: column; gap: 14px; }
 .crp-head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2.5px solid var(--crimson); padding-bottom: 8px; }
@@ -1550,6 +1552,7 @@ body, html, #root {
 .crp-table .pos { color: var(--good); }
 .crp-sec td { font-size: 9.5px; letter-spacing: .4px; text-transform: uppercase; color: var(--mute); font-weight: 700; padding-top: 9px; }
 .crp-item td, td.crp-item { padding-left: 16px; color: #334155; }
+.crp-natsub td { font-style: italic; color: #475569; padding-top: 2px; padding-bottom: 4px; }
 .crp-subtot td { font-weight: 700; border-top: 1px solid var(--border); }
 .crp-total td { font-weight: 800; border-top: 2px solid var(--ink); padding-top: 6px; }
 .crp-table--pos .crp-total td { border-top: 0; }
