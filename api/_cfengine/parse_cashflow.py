@@ -373,11 +373,24 @@ def _year_grouped_periods(blocks, months, as_of):
             else:
                 break
         by_block[b].append((ci, mn, ey))
-    for bstart, cols in by_block.items():
+    # Process blocks IN COLUMN ORDER so a yearless block can thread its base year from
+    # the previous block's end (Dec -> Jan rollover), instead of defaulting to as_of.year.
+    # A header can label the actual year(s) explicitly on some blocks ('ACT 2024',
+    # 'Plan 2026') but leave others bare ('Actual'); a bare block sitting right after a
+    # block that ends in December and itself starting in January is that next year.
+    running_end = None   # (year, month) assigned to the previous block's last column
+    for bstart in sorted(by_block.keys(), key=lambda x: (x is None, x)):
+        cols = by_block[bstart]
         yb = dict(starts).get(bstart)
         if yb is None:
             yb = {'kind': 'actual', 'years': []}
-        base = (yb['years'][0] if yb['years'] else as_of.year)
+        first_mn = sorted(cols)[0][1]
+        if yb['years']:
+            base = yb['years'][0]
+        elif running_end is not None and running_end[1] == 12 and first_mn == 1:
+            base = running_end[0] + 1          # clean Dec -> Jan rollover: prior year + 1
+        else:
+            base = as_of.year
         # provisional forward-walk (JAN rollover -> +1)
         prov = {}
         prev = 0
@@ -396,6 +409,8 @@ def _year_grouped_periods(blocks, months, as_of):
                 break
         for ci, mn, _ey in cols:
             periods[ci] = (prov[ci] + delta, mn, yb['kind'])
+        last_ci, last_mn, _ = sorted(cols)[-1]
+        running_end = (prov[last_ci] + delta, last_mn)
     return periods
 
 # ---- line resolution (section + direction state machine) --------------------
