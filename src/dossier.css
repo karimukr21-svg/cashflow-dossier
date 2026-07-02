@@ -1582,11 +1582,12 @@ body, html, #root {
 .crp-paysum b.neg { color: var(--crimson); } .crp-paysum b.pos { color: var(--good); }
 
 .crp-page { display: flex; flex-direction: column; gap: 14px; }
-.crp-head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2.5px solid var(--crimson); padding-bottom: 8px; }
+.crp-head { display: flex; align-items: center; gap: 14px; border-bottom: 2.5px solid var(--crimson); padding-bottom: 8px; }
+.crp-logo { height: 40px; width: auto; flex: 0 0 auto; }
+.crp-head-t { min-width: 0; }
 .crp-head h1 { font-size: 20px; font-weight: 800; color: var(--ink); }
 .crp-sub { font-size: 11px; color: var(--mute); margin-top: 3px; }
-.crp-brand { font-size: 11px; font-weight: 700; color: var(--ink); white-space: nowrap; }
-.crp-glyph { display: inline-block; background: var(--crimson); color: #fff; width: 16px; height: 16px; border-radius: 3px; text-align: center; line-height: 16px; font-size: 11px; margin-right: 4px; }
+.crp-brand { margin-left: auto; align-self: flex-end; font-size: 11px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--mute); white-space: nowrap; }
 
 .crp-grid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 14px; align-items: start; }
 @media (max-width: 900px) { .crp-grid { grid-template-columns: 1fr; } }

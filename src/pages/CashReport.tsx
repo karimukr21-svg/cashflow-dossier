@@ -252,11 +252,12 @@ function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLab
   return (
     <div className="crp-page">
       <div className="crp-head">
-        <div>
+        <img className="crp-logo" src="/ccc-logo.png" alt="CCC" />
+        <div className="crp-head-t">
           <h1>Cash Flow Report — {scopeLabel}</h1>
           <div className="crp-sub">Actual to date · Jan–{asOfLabel} · USD millions{groupArea ? '' : ` · ${matched.length} areas`}</div>
         </div>
-        <div className="crp-brand"><span className="crp-glyph">C</span> CCC · Treasury</div>
+        <div className="crp-brand">Treasury</div>
       </div>
 
       <div className="crp-lede">
@@ -317,11 +318,12 @@ function AreaView({ matched, year, asOfLabel, startLabel, onOpenProjects }: {
   return (
     <div className="crp-page">
       <div className="crp-head">
-        <div>
+        <img className="crp-logo" src="/ccc-logo.png" alt="CCC" />
+        <div className="crp-head-t">
           <h1>Cash Flow Report — Areas</h1>
           <div className="crp-sub">Actual to date · Jan–{asOfLabel} · USD millions · {matched.length} areas</div>
         </div>
-        <div className="crp-brand"><span className="crp-glyph">C</span> CCC · Treasury</div>
+        <div className="crp-brand">Treasury</div>
       </div>
 
       <div className="crp-lede">
@@ -462,11 +464,12 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
   return (
     <div className="crp-page">
       <div className="crp-head">
-        <div>
+        <img className="crp-logo" src="/ccc-logo.png" alt="CCC" />
+        <div className="crp-head-t">
           <h1>Cash Flow Report — Projects</h1>
           <div className="crp-sub">{areaLabel} · monthly actuals Jan–{asOfLabel} · USD millions · {ranking.length} projects</div>
         </div>
-        <div className="crp-brand"><span className="crp-glyph">C</span> CCC · Treasury</div>
+        <div className="crp-brand">Treasury</div>
       </div>
 
       <div className="crp-projtop no-print">
@@ -594,11 +597,12 @@ function CoverageView({ scope, model, payTraj }: { scope: Scope; model: Map<stri
   return (
     <div className="crp-page">
       <div className="crp-head">
-        <div>
+        <img className="crp-logo" src="/ccc-logo.png" alt="CCC" />
+        <div className="crp-head-t">
           <h1>Cash Flow Report — Coverage</h1>
           <div className="crp-sub">{matchedN} of {rows.length} areas matched (cash flow ↔ trade-payables) · cash flow covers all areas; the trade-payables column covers only the matched ones</div>
         </div>
-        <div className="crp-brand"><span className="crp-glyph">C</span> CCC · Treasury</div>
+        <div className="crp-brand">Treasury</div>
       </div>
       <div className="crp-grid">
         <div className="crp-card">
@@ -644,11 +648,12 @@ function DefinitionsView({ period, asOfLabel }: { period: number; asOfLabel: str
   return (
     <div className="crp-page">
       <div className="crp-head">
-        <div>
+        <img className="crp-logo" src="/ccc-logo.png" alt="CCC" />
+        <div className="crp-head-t">
           <h1>Cash Flow Report — Definitions</h1>
           <div className="crp-sub">Liability account-groups & what feeds trade_payables · balances at {asOfLabel} · USD millions</div>
         </div>
-        <div className="crp-brand"><span className="crp-glyph">C</span> CCC · Treasury</div>
+        <div className="crp-brand">Treasury</div>
       </div>
       {loading ? <div className="placeholder-box">Loading…</div> : <div className="crp-grid">
         <div className="crp-card">

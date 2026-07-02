@@ -43,9 +43,11 @@ function kpis(cards: { label: string; value: string; cls?: string; sub?: string 
   return `<div class="kpis">${cards.map(c =>
     `<div class="kpi"><div class="kpi-l">${c.label}</div><div class="kpi-v ${c.cls || ''}">${c.value}</div>${c.sub ? `<div class="kpi-s">${c.sub}</div>` : ''}</div>`).join('')}</div>`
 }
+const LOGO = (typeof window !== 'undefined' ? window.location.origin : '') + '/ccc-logo.png'
 function head(title: string, sub: string): string {
-  return `<div class="head"><div><h1>${title}</h1><div class="sub">${sub}</div></div>
-    <div class="brand"><span class="glyph">C</span>CCC · Treasury</div></div>`
+  return `<div class="head"><img class="logo" src="${LOGO}" alt="CCC"/>
+    <div class="ht"><h1>${title}</h1><div class="sub">${sub}</div></div>
+    <div class="brand">Treasury</div></div>`
 }
 
 function sectionRows(sec: StmtSection, f: Fmt): string {
@@ -181,10 +183,11 @@ const STYLE = `
   .page { width: 1040px; height: 726px; overflow: hidden; }
   .page + .page { page-break-before: always; }
   .sheet { width: 1040px; transform-origin: top left; }
-  .head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2.5px solid #E10020; padding-bottom: 7px; margin-bottom: 10px; }
+  .head { display: flex; align-items: center; gap: 11px; border-bottom: 2.5px solid #E10020; padding-bottom: 7px; margin-bottom: 10px; }
+  .logo { height: 34px; width: auto; flex: 0 0 auto; }
+  .ht { min-width: 0; }
   h1 { font-size: 19px; } .sub { font-size: 10px; color: #64748b; margin-top: 2px; }
-  .brand { font-size: 11px; font-weight: 700; white-space: nowrap; }
-  .glyph { display: inline-block; background: #E10020; color: #fff; width: 15px; height: 15px; border-radius: 3px; text-align: center; line-height: 15px; font-size: 10px; margin-right: 3px; }
+  .brand { margin-left: auto; align-self: flex-end; font-size: 10px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: #64748b; white-space: nowrap; }
   .kpis { display: flex; gap: 10px; margin-bottom: 12px; }
   .kpi { flex: 1; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; border-left: 3px solid #E10020; }
   .kpi-l { font-size: 8.5px; letter-spacing: .4px; text-transform: uppercase; color: #64748b; font-weight: 700; }
