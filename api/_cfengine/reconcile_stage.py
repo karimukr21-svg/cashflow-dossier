@@ -820,6 +820,11 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
                 {'project_code': '_AREA', 'sheet': target, 'line_code': lc,
                  'year': y, 'month': m, 'value': v}
                 for (lc, y, m), v in tgt.items() if lc in BALANCE_LINES]
+            # register the target as an included sheet so its _AREA balance rows
+            # survive the push/grid included-sheets filter (its flows are never
+            # staged — the _ingest loop skips n == target — so no double-count).
+            sheet_meta[target] = {'sheet': target, 'code': '_AREA', 'role': 'area_item',
+                                  'is_jv': False, 'name': None, 'default_included': True}
         keys = set(flowsum) | set(tgt)
         material = 0
         for k in sorted(keys):

@@ -240,23 +240,6 @@ def label_col_left_of(rows, header_ri, first_period_col):
                 best = ci
     return best if best is not None else min(1, max(0, first_period_col - 1))
 
-def _dedup_periods(periods):
-    """Keep exactly one column per (year, month). A cash-flow statement has one
-    column per period; when a file appends a redundant duplicate block (e.g. EPSO
-    repeats JAN-APR 2026 under a second 'FORECAST 2026' header after the JAN'26..
-    DEC'26 columns), both map to the same period and their values would sum
-    (doubling opening / flows). Keep the FIRST (leftmost) column for each period."""
-    seen = set()
-    out = {}
-    for ci in sorted(periods):
-        y, m = periods[ci][0], periods[ci][1]
-        if (y, m) in seen:
-            continue
-        seen.add((y, m))
-        out[ci] = periods[ci]
-    return out
-
-
 def detect_header(rows, as_of):
     """Return dict: {mode, label_col, section_col, periods:{col:(year,month,kind)}}
     or None if no period axis found."""
@@ -307,7 +290,7 @@ def detect_header(rows, as_of):
             first_period_col = min(periods) if periods else min(ci for ci, _ in dates)
             lc = label_col_left_of(rows, ri, first_period_col)
             return {'mode': 'datetime', 'header_row': ri, 'label_col': lc,
-                    'section_col': max(0, lc - 1), 'periods': _dedup_periods(periods)}
+                    'section_col': max(0, lc - 1), 'periods': periods}
     # --- year-grouped axis ---
     for ri, row in enumerate(rows[:10]):
         blocks = [(ci, yb) for ci, v in enumerate(row)
@@ -324,7 +307,7 @@ def detect_header(rows, as_of):
                     pass
                 periods = _year_grouped_periods(blocks, months, as_of)
                 return {'mode': 'year-grouped', 'header_row': mr, 'label_col': lc,
-                        'section_col': max(0, lc - 1), 'periods': _dedup_periods(periods)}
+                        'section_col': max(0, lc - 1), 'periods': periods}
     # --- bare month-name axis (single year, inferred) ---
     for ri, row in enumerate(rows[:10]):
         months = [(ci, *month_year(v)) for ci, v in enumerate(row)
@@ -362,7 +345,7 @@ def detect_header(rows, as_of):
                 d = datetime.date(y, mn, 1)
                 periods[ci] = (y, mn, 'actual' if d <= as_of else 'forecast')
             return {'mode': 'month-name', 'header_row': ri, 'label_col': lc,
-                    'section_col': max(0, lc - 1), 'periods': _dedup_periods(periods), 'year_inferred': True}
+                    'section_col': max(0, lc - 1), 'periods': periods, 'year_inferred': True}
     return None
 
 def _year_grouped_periods(blocks, months, as_of):
@@ -691,6 +674,26 @@ def keyword_fallback(lt, direction):
         return 'bf_recpt_loans', 'Receipts'
     return None, direction
 
+# Areas whose files append a REDUNDANT duplicate period block that maps to periods
+# already covered by an earlier column (EPSO repeats JAN-APR 2026 under a second
+# 'FORECAST 2026' header after JAN'26..DEC'26). For these, keep only the first column
+# per (year, month) so the duplicate doesn't sum (doubling opening/flows). Scoped by
+# area — most files legitimately carry two columns per period (native + USD, actual +
+# forecast) that must NOT be deduped, so this is opt-in per area.
+DEDUP_PERIOD_AREAS = {'EPSO'}
+
+
+def _dedup_periods(periods):
+    seen, out = set(), {}
+    for ci in sorted(periods):
+        ym = (periods[ci][0], periods[ci][1])
+        if ym in seen:
+            continue
+        seen.add(ym)
+        out[ci] = periods[ci]
+    return out
+
+
 # ---- per-sheet parse --------------------------------------------------------
 def parse_sheet(ws, area, sheet_name, resolver, as_of, verbose=False, wg_sign_flip=True):
     rows = list(ws.iter_rows(min_row=1, max_row=80, max_col=120, values_only=True))
@@ -699,6 +702,8 @@ def parse_sheet(ws, area, sheet_name, resolver, as_of, verbose=False, wg_sign_fl
         return None, {'sheet': sheet_name, 'reason': 'no period axis'}
     lc, sc = hdr['label_col'], hdr['section_col']
     periods = hdr['periods']
+    if area in DEDUP_PERIOD_AREAS:
+        periods = _dedup_periods(periods)
     project_code, _cur = strip_currency(sheet_name)
     project_code = project_code or sheet_name.strip()
 
