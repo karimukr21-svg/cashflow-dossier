@@ -26,6 +26,7 @@ import type { Scope } from './Dossier'
  * pass). Coverage of matched vs unmapped areas is its own pass. */
 
 type Level = 'group' | 'area' | 'sections' | 'project' | 'coverage' | 'definitions'
+const LEVELS: Level[] = ['group', 'area', 'sections', 'project', 'coverage', 'definitions']
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 const fMm = (v: number | null | undefined) => v == null ? '—' : fmt(v / 1e6, { decimals: 1 })
@@ -42,7 +43,11 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
   const startLabel = `Dec ${year - 1}`            // payables start — a real Dec month-end snapshot
   const cashStartLabel = `Jan ${year}`            // cash opening — the Jan-1 / start-of-year position
 
-  const [level, setLevel] = useState<Level>('group')
+  // Remember the last-viewed tab across reloads (localStorage, survives reopen).
+  const [level, setLevel] = useState<Level>(() => {
+    try { const s = localStorage.getItem('crp-level') as Level | null; return LEVELS.includes(s as Level) ? (s as Level) : 'group' } catch { return 'group' }
+  })
+  useEffect(() => { try { localStorage.setItem('crp-level', level) } catch { /* best-effort */ } }, [level])
   const [excluded, setExcluded] = useState<Set<string>>(new Set())   // areas unticked in the top-bar filter
   const [projArea, setProjArea] = useState<string>('')     // selected area for the Project grain
 

@@ -1591,9 +1591,12 @@ body, html, #root {
 
 .crp-grid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 14px; align-items: start; }
 @media (max-width: 900px) { .crp-grid { grid-template-columns: 1fr; } }
-.crp-seccols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; align-items: start; }
+/* Sections page — equal-height columns (align-items: stretch), cards distributed
+ * to fill so the three columns line up like the Group page. */
+.crp-seccols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; align-items: stretch; }
+.crp-seccols .crp-seccol { justify-content: space-between; }
 .crp-seccol { display: flex; flex-direction: column; gap: 14px; }
-@media (max-width: 900px) { .crp-seccols { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .crp-seccols { grid-template-columns: 1fr; align-items: start; } }
 .crp-groupcols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; align-items: start; }
 @media (max-width: 900px) { .crp-groupcols { grid-template-columns: 1fr; } }
 /* Operations card — roomier line spacing so column 1 stretches toward column 2 */
