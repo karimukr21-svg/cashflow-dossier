@@ -86,6 +86,15 @@ export default function AllAreas({ scope, onSelectArea }: { scope: Scope; onSele
     return { usdActuals: conv(filteredActuals), usdForecasts: conv(filteredForecasts), excluded }
   }, [filteredActuals, filteredForecasts, fxMap])
 
+  /* Only render areas that actually carry data. The area registry
+   * (public.cashflow_sheets) contains stale/placeholder cf_countries (Greece,
+   * Other A&C, Others…) with no pushed cash flow; without this filter they show
+   * as empty 0 rows in the pivot. */
+  const areasWithData = useMemo(() => {
+    const present = new Set([...filteredActuals, ...filteredForecasts].map(r => r.area))
+    return scope.selectedAreas.filter(a => a.cf_areas.some(cf => present.has(cf)))
+  }, [filteredActuals, filteredForecasts, scope.selectedAreas])
+
   if (loading) return <div className="placeholder-box">Loading…</div>
 
   const totalAreas = scope.areas.length
@@ -117,7 +126,7 @@ export default function AllAreas({ scope, onSelectArea }: { scope: Scope; onSele
           forecasts={usdForecasts}
           lines={scope.lines}
           scope={scope}
-          areas={scope.selectedAreas}
+          areas={areasWithData}
           onSelectArea={onSelectArea}
         />
       </DispFmtCtx.Provider>
