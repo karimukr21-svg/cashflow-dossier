@@ -218,11 +218,13 @@ SHEET_SHARE = {
         'Alamein': 0.5, 'Marassi': 0.5, 'Marassi MEP': 0.5, 'Madinaty CP08': 0.5,
         'Madinaty CP07': 0.5, 'Madinaty CP05': 0.5, 'Arkan': 0.5, 'Arkan Towers': 0.5,
         'Madinaty CP05 MEP': 0.5, 'FS Luxor MEP': 0.5, 'CCC EGP on': 0.6, 'CCC Egypt 25': 0.6,
-        # Legacy JV
-        'Helwan': 0.5, 'Cairo West': 0.5, 'Mivida': 0.5, 'Zafarana': 0.5, 'Nile Plaza': 0.5,
-        'Madinaty CP03': 0.5, 'CFC': 0.5, 'CFC MEP': 0.5, 'CCC  Egypt leg': 0.6,
-        # Offshore (CCIC/CCCE/CCC RE at 100%; CCCEgypt area at 0.6)
-        'CCCEgypt area': 0.6,
+        # Legacy JV (Zafarana is 100%, not a JV share — per Karim)
+        'Helwan': 0.5, 'Cairo West': 0.5, 'Mivida': 0.5, 'Nile Plaza': 0.5,
+        'Madinaty CP03': 0.5, 'CFC': 0.5, 'CFC MEP': 0.5,
+        # Time-varying shares (list of (year, month, share) breakpoints, applied from that
+        # month onward): CCC Egypt leg + CCCEgypt area step 45% (Jan-2025) -> 60% (Feb-2025+).
+        'CCC  Egypt leg': [(2025, 1, 0.45), (2025, 2, 0.60)],
+        'CCCEgypt area': [(2025, 1, 0.45), (2025, 2, 0.60)],
     },
 }
 
@@ -289,6 +291,21 @@ SHEET_INCLUDE_OVERRIDE = {
         'Marassi MEP', 'Marassi', 'City Gate Infra', 'CCC Egypt 25', 'City Gate MEP', 'Helwan',
     },
 }
+
+def _resolve_share(spec, year, month):
+    """Resolve a SHEET_SHARE spec to a factor for (year, month). spec is either a flat
+    float, or a list of (year, month, share) breakpoints sorted ascending — the share of
+    the latest breakpoint whose (year, month) <= the row's applies (steps forward)."""
+    if isinstance(spec, (int, float)):
+        return spec
+    val = 1.0
+    for (y, m, s) in spec:
+        if (y, m) <= (year, month):
+            val = s
+        else:
+            break
+    return val
+
 
 # Per-file, per-sheet line-code DROP. Some project leaves carry a line the area's
 # CONSOLIDATED rollup does NOT consolidate; to match the file, drop just that line from
@@ -616,12 +633,14 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
         code = '_AREA' if (area_item and not jv) else raw_code
         # per-sheet ownership share (see SHEET_SHARE): leaf carries 100%, scale to CCC's
         # share so Σ-projects ties the share-based CONSOLIDATED. Applied before reconcile.
-        share = SHEET_SHARE.get(fn, {}).get(n, 1.0)
+        # A share may be a flat float or a period-stepped list of (year, month, share).
+        share_spec = SHEET_SHARE.get(fn, {}).get(n, 1.0)
         drop_lines = DROP_SHEET_LINES.get(fn, {}).get(n, set())
         for r in rows:
             if r['line_code'] in drop_lines:
                 continue   # line the CONSOLIDATED rollup doesn't consolidate (see DROP_SHEET_LINES)
             r = dict(r); r['project_code'] = code; r['sheet'] = n
+            share = _resolve_share(share_spec, r['year'], r['month'])
             if share != 1.0:
                 r['value'] = round(r['value'] * share, 4)
             dest.append(r)
