@@ -1531,6 +1531,19 @@ body, html, #root {
 .crp-print { margin-left: auto; border: 1px solid var(--border); background: var(--surface, #fff); color: var(--ink); font-size: 12.5px; font-weight: 600; padding: 6px 16px; border-radius: 7px; cursor: pointer; }
 .crp-print:hover { border-color: var(--crimson); color: var(--crimson); }
 
+/* lede + KPI band + chart plumbing */
+.crp-lede { font-size: 15px; line-height: 1.55; color: #334155; max-width: 1180px; }
+.crp-lede b { color: var(--ink); font-weight: 700; }
+.crp-lede b.neg { color: var(--crimson); } .crp-lede b.pos { color: var(--good); }
+.crp-kpis { display: flex; gap: 12px; }
+.crp-kpi { flex: 1; border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; border-left: 3px solid var(--crimson); background: var(--surface, #fff); }
+.crp-kpi-l { font-size: 8.5px; letter-spacing: .4px; text-transform: uppercase; color: var(--mute); font-weight: 700; }
+.crp-kpi-v { font-size: 25px; font-weight: 800; margin-top: 2px; color: var(--ink); }
+.crp-kpi-v.neg { color: var(--crimson); } .crp-kpi-v.pos { color: var(--good); }
+.crp-kpi-s { font-size: 9.5px; color: var(--mute); margin-top: 1px; }
+.crp-rcol { display: flex; flex-direction: column; gap: 14px; }
+.crp-svg { margin-top: 4px; max-width: 760px; }
+
 .crp-page { display: flex; flex-direction: column; gap: 14px; }
 .crp-head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2.5px solid var(--crimson); padding-bottom: 8px; }
 .crp-head h1 { font-size: 20px; font-weight: 800; color: var(--ink); }

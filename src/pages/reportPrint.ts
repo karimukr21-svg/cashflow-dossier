@@ -1,11 +1,10 @@
 import type { StmtSection } from './reportModel'
+import { waterfallSvg, areaBarsSvg } from './reportCharts'
 
 /* Print mirror of the Cash Flow Report (CashReport.tsx), A4 LANDSCAPE.
  * Group → a KPI band + the grouped statement + a cash-movement waterfall and the
  * trade-payables position. Area → a KPI band + the per-area matrix + a net-cash-
  * from-operations bar. Opens in a new window and auto-prints. USD millions. */
-
-const INK = '#15233b', MUTE = '#64748b', CRIM = '#E10020', GOOD = '#057a55', GRID = '#e2e8f0'
 
 const fM = (v: number | null | undefined): string => {
   if (v == null || isNaN(v)) return '—'
@@ -22,12 +21,6 @@ const fD = (v: number | null | undefined): string => {
   return r < 0 ? `(${s})` : `+${s}`
 }
 const cl = (v: number | null | undefined): string => (v == null || Math.abs(v) < 50000) ? '' : (v < 0 ? 'neg' : 'pos')
-const mm = (v: number) => v / 1e6
-const lab = (v: number) => {                     // compact millions label for charts
-  const r = Math.round(mm(v) * 10) / 10
-  const s = Math.abs(r).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
-  return r < 0 ? `(${s})` : s
-}
 
 type Opts = {
   level: 'group' | 'area'
@@ -43,70 +36,6 @@ type Opts = {
 function kpis(cards: { label: string; value: string; cls?: string; sub?: string }[]): string {
   return `<div class="kpis">${cards.map(c =>
     `<div class="kpi"><div class="kpi-l">${c.label}</div><div class="kpi-v ${c.cls || ''}">${c.value}</div>${c.sub ? `<div class="kpi-s">${c.sub}</div>` : ''}</div>`).join('')}</div>`
-}
-
-/* ── Waterfall: how the section nets build to net cash movement ──────────── */
-function waterfall(items: { label: string; value: number }[], total: number): string {
-  const W = 560, H = 288, padL = 6, padR = 6, top = 26, bottom = 60
-  const plotW = W - padL - padR, plotH = H - top - bottom
-  const bars = [...items.map(it => ({ label: it.label, value: it.value, total: false })), { label: 'Net movement', value: total, total: true }]
-  let cum = 0
-  const geo = bars.map(b => { const start = b.total ? 0 : cum; const end = b.total ? total : (cum += b.value); return { ...b, start, end } })
-  const ys = [0, ...geo.flatMap(g => [g.start, g.end])]
-  let ymin = Math.min(...ys), ymax = Math.max(...ys)
-  const pad = (ymax - ymin) * 0.14 || 1; ymin -= pad; ymax += pad
-  const yM = (v: number) => top + (mm(ymax) - mm(v)) / (mm(ymax) - mm(ymin) || 1) * plotH
-  const n = bars.length, slot = plotW / n, bw = Math.min(46, slot * 0.62)
-  const cx = (i: number) => padL + (i + 0.5) * slot
-  const zero = yM(0)
-  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">`
-  s += `<line x1="${padL}" y1="${zero.toFixed(1)}" x2="${W - padR}" y2="${zero.toFixed(1)}" stroke="${INK}" stroke-width="1"/>`
-  geo.forEach((g, i) => {
-    const yA = yM(g.start), yB = yM(g.end)
-    const top_ = Math.min(yA, yB), h = Math.max(2, Math.abs(yA - yB))
-    const up = g.end >= g.start
-    const fill = g.total ? INK : (up ? GOOD : CRIM)
-    s += `<rect x="${(cx(i) - bw / 2).toFixed(1)}" y="${top_.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${fill}" opacity="${g.total ? 1 : 0.82}" rx="1.5"/>`
-    // value above/below bar
-    const vy = up ? top_ - 4 : top_ + h + 11
-    s += `<text x="${cx(i).toFixed(1)}" y="${vy.toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="${fill}">${lab(g.value)}</text>`
-    // connector to next
-    if (i < geo.length - 1 && !geo[i + 1].total) {
-      s += `<line x1="${(cx(i) + bw / 2).toFixed(1)}" y1="${yB.toFixed(1)}" x2="${(cx(i + 1) - bw / 2).toFixed(1)}" y2="${yB.toFixed(1)}" stroke="${MUTE}" stroke-width="0.8" stroke-dasharray="3,2"/>`
-    }
-    // label under
-    const words = g.label.split(' ')
-    const l1 = words.length > 1 && g.label.length > 9 ? words.slice(0, Math.ceil(words.length / 2)).join(' ') : g.label
-    const l2 = words.length > 1 && g.label.length > 9 ? words.slice(Math.ceil(words.length / 2)).join(' ') : ''
-    s += `<text x="${cx(i).toFixed(1)}" y="${(H - bottom + 16).toFixed(1)}" text-anchor="middle" font-size="8.5" font-weight="${g.total ? 700 : 500}" fill="${g.total ? INK : MUTE}">${l1}</text>`
-    if (l2) s += `<text x="${cx(i).toFixed(1)}" y="${(H - bottom + 26).toFixed(1)}" text-anchor="middle" font-size="8.5" font-weight="${g.total ? 700 : 500}" fill="${g.total ? INK : MUTE}">${l2}</text>`
-  })
-  s += `</svg>`
-  return s
-}
-
-/* ── Horizontal diverging bars — net cash from operations by area ────────── */
-function areaBars(rows: { label: string; value: number }[]): string {
-  const data = rows.filter(r => Math.abs(r.value) >= 50000).sort((a, b) => b.value - a.value)
-  if (data.length === 0) return ''
-  const rowH = 20, padT = 10, padB = 6, W = 560, labW = 96, valW = 52
-  const H = padT + padB + data.length * rowH
-  const plotL = labW, plotR = W - valW, plotW = plotR - plotL
-  const max = Math.max(1, ...data.map(r => Math.abs(r.value)))
-  const cxZero = plotL + plotW / 2      // symmetric diverging scale around 0
-  const scale = (plotW / 2) / max
-  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">`
-  s += `<line x1="${cxZero}" y1="${padT}" x2="${cxZero}" y2="${H - padB}" stroke="${GRID}" stroke-width="1"/>`
-  data.forEach((r, i) => {
-    const y = padT + i * rowH, w = Math.abs(r.value) * scale
-    const up = r.value >= 0
-    const x = up ? cxZero : cxZero - w
-    s += `<text x="${plotL - 6}" y="${(y + rowH / 2 + 3).toFixed(1)}" text-anchor="end" font-size="9.5" fill="${INK}">${r.label.length > 15 ? r.label.slice(0, 14) + '…' : r.label}</text>`
-    s += `<rect x="${x.toFixed(1)}" y="${(y + 3).toFixed(1)}" width="${Math.max(1, w).toFixed(1)}" height="${rowH - 6}" fill="${up ? GOOD : CRIM}" opacity="0.85" rx="1.5"/>`
-    s += `<text x="${(W - valW + 4)}" y="${(y + rowH / 2 + 3).toFixed(1)}" font-size="9.5" font-weight="700" fill="${up ? GOOD : CRIM}">${lab(r.value)}</text>`
-  })
-  s += `</svg>`
-  return s
 }
 
 function sectionRows(sec: StmtSection): string {
@@ -147,7 +76,7 @@ export function buildReportHtml(o: Opts): string {
     right = `
       <div class="chartcard">
         <div class="ch-h">How the cash moved <span>· section nets → net movement</span></div>
-        ${waterfall(waterItems, o.statement.netMovement)}
+        ${waterfallSvg(waterItems, o.statement.netMovement)}
       </div>
       <div class="chartcard">
         <div class="ch-h">Trade payables · position</div>
@@ -186,7 +115,7 @@ export function buildReportHtml(o: Opts): string {
       </tbody></table>`
     right = `<div class="chartcard">
       <div class="ch-h">Net cash from operations <span>· by area</span></div>
-      ${areaBars(o.areaRows.map(a => ({ label: a.label, value: a.netOps })))}
+      ${areaBarsSvg(o.areaRows.map(a => ({ label: a.label, value: a.netOps })))}
       <div class="note">Green = cash generated, crimson = cash consumed (USD, YTD).</div>
     </div>`
   }

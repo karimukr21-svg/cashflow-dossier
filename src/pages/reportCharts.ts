@@ -1,0 +1,95 @@
+/* Pure-SVG chart builders for the Cash Flow Report, shared by the screen
+ * (CashReport.tsx via dangerouslySetInnerHTML) and print (reportPrint.ts).
+ * Values come in RAW (full USD); plotted + labelled in millions. */
+
+const INK = '#15233b', MUTE = '#64748b', CRIM = '#E10020', GOOD = '#057a55', GRID = '#e2e8f0'
+const mm = (v: number) => v / 1e6
+const lab = (v: number): string => {
+  const r = Math.round(mm(v) * 10) / 10
+  const s = Math.abs(r).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+  return r < 0 ? `(${s})` : s
+}
+
+/* Waterfall: how the section nets build to net cash movement. */
+export function waterfallSvg(items: { label: string; value: number }[], total: number): string {
+  const W = 560, H = 300, padL = 6, padR = 6, top = 30, bottom = 62
+  const plotW = W - padL - padR, plotH = H - top - bottom
+  const bars = [...items.map(it => ({ label: it.label, value: it.value, total: false })), { label: 'Net movement', value: total, total: true }]
+  let cum = 0
+  const geo = bars.map(b => { const start = b.total ? 0 : cum; const end = b.total ? total : (cum += b.value); return { ...b, start, end } })
+  const ys = [0, ...geo.flatMap(g => [g.start, g.end])]
+  let ymin = Math.min(...ys), ymax = Math.max(...ys)
+  const pad = (ymax - ymin) * 0.16 || 1; ymin -= pad; ymax += pad
+  const yM = (v: number) => top + (mm(ymax) - mm(v)) / (mm(ymax) - mm(ymin) || 1) * plotH
+  const n = bars.length, slot = plotW / n, bw = Math.min(48, slot * 0.6)
+  const cx = (i: number) => padL + (i + 0.5) * slot
+  const zero = yM(0)
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">`
+  s += `<line x1="${padL}" y1="${zero.toFixed(1)}" x2="${W - padR}" y2="${zero.toFixed(1)}" stroke="${INK}" stroke-width="1"/>`
+  geo.forEach((g, i) => {
+    const yA = yM(g.start), yB = yM(g.end)
+    const t = Math.min(yA, yB), h = Math.max(2, Math.abs(yA - yB))
+    const up = g.end >= g.start
+    const fill = g.total ? INK : (up ? GOOD : CRIM)
+    s += `<rect x="${(cx(i) - bw / 2).toFixed(1)}" y="${t.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${fill}" opacity="${g.total ? 1 : 0.85}" rx="2"/>`
+    const vy = up ? t - 5 : t + h + 12
+    s += `<text x="${cx(i).toFixed(1)}" y="${vy.toFixed(1)}" text-anchor="middle" font-size="10.5" font-weight="700" fill="${fill}">${lab(g.value)}</text>`
+    if (i < geo.length - 1 && !geo[i + 1].total)
+      s += `<line x1="${(cx(i) + bw / 2).toFixed(1)}" y1="${yB.toFixed(1)}" x2="${(cx(i + 1) - bw / 2).toFixed(1)}" y2="${yB.toFixed(1)}" stroke="${MUTE}" stroke-width="0.8" stroke-dasharray="3,2"/>`
+    const words = g.label.split(' ')
+    const split = words.length > 1 && g.label.length > 9
+    const l1 = split ? words.slice(0, Math.ceil(words.length / 2)).join(' ') : g.label
+    const l2 = split ? words.slice(Math.ceil(words.length / 2)).join(' ') : ''
+    s += `<text x="${cx(i).toFixed(1)}" y="${(H - bottom + 18).toFixed(1)}" text-anchor="middle" font-size="9" font-weight="${g.total ? 700 : 500}" fill="${g.total ? INK : MUTE}">${l1}</text>`
+    if (l2) s += `<text x="${cx(i).toFixed(1)}" y="${(H - bottom + 29).toFixed(1)}" text-anchor="middle" font-size="9" font-weight="${g.total ? 700 : 500}" fill="${g.total ? INK : MUTE}">${l2}</text>`
+  })
+  s += `</svg>`
+  return s
+}
+
+/* Horizontal diverging bars — a value per area (e.g. net cash from operations). */
+export function areaBarsSvg(rows: { label: string; value: number }[]): string {
+  const data = rows.filter(r => Math.abs(r.value) >= 50000).sort((a, b) => b.value - a.value)
+  if (data.length === 0) return `<svg viewBox="0 0 560 40" width="100%"><text x="280" y="24" text-anchor="middle" font-size="12" fill="#94a3b8" font-family="sans-serif">No data</text></svg>`
+  const rowH = 22, padT = 8, padB = 6, W = 560, labW = 104, valW = 56
+  const H = padT + padB + data.length * rowH
+  const plotL = labW, plotR = W - valW, plotW = plotR - plotL
+  const max = Math.max(1, ...data.map(r => Math.abs(r.value)))
+  const cxZero = plotL + plotW / 2
+  const scale = (plotW / 2) / max
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">`
+  s += `<line x1="${cxZero}" y1="${padT}" x2="${cxZero}" y2="${H - padB}" stroke="${GRID}" stroke-width="1"/>`
+  data.forEach((r, i) => {
+    const y = padT + i * rowH, w = Math.abs(r.value) * scale, up = r.value >= 0
+    const x = up ? cxZero : cxZero - w
+    s += `<text x="${plotL - 6}" y="${(y + rowH / 2 + 3.5).toFixed(1)}" text-anchor="end" font-size="10" fill="${INK}">${r.label.length > 16 ? r.label.slice(0, 15) + '…' : r.label}</text>`
+    s += `<rect x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" width="${Math.max(1.5, w).toFixed(1)}" height="${rowH - 8}" fill="${up ? GOOD : CRIM}" opacity="0.88" rx="2"/>`
+    s += `<text x="${(W - valW + 6)}" y="${(y + rowH / 2 + 3.5).toFixed(1)}" font-size="10" font-weight="700" fill="${up ? GOOD : CRIM}">${lab(r.value)}</text>`
+  })
+  s += `</svg>`
+  return s
+}
+
+/* Monthly net-cash bars — the project's cash movement per elapsed month. */
+export function netTrendSvg(labels: string[], values: number[]): string {
+  const W = 560, H = 210, padL = 8, padR = 8, top = 26, bottom = 34
+  const plotW = W - padL - padR, plotH = H - top - bottom
+  const vals = values.map(mm)
+  let ymin = Math.min(0, ...vals), ymax = Math.max(0, ...vals)
+  const pad = (ymax - ymin) * 0.16 || 1; ymin -= pad; ymax += pad
+  const yM = (v: number) => top + (ymax - v) / (ymax - ymin || 1) * plotH
+  const n = values.length || 1, slot = plotW / n, bw = Math.min(54, slot * 0.5)
+  const cx = (i: number) => padL + (i + 0.5) * slot
+  const zero = yM(0)
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">`
+  s += `<line x1="${padL}" y1="${zero.toFixed(1)}" x2="${W - padR}" y2="${zero.toFixed(1)}" stroke="${INK}" stroke-width="1"/>`
+  values.forEach((v, i) => {
+    const y0 = yM(0), y1 = yM(mm(v)), up = v >= 0
+    const t = Math.min(y0, y1), h = Math.max(1.5, Math.abs(y0 - y1))
+    s += `<rect x="${(cx(i) - bw / 2).toFixed(1)}" y="${t.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${up ? GOOD : CRIM}" opacity="0.85" rx="2"/>`
+    s += `<text x="${cx(i).toFixed(1)}" y="${(up ? t - 5 : t + h + 12).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="${up ? GOOD : CRIM}">${lab(v)}</text>`
+    s += `<text x="${cx(i).toFixed(1)}" y="${(H - bottom + 18).toFixed(1)}" text-anchor="middle" font-size="10" fill="${MUTE}">${labels[i] ?? ''}</text>`
+  })
+  s += `</svg>`
+  return s
+}

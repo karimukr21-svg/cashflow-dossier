@@ -7,6 +7,7 @@ import {
 import { fmt, fmtDelta } from '@/lib/format'
 import { buildModel, buildStatement, buildStatementMatrix, type AreaAgg, type StmtSection, type MatrixSection } from './reportModel'
 import { buildReportHtml } from './reportPrint'
+import { waterfallSvg, areaBarsSvg, netTrendSvg } from './reportCharts'
 import type { Scope } from './Dossier'
 
 /* ── The Cash Flow Report ───────────────────────────────────────────────────
@@ -154,6 +155,22 @@ function aggregateScope(model: Map<string, AreaAgg>, matched: AreaAgg[], groupAr
   return { scopeLabel, lineUsd, payStart, payEnd, hasPay }
 }
 
+/* KPI tile band — the headline numbers, shared across the three pages. */
+function KpiBand({ cards }: { cards: { label: string; value: string; cls?: string; sub?: string }[] }) {
+  return (
+    <div className="crp-kpis">
+      {cards.map((c, i) => (
+        <div className="crp-kpi" key={i}>
+          <div className="crp-kpi-l">{c.label}</div>
+          <div className={`crp-kpi-v ${c.cls || ''}`}>{c.value}</div>
+          {c.sub ? <div className="crp-kpi-s">{c.sub}</div> : null}
+        </div>
+      ))}
+    </div>
+  )
+}
+const Svg = ({ html }: { html: string }) => <div className="crp-svg" dangerouslySetInnerHTML={{ __html: html }} />
+
 /* One statement section: receipts grouped, then payments grouped, then net.
  * Per-nature subtotals show only when a nature has more than one bucket. */
 function StmtSectionRows({ sec }: { sec: StmtSection }) {
@@ -177,6 +194,8 @@ function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLab
   const { scopeLabel, lineUsd, payStart, payEnd, hasPay } = aggregateScope(model, matched, groupArea)
   const payDelta = hasPay ? payEnd - payStart : null
   const { sections, netMovement } = buildStatement(lineUsd, scope.lines)
+  const secNet = (label: string) => sections.find(s => s.label === label)?.net ?? 0
+  const opsNet = secNet('Operations'), finNet = secNet('Bank Financing')
 
   return (
     <div className="crp-page">
@@ -187,6 +206,18 @@ function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLab
         </div>
         <div className="crp-brand"><span className="crp-glyph">C</span> CCC · Treasury</div>
       </div>
+
+      <div className="crp-lede">
+        From January to {asOfLabel}, {scopeLabel} <b className={cls(netMovement)}>{netMovement < 0 ? 'used' : 'generated'} {fMm(Math.abs(netMovement))}m</b> of cash.
+        {hasPay ? <> Trade payables moved from <b>{fMm(Math.abs(payStart))}m</b> to <b>{fMm(Math.abs(payEnd))}m</b> — <b className={cls(payDelta)}>{(payDelta ?? 0) >= 0 ? 'paid down' : 'up'} {fMm(Math.abs(payDelta ?? 0))}m</b>.</> : null}
+      </div>
+
+      <KpiBand cards={[
+        { label: 'Net from operations', value: fMm(opsNet), cls: cls(opsNet) },
+        { label: 'Net financing', value: fMm(finNet), cls: cls(finNet) },
+        { label: 'Net cash movement', value: fMm(netMovement), cls: cls(netMovement) },
+        { label: `Trade payables · ${asOfLabel}`, value: fMm(payEnd), cls: cls(payEnd), sub: hasPay ? `${fMd(payDelta)} since ${startLabel}` : 'not mapped' },
+      ]} />
 
       <div className="crp-grid">
         {/* Cash flow statement */}
@@ -201,22 +232,30 @@ function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLab
           </table>
         </div>
 
-        {/* Separated payables position */}
-        <div className="crp-card crp-card--pos">
-          <div className="crp-card-h">Trade payables <span>· position</span></div>
-          {hasPay ? <>
-            <table className="crp-table crp-table--pos">
-              <thead><tr><th>Liabilities</th><th className="r">{startLabel}</th><th className="r">{asOfLabel}</th><th className="r">Δ</th></tr></thead>
-              <tbody>
-                <tr className="crp-total"><td>Trade payables</td>
-                  <td className={`r ${cls(payStart)}`}>{fMm(payStart)}</td>
-                  <td className={`r ${cls(payEnd)}`}>{fMm(payEnd)}</td>
-                  <td className={`r ${cls(payDelta)}`}>{fMd(payDelta)}</td></tr>
-              </tbody>
-            </table>
-            <PosBar start={payStart} end={payEnd} startLabel={startLabel} endLabel={asOfLabel} />
-            <div className="crp-note">Suppliers, subcontractors &amp; taxes — the editable <b>trade_payables</b> group (Midas TB, USD). Δ positive = paid down. Recent months are still posting, so the latest may understate.</div>
-          </> : <div className="crp-note crp-note--empty">No matched payables for this scope.</div>}
+        <div className="crp-rcol">
+          {/* How the cash moved — waterfall */}
+          <div className="crp-card">
+            <div className="crp-card-h">How the cash moved <span>· sections → net movement</span></div>
+            <Svg html={waterfallSvg(sections.map(s => ({ label: s.label, value: s.net })), netMovement)} />
+          </div>
+
+          {/* Trade payables — then vs now */}
+          <div className="crp-card crp-card--pos">
+            <div className="crp-card-h">Trade payables <span>· then vs now</span></div>
+            {hasPay ? <>
+              <table className="crp-table crp-table--pos">
+                <thead><tr><th>Liabilities</th><th className="r">{startLabel}</th><th className="r">{asOfLabel}</th><th className="r">Δ</th></tr></thead>
+                <tbody>
+                  <tr className="crp-total"><td>Trade payables</td>
+                    <td className={`r ${cls(payStart)}`}>{fMm(payStart)}</td>
+                    <td className={`r ${cls(payEnd)}`}>{fMm(payEnd)}</td>
+                    <td className={`r ${cls(payDelta)}`}>{fMd(payDelta)}</td></tr>
+                </tbody>
+              </table>
+              <PosBar start={payStart} end={payEnd} startLabel={startLabel} endLabel={asOfLabel} />
+              <div className="crp-note">Suppliers, subcontractors &amp; taxes — the editable <b>trade_payables</b> group (Midas TB, USD). Δ positive = paid down. Recent months are still posting, so the latest may understate.</div>
+            </> : <div className="crp-note crp-note--empty">No matched payables for this scope.</div>}
+          </div>
         </div>
       </div>
     </div>
@@ -244,6 +283,7 @@ function AreaView({ matched, year, asOfLabel, startLabel, onOpenProjects }: {
     netOps: t.netOps + a.netOps, payStart: t.payStart + (a.payStart ?? 0), payEnd: t.payEnd + (a.payEnd ?? 0),
   }), { netOps: 0, payStart: 0, payEnd: 0 })
   const totDelta = tot.payEnd - tot.payStart
+  const top = [...matched].sort((a, b) => b.netOps - a.netOps)[0]
 
   return (
     <div className="crp-page">
@@ -255,7 +295,19 @@ function AreaView({ matched, year, asOfLabel, startLabel, onOpenProjects }: {
         <div className="crp-brand"><span className="crp-glyph">C</span> CCC · Treasury</div>
       </div>
 
-      <div className="crp-card">
+      <div className="crp-lede">
+        From January to {asOfLabel}, the matched areas <b className={cls(tot.netOps)}>{tot.netOps < 0 ? 'used' : 'generated'} {fMm(Math.abs(tot.netOps))}m</b> of cash from operations, and trade payables moved from <b>{fMm(Math.abs(tot.payStart))}m</b> to <b>{fMm(Math.abs(tot.payEnd))}m</b> — <b className={cls(totDelta)}>{totDelta >= 0 ? 'paid down' : 'up'} {fMm(Math.abs(totDelta))}m</b>.
+      </div>
+
+      <KpiBand cards={[
+        { label: 'Group net from ops', value: fMm(tot.netOps), cls: cls(tot.netOps) },
+        { label: `Trade payables · ${asOfLabel}`, value: fMm(tot.payEnd), cls: cls(tot.payEnd), sub: `${fMd(totDelta)} since ${startLabel}` },
+        { label: 'Matched areas', value: String(matched.length) },
+        { label: 'Top cash generator', value: top ? top.label : '—', sub: top ? `${fMm(top.netOps)}m` : '' },
+      ]} />
+
+      <div className="crp-grid">
+        <div className="crp-card">
         <table className="crp-table crp-table--area">
           <thead><tr>
             <th>Area</th>
@@ -283,7 +335,14 @@ function AreaView({ matched, year, asOfLabel, startLabel, onOpenProjects }: {
             </tr>
           </tbody>
         </table>
-        <div className="crp-note">Net cash from operations (receipts − payments, USD-converted). Payables = trade_payables (Midas TB). Δ positive = paid down. Click an area to drill into its projects.</div>
+          <div className="crp-note">Net cash from operations (receipts − payments, USD-converted). Payables = trade_payables (Midas TB). Δ positive = paid down. Click an area to drill into its projects.</div>
+        </div>
+
+        <div className="crp-card">
+          <div className="crp-card-h">Net cash from operations <span>· by area</span></div>
+          <Svg html={areaBarsSvg(matched.map(a => ({ label: a.label, value: a.netOps })))} />
+          <div className="crp-note">Green = cash generated, crimson = cash consumed (USD, YTD). Click a row on the left to drill into an area's projects.</div>
+        </div>
       </div>
     </div>
   )
@@ -332,6 +391,8 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
   }, [cells, sel, fxMap, scope.lines, months])
 
   const areaLabel = areaOptions.find(a => a.areaId === areaId)?.label || areaId
+  const secNet = (label: string) => matrix.sections.find(s => s.label === label)?.netTot ?? 0
+  const showBody = !loading && !!sel && fxOk && matrix.sections.length > 0
 
   return (
     <div className="crp-page">
@@ -352,6 +413,18 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
           {projects.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
       </div>
+
+      {showBody ? <>
+        <KpiBand cards={[
+          { label: 'Net cash movement · YTD', value: fMm(matrix.netTotal), cls: cls(matrix.netTotal) },
+          { label: 'Net from operations', value: fMm(secNet('Operations')), cls: cls(secNet('Operations')) },
+          { label: 'Net financing', value: fMm(secNet('Bank Financing')), cls: cls(secNet('Bank Financing')) },
+        ]} />
+        <div className="crp-card">
+          <div className="crp-card-h">Net cash movement <span>· by month</span></div>
+          <Svg html={netTrendSvg(months.map(m => MONTHS[m - 1]), matrix.netMovement)} />
+        </div>
+      </> : null}
 
       <div className="crp-card">
         {loading ? <div className="crp-note crp-note--empty">Loading…</div>
