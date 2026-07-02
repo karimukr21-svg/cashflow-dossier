@@ -6,7 +6,7 @@ import {
 } from '@/lib/queries'
 import { fmt, fmtDelta } from '@/lib/format'
 import { buildModel, buildStatement, buildStatementMatrix, type AreaAgg, type StmtSection, type MatrixSection } from './reportModel'
-import { buildReportHtml } from './reportPrint'
+import { buildReportHtml, buildProjectsPrintHtml } from './reportPrint'
 import { waterfallSvg, areaBarsSvg, netTrendSvg } from './reportCharts'
 import type { Scope } from './Dossier'
 
@@ -356,96 +356,140 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
   const areaId = projArea || areaOptions[0]?.areaId || ''
   const [cells, setCells] = useState<(CfCell & { project_code: string | null; currency?: string })[]>([])
   const [project, setProject] = useState<string>('')
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (!areaId || !scope.primaryVersion) { setCells([]); return }
     let cancel = false; setLoading(true)
     fetchProjectCells({ version: scope.primaryVersion, cfArea: areaId, fromYear: year, fromMonth: 1, toYear: year, toMonth: asOfMonth })
-      .then(rows => { if (!cancel) { setCells(rows); setProject('') } })
+      .then(rows => { if (!cancel) { setCells(rows); setProject(''); setSelected(new Set()) } })
       .catch(() => { if (!cancel) setCells([]) })
       .finally(() => { if (!cancel) setLoading(false) })
     return () => { cancel = true }
   }, [areaId, scope.primaryVersion, year, asOfMonth])
 
-  const projects = useMemo(() => {
-    const s = new Set(cells.map(c => c.project_code).filter(Boolean) as string[])
-    return [...s].sort()
-  }, [cells])
-  const sel = project || projects[0] || ''
   const months = useMemo(() => Array.from({ length: asOfMonth }, (_, i) => i + 1), [asOfMonth])
+  const flowCodes = useMemo(() => new Set(scope.lines.filter(l => l.nature !== 'Balance').map(l => l.line_code)), [scope.lines])
+  const rateOf = (cur?: string) => (cur || 'USD') === 'USD' ? 1 : (fxMap.get(cur || '') ?? null)
 
-  // perCode: line_code → (month → USD) for the selected project
-  const { matrix, currency, fxOk } = useMemo(() => {
-    const perCode = new Map<string, Map<number, number>>()
-    let cur = 'USD'; let ok = true
+  // Rank the area's projects by |net cash movement| (flow lines, USD) → big movers on top.
+  const ranking = useMemo(() => {
+    const agg = new Map<string, { net: number; cur: string; fxOk: boolean }>()
     for (const c of cells) {
-      if (c.project_code !== sel) continue
-      cur = c.currency || cur
-      const rate = (c.currency || 'USD') === 'USD' ? 1 : (fxMap.get(c.currency || '') ?? null)
-      if (rate == null) { ok = false; continue }
+      const code = c.project_code; if (!code) continue
+      let a = agg.get(code); if (!a) { a = { net: 0, cur: 'USD', fxOk: true }; agg.set(code, a) }
+      if (c.currency && c.currency !== 'USD') a.cur = c.currency
+      if (!flowCodes.has(c.line_code)) continue
+      const r = rateOf(c.currency); if (r == null) { a.fxOk = false; continue }
+      a.net += c.value * r
+    }
+    return [...agg.entries()].map(([code, x]) => ({ code, net: x.net, cur: x.cur, fxOk: x.fxOk }))
+      .sort((p, q) => Math.abs(q.net) - Math.abs(p.net))
+  }, [cells, flowCodes, fxMap])
+
+  const maxAbs = Math.max(1, ...ranking.map(r => Math.abs(r.net)))
+  const bigCut = maxAbs * 0.12
+  const sel = project || ranking[0]?.code || ''
+
+  const matrixFor = (code: string) => {
+    const perCode = new Map<string, Map<number, number>>()
+    let cur = 'USD', ok = true
+    for (const c of cells) {
+      if (c.project_code !== code) continue
+      if (c.currency && c.currency !== 'USD') cur = c.currency
+      const r = rateOf(c.currency); if (r == null) { ok = false; continue }
       let m = perCode.get(c.line_code); if (!m) { m = new Map(); perCode.set(c.line_code, m) }
-      m.set(c.month, (m.get(c.month) ?? 0) + c.value * rate)
+      m.set(c.month, (m.get(c.month) ?? 0) + c.value * r)
     }
     return { matrix: buildStatementMatrix(perCode, scope.lines, months), currency: cur, fxOk: ok }
-  }, [cells, sel, fxMap, scope.lines, months])
-
+  }
+  const { matrix, currency, fxOk } = useMemo(() => matrixFor(sel), [cells, sel, fxMap, scope.lines, months])
   const areaLabel = areaOptions.find(a => a.areaId === areaId)?.label || areaId
   const secNet = (label: string) => matrix.sections.find(s => s.label === label)?.netTot ?? 0
   const showBody = !loading && !!sel && fxOk && matrix.sections.length > 0
+
+  const toggle = (code: string) => setSelected(prev => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n })
+  const printProjects = (codes: string[]) => {
+    const w = window.open('', '_blank'); if (!w) return
+    const list = codes.map(code => ({ code, ...matrixFor(code) }))
+      .filter(x => x.fxOk && x.matrix.sections.length > 0)
+      .map(x => ({ areaLabel, project: x.code, currency: x.currency, asOfLabel, months, matrix: x.matrix }))
+    if (list.length === 0) { w.close(); return }
+    w.document.write(buildProjectsPrintHtml(list)); w.document.close()
+  }
 
   return (
     <div className="crp-page">
       <div className="crp-head">
         <div>
-          <h1>Cash Flow Report — Project</h1>
-          <div className="crp-sub">{areaLabel}{sel ? ` · ${sel}` : ''} · monthly actuals Jan–{asOfLabel} · USD millions{currency !== 'USD' ? ` (converted from ${currency})` : ''}</div>
+          <h1>Cash Flow Report — Projects</h1>
+          <div className="crp-sub">{areaLabel} · monthly actuals Jan–{asOfLabel} · USD millions · {ranking.length} projects</div>
         </div>
         <div className="crp-brand"><span className="crp-glyph">C</span> CCC · Treasury</div>
       </div>
 
-      <div className="crp-projpick no-print">
+      <div className="crp-projtop no-print">
         <select className="crp-select" value={areaId} onChange={e => { setProjArea(e.target.value); setProject('') }}>
           {areaOptions.map(a => <option key={a.areaId} value={a.areaId}>{a.label}</option>)}
         </select>
-        <select className="crp-select" value={sel} onChange={e => setProject(e.target.value)} disabled={projects.length === 0}>
-          {projects.length === 0 && <option value="">No projects</option>}
-          {projects.map(p => <option key={p} value={p}>{p}</option>)}
-        </select>
+        <button className="crp-print" disabled={!showBody} onClick={() => printProjects([sel])}>Print this</button>
+        <button className="crp-print" disabled={selected.size === 0} onClick={() => printProjects([...selected])}>Print selected ({selected.size})</button>
       </div>
 
-      {showBody ? <>
-        <KpiBand cards={[
-          { label: 'Net cash movement · YTD', value: fMm(matrix.netTotal), cls: cls(matrix.netTotal) },
-          { label: 'Net from operations', value: fMm(secNet('Operations')), cls: cls(secNet('Operations')) },
-          { label: 'Net financing', value: fMm(secNet('Bank Financing')), cls: cls(secNet('Bank Financing')) },
-        ]} />
+      <div className="crp-grid crp-grid--proj">
+        {/* Ranked project list — big movers on top, tick to print */}
         <div className="crp-card">
-          <div className="crp-card-h">Net cash movement <span>· by month</span></div>
-          <Svg html={netTrendSvg(months.map(m => MONTHS[m - 1]), matrix.netMovement)} />
+          <div className="crp-card-h">Projects <span>· by cash movement</span></div>
+          <div className="crp-projlist">
+            {ranking.map(r => {
+              const big = Math.abs(r.net) >= bigCut
+              return (
+                <div key={r.code} className={`crp-projrow ${r.code === sel ? 'active' : ''}`}>
+                  <input type="checkbox" checked={selected.has(r.code)} onChange={() => toggle(r.code)} title="Select to print" />
+                  <button className="crp-projname" onClick={() => setProject(r.code)} title="View this project">
+                    {big ? <span className="crp-bigdot" /> : null}{r.code}
+                  </button>
+                  <div className="crp-projbar"><div className={`crp-projbar-fill ${r.net < 0 ? 'neg' : 'pos'}`} style={{ width: `${(Math.abs(r.net) / maxAbs) * 100}%` }} /></div>
+                  <div className={`crp-projval ${cls(r.net)}`}>{fMm(r.net)}</div>
+                </div>
+              )
+            })}
+            {ranking.length === 0 ? <div className="crp-note crp-note--empty">No project-grain cash flow for this area.</div> : null}
+          </div>
+          <div className="crp-note"><span className="crp-bigdot" /> Big movers (largest cash movement) — the ones worth printing. Tick projects, then “Print selected”. Bars USD, net of the elapsed months.</div>
         </div>
-      </> : null}
 
-      <div className="crp-card">
-        {loading ? <div className="crp-note crp-note--empty">Loading…</div>
-          : !sel ? <div className="crp-note crp-note--empty">No project-grain cash flow for this area.</div>
-          : !fxOk ? <div className="crp-note crp-note--empty">No FX rate for {currency} — cannot show this project in USD.</div>
-          : <table className="crp-table crp-table--matrix">
-              <thead><tr>
-                <th>Line item</th>
-                {months.map(m => <th key={m} className="r">{MONTHS[m - 1]}</th>)}
-                <th className="r crp-sep-l">YTD</th>
-              </tr></thead>
-              <tbody>
-                {matrix.sections.map(sec => <MatrixSectionRows key={sec.label} sec={sec} months={months} />)}
-                <tr className="crp-total">
-                  <td>Net cash movement</td>
-                  {months.map((_, i) => <td key={i} className={`r ${cls(matrix.netMovement[i])}`}>{fMm(matrix.netMovement[i])}</td>)}
-                  <td className={`r crp-sep-l ${cls(matrix.netTotal)}`}>{fMm(matrix.netTotal)}</td>
-                </tr>
-              </tbody>
-            </table>}
-        <div className="crp-note">Monthly actual cash flow for the selected project, USD-converted at the cycle FX. Grouped to the same line buckets as the Group view.</div>
+        {/* Selected project detail */}
+        <div className="crp-card">
+          {loading ? <div className="crp-note crp-note--empty">Loading…</div>
+            : !sel ? <div className="crp-note crp-note--empty">Pick a project on the left.</div>
+            : !fxOk ? <div className="crp-note crp-note--empty">No FX rate for {currency} — cannot show this project in USD.</div>
+            : <>
+                <div className="crp-card-h">{sel} <span>· {areaLabel} · USD millions{currency !== 'USD' ? ` (from ${currency})` : ''}</span></div>
+                <KpiBand cards={[
+                  { label: 'Net cash movement · YTD', value: fMm(matrix.netTotal), cls: cls(matrix.netTotal) },
+                  { label: 'Net from operations', value: fMm(secNet('Operations')), cls: cls(secNet('Operations')) },
+                  { label: 'Net financing', value: fMm(secNet('Bank Financing')), cls: cls(secNet('Bank Financing')) },
+                ]} />
+                <div className="crp-svg" style={{ margin: '10px 0' }}><Svg html={netTrendSvg(months.map(m => MONTHS[m - 1]), matrix.netMovement)} /></div>
+                <table className="crp-table crp-table--matrix">
+                  <thead><tr>
+                    <th>Line item</th>
+                    {months.map(m => <th key={m} className="r">{MONTHS[m - 1]}</th>)}
+                    <th className="r crp-sep-l">YTD</th>
+                  </tr></thead>
+                  <tbody>
+                    {matrix.sections.map(sec => <MatrixSectionRows key={sec.label} sec={sec} months={months} />)}
+                    <tr className="crp-total">
+                      <td>Net cash movement</td>
+                      {months.map((_, i) => <td key={i} className={`r ${cls(matrix.netMovement[i])}`}>{fMm(matrix.netMovement[i])}</td>)}
+                      <td className={`r crp-sep-l ${cls(matrix.netTotal)}`}>{fMm(matrix.netTotal)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </>}
+        </div>
       </div>
     </div>
   )
