@@ -243,6 +243,15 @@ SHEET_SHARE = {
 # transfers (outside-area + treasury) only — which is what actually moves area cash.
 DROP_WITHIN_AREA = {'UAE_Apr_2026_CashFlow.xlsx'}
 
+# Take the area's balance lines (opening/ending/accum loans/OD) from the TARGET
+# consolidated sheet as a single _AREA series, INSTEAD of summing them across the
+# project sheets. Needed when entity-rollup sheets that carry opening balances are
+# (correctly) excluded to avoid flow double-counting: summing only the kept project
+# sheets then understates the area opening. UAE excludes NEW/LEGACY/NMDCCC (whose
+# openings the CONSOLIDATED AED includes), so Σ-project openings (23.05M) fall short
+# of the consolidated (which is the real area opening). Flows stay Σ-project.
+BALANCE_FROM_TARGET = {'UAE_Apr_2026_CashFlow.xlsx'}
+
 # Disable the per-sheet within-group sign flip for these files. The flip (parse_sheet)
 # negates a sheet's within-group payments when their sum is positive, to catch files
 # that store transfer-OUT detail as gross magnitudes (e.g. CCUW). But when the area is
@@ -735,6 +744,7 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
     # known). rollup_sections lets the staging UI diff Σ-projects against the file.
     rollup_balances = {'opening': {}, 'ending': {}}
     rollup_sections = {}
+    area_balance_rows = []   # target-sheet balance lines staged as _AREA (BALANCE_FROM_TARGET)
     ref_lines = {'lines': resolver_lines(resolver)}
 
     # single-entity areas: no per-project decomposition — stage the area's own
@@ -805,6 +815,11 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
         target_used = target
         rollup_balances = extract_rollup_balances(wb[target], as_of)
         rollup_sections = sections_from_agg(tgt, ref_lines)
+        if fn in BALANCE_FROM_TARGET:
+            area_balance_rows = [
+                {'project_code': '_AREA', 'sheet': target, 'line_code': lc,
+                 'year': y, 'month': m, 'value': v}
+                for (lc, y, m), v in tgt.items() if lc in BALANCE_LINES]
         keys = set(flowsum) | set(tgt)
         material = 0
         for k in sorted(keys):
@@ -852,6 +867,12 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
     # same _AREA bucket (PMV/CAMP/RMPT/AREA) stay individually toggleable.
     if fn in DROP_WITHIN_AREA:
         extra_rows = [r for r in extra_rows if r['line_code'] not in WITHIN_AREA_CODES]
+    if fn in BALANCE_FROM_TARGET and area_balance_rows:
+        # balances come from the consolidated target as one _AREA series, not summed
+        # across project sheets (which understates when entity sheets are excluded).
+        proj_rows = [r for r in proj_rows if r['line_code'] not in BALANCE_LINES]
+        extra_rows = [r for r in extra_rows if r['line_code'] not in BALANCE_LINES]
+        proj_rows = proj_rows + area_balance_rows
     stage_agg = defaultdict(float)
     for r in proj_rows + extra_rows:
         stage_agg[(r['project_code'], r['sheet'], r['line_code'], r['year'], r['month'])] += r['value']

@@ -240,6 +240,23 @@ def label_col_left_of(rows, header_ri, first_period_col):
                 best = ci
     return best if best is not None else min(1, max(0, first_period_col - 1))
 
+def _dedup_periods(periods):
+    """Keep exactly one column per (year, month). A cash-flow statement has one
+    column per period; when a file appends a redundant duplicate block (e.g. EPSO
+    repeats JAN-APR 2026 under a second 'FORECAST 2026' header after the JAN'26..
+    DEC'26 columns), both map to the same period and their values would sum
+    (doubling opening / flows). Keep the FIRST (leftmost) column for each period."""
+    seen = set()
+    out = {}
+    for ci in sorted(periods):
+        y, m = periods[ci][0], periods[ci][1]
+        if (y, m) in seen:
+            continue
+        seen.add((y, m))
+        out[ci] = periods[ci]
+    return out
+
+
 def detect_header(rows, as_of):
     """Return dict: {mode, label_col, section_col, periods:{col:(year,month,kind)}}
     or None if no period axis found."""
@@ -290,7 +307,7 @@ def detect_header(rows, as_of):
             first_period_col = min(periods) if periods else min(ci for ci, _ in dates)
             lc = label_col_left_of(rows, ri, first_period_col)
             return {'mode': 'datetime', 'header_row': ri, 'label_col': lc,
-                    'section_col': max(0, lc - 1), 'periods': periods}
+                    'section_col': max(0, lc - 1), 'periods': _dedup_periods(periods)}
     # --- year-grouped axis ---
     for ri, row in enumerate(rows[:10]):
         blocks = [(ci, yb) for ci, v in enumerate(row)
@@ -307,7 +324,7 @@ def detect_header(rows, as_of):
                     pass
                 periods = _year_grouped_periods(blocks, months, as_of)
                 return {'mode': 'year-grouped', 'header_row': mr, 'label_col': lc,
-                        'section_col': max(0, lc - 1), 'periods': periods}
+                        'section_col': max(0, lc - 1), 'periods': _dedup_periods(periods)}
     # --- bare month-name axis (single year, inferred) ---
     for ri, row in enumerate(rows[:10]):
         months = [(ci, *month_year(v)) for ci, v in enumerate(row)
@@ -345,7 +362,7 @@ def detect_header(rows, as_of):
                 d = datetime.date(y, mn, 1)
                 periods[ci] = (y, mn, 'actual' if d <= as_of else 'forecast')
             return {'mode': 'month-name', 'header_row': ri, 'label_col': lc,
-                    'section_col': max(0, lc - 1), 'periods': periods, 'year_inferred': True}
+                    'section_col': max(0, lc - 1), 'periods': _dedup_periods(periods), 'year_inferred': True}
     return None
 
 def _year_grouped_periods(blocks, months, as_of):

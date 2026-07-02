@@ -78,7 +78,7 @@ function matrixRows(sec: MatrixSection, months: number[], f: Fmt): string {
 /* ── per-report sheet bodies (inner HTML of one .sheet) ─────────────────────── */
 
 type GroupOpts = {
-  scopeLabel: string; asOfLabel: string; startLabel: string; matchedCount?: number
+  scopeLabel: string; asOfLabel: string; startLabel: string; cashStartLabel?: string; matchedCount?: number
   statement: { sections: StmtSection[]; netMovement: number }
   payStart?: number; payEnd?: number; hasPay?: boolean
   startCash?: number; endCash?: number
@@ -93,7 +93,7 @@ function groupSheet(o: GroupOpts): string {
   const payDelta = o.hasPay ? (o.payEnd ?? 0) - (o.payStart ?? 0) : null
   const hasCash = Math.abs(o.startCash ?? 0) > 1 || Math.abs(o.endCash ?? 0) > 1
   const cashWalk = hasCash ? `<div class="cashwalk">
-      <div class="cw-pt"><div class="cw-l">Starting cash · ${o.startLabel}</div><div class="cw-v ${cl(o.startCash)}">${f.fM(o.startCash)}</div></div>
+      <div class="cw-pt"><div class="cw-l">Starting cash · ${o.cashStartLabel ?? o.startLabel}</div><div class="cw-v ${cl(o.startCash)}">${f.fM(o.startCash)}</div></div>
       <div class="cw-arrow"><span class="${cl(o.statement.netMovement)}">${o.statement.netMovement < 0 ? '−' : '+'}${f.fM(Math.abs(o.statement.netMovement))}</span><i>net movement</i></div>
       <div class="cw-pt"><div class="cw-l">Ending cash · ${o.asOfLabel}</div><div class="cw-v ${cl(o.endCash)}">${f.fM(o.endCash)}</div></div>
     </div>` : ''
@@ -237,7 +237,7 @@ function skeleton(title: string, sheets: string): string {
 /* ── public builders ────────────────────────────────────────────────────────── */
 type Opts = {
   level: 'group' | 'area'
-  scopeLabel: string; year: number; asOfLabel: string; startLabel: string; matchedCount?: number
+  scopeLabel: string; year: number; asOfLabel: string; startLabel: string; cashStartLabel?: string; matchedCount?: number
   statement?: { sections: StmtSection[]; netMovement: number }
   payStart?: number; payEnd?: number; hasPay?: boolean
   startCash?: number; endCash?: number
@@ -251,7 +251,7 @@ export function buildReportHtml(o: Opts): string {
   if (o.level === 'area' && o.areaRows && o.areaTotals)
     return skeleton('Cash Flow Report — Areas', areaSheet({ asOfLabel: o.asOfLabel, startLabel: o.startLabel, areaRows: o.areaRows, areaTotals: o.areaTotals, disp }))
   return skeleton(`Cash Flow Report — ${o.scopeLabel}`, groupSheet({
-    scopeLabel: o.scopeLabel, asOfLabel: o.asOfLabel, startLabel: o.startLabel, matchedCount: o.matchedCount,
+    scopeLabel: o.scopeLabel, asOfLabel: o.asOfLabel, startLabel: o.startLabel, cashStartLabel: o.cashStartLabel, matchedCount: o.matchedCount,
     statement: o.statement!, payStart: o.payStart, payEnd: o.payEnd, hasPay: o.hasPay, startCash: o.startCash, endCash: o.endCash,
     paySeries: o.paySeries, disp,
   }))

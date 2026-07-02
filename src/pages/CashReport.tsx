@@ -39,7 +39,8 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
   const asOf = ay && am ? ay * 100 + am : scope.latestActualYM
   const asOfMonth = asOf % 100
   const asOfLabel = `${MONTHS[asOfMonth - 1] ?? ''} ${year}`
-  const startLabel = `Dec ${year - 1}`
+  const startLabel = `Dec ${year - 1}`            // payables start — a real Dec month-end snapshot
+  const cashStartLabel = `Jan ${year}`            // cash opening — the Jan-1 / start-of-year position
 
   const [level, setLevel] = useState<Level>('group')
   const [groupArea, setGroupArea] = useState<string>('')   // '' = all matched (the group)
@@ -121,7 +122,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
     } else {
       const { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash, endCash } = aggregateScope(model, cfAreas, groupArea)
       html = buildReportHtml({
-        level: 'group', scopeLabel, year, asOfLabel, startLabel, matchedCount: groupArea ? undefined : cfAreas.length,
+        level: 'group', scopeLabel, year, asOfLabel, startLabel, cashStartLabel, matchedCount: groupArea ? undefined : cfAreas.length,
         statement: buildStatement(lineUsd, scope.lines), payStart, payEnd, hasPay, startCash, endCash,
         paySeries: paySeries.map(p => ({ label: MONTHS[(p.period % 100) - 1] ?? '', value: p.usd })),
       })
@@ -153,7 +154,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
       {slot ? createPortal(controls, slot) : <div className="crp-toolbar no-print">{controls}</div>}
 
       {loading ? <div className="placeholder-box">Loading…</div>
-        : level === 'group' ? <GroupView scope={scope} model={model} matched={cfAreas} groupArea={groupArea} year={year} asOfLabel={asOfLabel} startLabel={startLabel} paySeries={paySeries} />
+        : level === 'group' ? <GroupView scope={scope} model={model} matched={cfAreas} groupArea={groupArea} year={year} asOfLabel={asOfLabel} startLabel={startLabel} cashStartLabel={cashStartLabel} paySeries={paySeries} />
         : level === 'area' ? <AreaView matched={cfAreas} year={year} asOfLabel={asOfLabel} startLabel={startLabel} onOpenProjects={(id) => { setProjArea(id); setLevel('project') }} />
         : level === 'sections' ? <SectionsView scope={scope} matched={cfAreas} asOfLabel={asOfLabel} />
         : level === 'project' ? <ProjectView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} projArea={projArea} setProjArea={setProjArea} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} />
@@ -240,9 +241,9 @@ function StmtSectionRows({ sec }: { sec: StmtSection }) {
 }
 
 /* ── Group view — cash-flow statement + separated payables position ─────────── */
-function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLabel, paySeries }: {
+function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLabel, cashStartLabel, paySeries }: {
   scope: Scope; model: Map<string, AreaAgg>; matched: AreaAgg[]; groupArea: string
-  year: number; asOfLabel: string; startLabel: string; paySeries: PaySeriesPt[]
+  year: number; asOfLabel: string; startLabel: string; cashStartLabel: string; paySeries: PaySeriesPt[]
 }) {
   const { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash, endCash } = aggregateScope(model, matched, groupArea)
   const payDelta = hasPay ? payEnd - payStart : null
@@ -261,7 +262,7 @@ function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLab
         <div className="crp-brand">Treasury</div>
       </div>
 
-      <CashTimeline startCash={startCash} endCash={endCash} netMovement={netMovement} drivers={drivers} hasCash={hasCash} startLabel={startLabel} asOfLabel={asOfLabel} />
+      <CashTimeline startCash={startCash} endCash={endCash} netMovement={netMovement} drivers={drivers} hasCash={hasCash} startLabel={cashStartLabel} asOfLabel={asOfLabel} />
 
       <div className="crp-grid">
         {/* Cash flow statement */}
