@@ -11,11 +11,7 @@ import AreaDrill from './AreaDrill'
 import Narrative from './Narrative'
 import CashReport from './CashReport'
 import DebtPosition from './DebtPosition'
-import WhatChanged from './WhatChanged'
-import Overall from './Overall'
 import AllAreas from './AllAreas'
-import AreasFunders from './AreasFunders'
-import TreasuryHeatmap from './TreasuryHeatmap'
 import CustomPeriodPopover from '@/components/CustomPeriodPopover'
 import AreaFilterPopover from '@/components/AreaFilterPopover'
 import { TopbarExtrasCtx } from '@/lib/displayFmt'
@@ -35,7 +31,7 @@ function parseOrd(raw: string | null): GrainOrd {
 }
 
 type View =
-  | { kind: 'summary'; lens: 'report' | 'narrative' | 'overall' | 'funders' | 'heatmap' | 'changed' | 'loans' | 'allareas' }
+  | { kind: 'summary'; lens: 'report' | 'narrative' | 'loans' | 'allareas' }
   | { kind: 'area'; area: string }
   | { kind: 'manage' }
 
@@ -44,7 +40,7 @@ function parseView(sp: URLSearchParams): View {
   const sub = sp.get('sub') || ''
   if (view === 'manage') return { kind: 'manage' }
   if (view === 'area' && sp.get('area')) return { kind: 'area', area: sp.get('area')! }
-  const lens = (['report', 'narrative', 'overall', 'funders', 'heatmap', 'changed', 'loans', 'allareas'].includes(sub) ? sub : 'overall') as any
+  const lens = (['report', 'narrative', 'loans', 'allareas'].includes(sub) ? sub : 'report') as any
   return { kind: 'summary', lens }
 }
 
@@ -230,10 +226,6 @@ export default function Dossier() {
     ...(canManage ? [{ group: 'MANAGE', label: 'Manage Cash Flow', view: { kind: 'manage' as const } }] : []),
     { group: 'REPORT', label: 'Cash Flow Report',      view: { kind: 'summary', lens: 'report' } },
     { group: 'SUMMARY', label: 'Cash Flow Story',       view: { kind: 'summary', lens: 'narrative' } },
-    { group: 'SUMMARY', label: 'Cash Runway',          view: { kind: 'summary', lens: 'overall' } },
-    { group: 'SUMMARY', label: 'Funders vs Consumers', view: { kind: 'summary', lens: 'funders' } },
-    { group: 'SUMMARY', label: 'Treasury',             view: { kind: 'summary', lens: 'heatmap' } },
-    { group: 'SUMMARY', label: 'What Changed',         view: { kind: 'summary', lens: 'changed' } },
     { group: 'SUMMARY', label: 'Debt Position',        view: { kind: 'summary', lens: 'loans' } },
     { group: 'EXPLORE', label: 'All Areas',            view: { kind: 'summary', lens: 'allareas' } },
     ...areas.map(a => ({
@@ -304,10 +296,6 @@ export default function Dossier() {
     if (view.kind === 'summary') {
       if (view.lens === 'report')     return <CashReport scope={scope} onSelectArea={(areaId) => goto({ kind: 'area', area: areaId })} />
       if (view.lens === 'narrative')  return <Narrative scope={scope} />
-      if (view.lens === 'overall')    return <Overall scope={scope} />
-      if (view.lens === 'funders')    return <AreasFunders scope={scope} onSelectArea={(areaId) => goto({ kind: 'area', area: areaId })} />
-      if (view.lens === 'heatmap')    return <TreasuryHeatmap scope={scope} onSelectArea={(areaId) => goto({ kind: 'area', area: areaId })} />
-      if (view.lens === 'changed')    return <WhatChanged scope={scope} />
       if (view.lens === 'loans')      return <DebtPosition scope={scope} />
       if (view.lens === 'allareas')   return <AllAreas scope={scope} onSelectArea={(areaId) => goto({ kind: 'area', area: areaId })} />
     }
