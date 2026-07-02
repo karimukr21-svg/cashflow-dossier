@@ -313,7 +313,6 @@ function AreaView({ matched, year, asOfLabel, startLabel, onOpenProjects }: {
     netOps: t.netOps + a.netOps, payStart: t.payStart + (a.payStart ?? 0), payEnd: t.payEnd + (a.payEnd ?? 0),
   }), { netOps: 0, payStart: 0, payEnd: 0 })
   const totDelta = tot.payEnd - tot.payStart
-  const top = [...matched].sort((a, b) => b.netOps - a.netOps)[0]
 
   return (
     <div className="crp-page">
@@ -328,13 +327,6 @@ function AreaView({ matched, year, asOfLabel, startLabel, onOpenProjects }: {
       <div className="crp-lede">
         From January to {asOfLabel}, these areas <b className={cls(tot.netOps)}>{tot.netOps < 0 ? 'used' : 'generated'} {fMm(Math.abs(tot.netOps))}m</b> of cash from operations, and mapped trade payables moved from <b>{fMm(Math.abs(tot.payStart))}m</b> to <b>{fMm(Math.abs(tot.payEnd))}m</b> — <b className={cls(totDelta)}>{totDelta >= 0 ? 'paid down' : 'up'} {fMm(Math.abs(totDelta))}m</b>.
       </div>
-
-      <KpiBand cards={[
-        { label: 'Group net from ops', value: fMm(tot.netOps), cls: cls(tot.netOps) },
-        { label: `Trade payables · ${asOfLabel}`, value: fMm(tot.payEnd), cls: cls(tot.payEnd), sub: `${fMd(totDelta)} since ${startLabel}` },
-        { label: 'Areas', value: String(matched.length) },
-        { label: 'Top cash generator', value: top ? top.label : '—', sub: top ? `${fMm(top.netOps)}m` : '' },
-      ]} />
 
       <div className="crp-grid">
         <div className="crp-card">

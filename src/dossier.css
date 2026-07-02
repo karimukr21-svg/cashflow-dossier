@@ -1602,7 +1602,7 @@ body, html, #root {
 .crp-table .pos { color: var(--good); }
 .crp-sec td { font-size: 9.5px; letter-spacing: .4px; text-transform: uppercase; color: var(--mute); font-weight: 700; padding-top: 9px; }
 .crp-item td, td.crp-item { padding-left: 16px; color: #334155; }
-.crp-natsub td { font-style: italic; color: #475569; padding-top: 2px; padding-bottom: 4px; }
+.crp-natsub td { font-style: italic; font-weight: 600; color: var(--ink); background: #f2f4f7; border-top: 1px dashed #cbd5e1; padding-top: 3px; padding-bottom: 3px; }
 .crp-subtot td { font-weight: 700; border-top: 1px solid var(--border); }
 .crp-total td { font-weight: 800; border-top: 2px solid var(--ink); padding-top: 6px; }
 .crp-table--pos .crp-total td { border-top: 0; }

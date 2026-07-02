@@ -204,7 +204,7 @@ const STYLE = `
   .t td { padding: 3px 8px; }
   .t .sec td { font-size: 8.5px; letter-spacing: .4px; text-transform: uppercase; color: #64748b; font-weight: 700; padding-top: 8px; }
   .t td.item { padding-left: 18px; color: #334155; }
-  .t .natsub td { font-style: italic; color: #475569; }
+  .t .natsub td { font-style: italic; font-weight: 600; color: #15233b; background: #f2f4f7; border-top: 1px dashed #cbd5e1; }
   .t .subtot td { font-weight: 700; border-top: 1px solid #e2e8f0; }
   .t .total td { font-weight: 800; border-top: 2px solid #15233b; padding-top: 5px; }
   .t.tpos .total td { border-top: 0; }
