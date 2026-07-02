@@ -162,10 +162,10 @@ export const SECTION_COLUMNS: string[][] = [
 export const arrangeSectionColumns = <T extends { label: string }>(items: T[]) => arrangeByColumns(items, SECTION_COLUMNS)
 
 /* Group-page statement layout: Operations (+ New Sales) on the left; Interest,
- * Within Group, Non Operational and Bank Financing stacked on the right. */
+ * Bank Financing, Within Group and Non Operational stacked on the right. */
 export const STMT_COLUMNS: string[][] = [
   ['Operations', 'New Sales'],
-  ['Interest', 'Within Group', 'Non Operational', 'Bank Financing'],
+  ['Interest', 'Bank Financing', 'Within Group', 'Non Operational'],
 ]
 
 export type StmtBucket = { label: string; value: number }
