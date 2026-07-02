@@ -1591,6 +1591,10 @@ body, html, #root {
 
 .crp-grid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 14px; align-items: start; }
 @media (max-width: 900px) { .crp-grid { grid-template-columns: 1fr; } }
+.crp-secgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; align-items: start; }
+.crp-secnet { display: flex; justify-content: space-between; align-items: baseline; border-top: 2px solid var(--ink); margin-top: 8px; padding-top: 6px; font-size: 12.5px; }
+.crp-secnet b { font-size: 15px; font-variant-numeric: tabular-nums; }
+.crp-secnet .neg { color: var(--crimson); } .crp-secnet .pos { color: var(--good); }
 .crp-card { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; background: var(--surface, #fff); }
 .crp-card-h { font-size: 13px; font-weight: 700; color: var(--ink); margin-bottom: 8px; }
 .crp-card-h span { color: #94a3b8; font-weight: 500; }

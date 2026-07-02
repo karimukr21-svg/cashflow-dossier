@@ -25,7 +25,7 @@ import type { Scope } from './Dossier'
  * Payables = the editable trade_payables account-group (see the Definitions
  * pass). Coverage of matched vs unmapped areas is its own pass. */
 
-type Level = 'group' | 'area' | 'project' | 'coverage' | 'definitions'
+type Level = 'group' | 'area' | 'sections' | 'project' | 'coverage' | 'definitions'
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 const fMm = (v: number | null | undefined) => v == null ? '—' : fmt(v / 1e6, { decimals: 1 })
@@ -105,8 +105,8 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
     [model, scope.areas])
 
   const tabs: { key: Level; label: string }[] = [
-    { key: 'group', label: 'Group' }, { key: 'area', label: 'Area' }, { key: 'project', label: 'Project' },
-    { key: 'coverage', label: 'Coverage' }, { key: 'definitions', label: 'Definitions' },
+    { key: 'group', label: 'Group' }, { key: 'area', label: 'Area' }, { key: 'sections', label: 'Sections' },
+    { key: 'project', label: 'Project' }, { key: 'coverage', label: 'Coverage' }, { key: 'definitions', label: 'Definitions' },
   ]
   const canPrint = level === 'group' || level === 'area'
   const slot = useTopbarExtras()
@@ -155,6 +155,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
       {loading ? <div className="placeholder-box">Loading…</div>
         : level === 'group' ? <GroupView scope={scope} model={model} matched={cfAreas} groupArea={groupArea} year={year} asOfLabel={asOfLabel} startLabel={startLabel} paySeries={paySeries} />
         : level === 'area' ? <AreaView matched={cfAreas} year={year} asOfLabel={asOfLabel} startLabel={startLabel} onOpenProjects={(id) => { setProjArea(id); setLevel('project') }} />
+        : level === 'sections' ? <SectionsView scope={scope} matched={cfAreas} asOfLabel={asOfLabel} />
         : level === 'project' ? <ProjectView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} projArea={projArea} setProjArea={setProjArea} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} />
         : level === 'coverage' ? <CoverageView scope={scope} model={model} payTraj={payTraj} />
         : <DefinitionsView period={asOf} asOfLabel={asOfLabel} />}
@@ -260,11 +261,6 @@ function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLab
         <div className="crp-brand">Treasury</div>
       </div>
 
-      <div className="crp-lede">
-        From January to {asOfLabel}, {scopeLabel} <b className={cls(netMovement)}>{netMovement < 0 ? 'used' : 'generated'} {fMm(Math.abs(netMovement))}m</b> of cash{hasCash ? <>, taking cash on hand from <b>{fMm(startCash)}m</b> to <b>{fMm(endCash)}m</b></> : null}.
-        {hasPay ? <> Trade payables moved from <b>{fMm(Math.abs(payStart))}m</b> to <b>{fMm(Math.abs(payEnd))}m</b> — <b className={cls(payDelta)}>{(payDelta ?? 0) >= 0 ? 'paid down' : 'up'} {fMm(Math.abs(payDelta ?? 0))}m</b>.</> : null}
-      </div>
-
       <CashTimeline startCash={startCash} endCash={endCash} netMovement={netMovement} drivers={drivers} hasCash={hasCash} startLabel={startLabel} asOfLabel={asOfLabel} />
 
       <div className="crp-grid">
@@ -302,6 +298,59 @@ function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLab
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+/* ── Sections view — one card per cash-flow section, net broken down by area ───
+ * The Group page's "How the cash moved" waterfall shows section NETS; this page
+ * takes each section one level deeper — which AREAS drove it — reusing the same
+ * diverging by-area bars as the Area page's "Net cash from operations by area".
+ * Always group-scoped (a by-area breakdown of a single area is one bar). */
+function SectionsView({ scope, matched, asOfLabel }: {
+  scope: Scope; matched: AreaAgg[]; asOfLabel: string
+}) {
+  // Section order + accurate section nets from the aggregated group statement.
+  const { order, aggNet } = useMemo(() => {
+    const agg = new Map<string, number>()
+    for (const a of matched) for (const [lc, v] of a.lineUsd) agg.set(lc, (agg.get(lc) ?? 0) + v)
+    const stmt = buildStatement(agg, scope.lines)
+    return { order: stmt.sections.map(s => s.label), aggNet: new Map(stmt.sections.map(s => [s.label, s.net])) }
+  }, [matched, scope.lines])
+
+  // Per-area section nets — one full statement per area, keyed section → net.
+  const byArea = useMemo(() => matched.map(a => ({
+    label: a.label,
+    nets: new Map(buildStatement(a.lineUsd, scope.lines).sections.map(s => [s.label, s.net])),
+  })), [matched, scope.lines])
+
+  const cards = order.map(label => ({
+    label,
+    net: aggNet.get(label) ?? 0,
+    rows: byArea.map(a => ({ label: a.label, value: a.nets.get(label) ?? 0 })).filter(r => Math.abs(r.value) >= 50000),
+  })).filter(c => c.rows.length > 0)
+
+  return (
+    <div className="crp-page">
+      <div className="crp-head">
+        <img className="crp-logo" src="/ccc-logo.png" alt="CCC" />
+        <div className="crp-head-t">
+          <h1>Cash Flow Report — Sections</h1>
+          <div className="crp-sub">Actual to date · Jan–{asOfLabel} · USD millions · {matched.length} areas · each section's net, by area</div>
+        </div>
+        <div className="crp-brand">Treasury</div>
+      </div>
+
+      <div className="crp-secgrid">
+        {cards.map(c => (
+          <div className="crp-card" key={c.label}>
+            <div className="crp-card-h">{c.label} <span>· net by area</span></div>
+            <Svg html={areaBarsSvg(c.rows.map(r => ({ label: r.label, value: r.value })))} />
+            <div className="crp-secnet"><span>Section net</span><b className={cls(c.net)}>{fMm(c.net)}</b></div>
+          </div>
+        ))}
+      </div>
+      <div className="crp-note">Each card is one cash-flow section; bars show that section's net cash per area (green = generated, crimson = consumed), USD, year-to-date. The section nets tie the "How the cash moved" waterfall on the Group page.</div>
     </div>
   )
 }
