@@ -297,6 +297,58 @@ SHEET_INCLUDE_OVERRIDE = {
     },
 }
 
+# JV-consolidation reclassification (Egypt): the JV rollup sheets don't just share-scale
+# their leaves — they keep within-group transfers at 100% and reduce non-op by
+# (1-share)×within-group, per the file's formulas (verified to the cent on 2026 JV /
+# Ongoing JV / LEGACYJV). Sheets listed here get that treatment instead of a uniform
+# share, so Σ-projects reproduces CONSOLIDATED's section split (not just its net).
+# (Zafarana is 100% → not listed; offshore/CCCEgypt area is consolidated via AREA, not a
+# JV rollup → not listed.)
+JV_RECLASS = {
+    'Egypt 2026 Cash flow Consolidated - April 2026-2.xlsx': {
+        # 2026 JV
+        'Ras Elhekma', 'Central JV CCCE-CCCEgypt', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', '2',
+        # Ongoing JV
+        'Alamein', 'Marassi', 'Marassi MEP', 'Madinaty CP08', 'Madinaty CP07', 'Madinaty CP05',
+        'Arkan', 'Arkan Towers', 'Madinaty CP05 MEP', 'FS Luxor MEP', 'CCC EGP on', 'CCC Egypt 25',
+        # Legacy JV
+        'Helwan', 'Cairo West', 'Mivida', 'Nile Plaza', 'Madinaty CP03', 'CFC', 'CFC MEP', 'CCC  Egypt leg',
+    },
+}
+
+
+def _jv_reclass_rows(rows, resolver, share_spec):
+    """Apply the JV-consolidation reclassification to one sheet's parsed rows:
+      within-group lines  -> kept at 100% (no share)
+      non-op receipts      -> share×non-op_rcpt − (1−share)×Σ(within-group receipts)
+      non-op payments      -> share×non-op_pay  − (1−share)×Σ(within-group payments)
+      everything else      -> ×share
+    Share may be flat or period-stepped; the within-group total is per (year, month)."""
+    wg_r = defaultdict(float); wg_p = defaultdict(float)
+    for r in rows:
+        if resolver.cat_by_code.get(r['line_code']) == 'Within Group':
+            k = (r['year'], r['month'])
+            if resolver.nat_by_code.get(r['line_code']) == 'Receipts':
+                wg_r[k] += r['value']
+            else:
+                wg_p[k] += r['value']
+    out = []
+    for r in rows:
+        s = _resolve_share(share_spec, r['year'], r['month'])
+        cat = resolver.cat_by_code.get(r['line_code'])
+        k = (r['year'], r['month'])
+        if cat == 'Within Group':
+            nv = r['value']                                   # 100%
+        elif r['line_code'] == 'nonop_recpt':
+            nv = s * r['value'] - (1 - s) * wg_r[k]
+        elif r['line_code'] == 'nonop_pay':
+            nv = s * r['value'] - (1 - s) * wg_p[k]
+        else:
+            nv = s * r['value']
+        rr = dict(r); rr['value'] = round(nv, 4); out.append(rr)
+    return out
+
+
 def _resolve_share(spec, year, month):
     """Resolve a SHEET_SHARE spec to a factor for (year, month). spec is either a flat
     float, or a list of (year, month, share) breakpoints sorted ascending — the share of
@@ -641,14 +693,21 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
         # A share may be a flat float or a period-stepped list of (year, month, share).
         share_spec = SHEET_SHARE.get(fn, {}).get(n, 1.0)
         drop_lines = DROP_SHEET_LINES.get(fn, {}).get(n, set())
-        for r in rows:
-            if r['line_code'] in drop_lines:
-                continue   # line the CONSOLIDATED rollup doesn't consolidate (see DROP_SHEET_LINES)
-            r = dict(r); r['project_code'] = code; r['sheet'] = n
-            share = _resolve_share(share_spec, r['year'], r['month'])
-            if share != 1.0:
-                r['value'] = round(r['value'] * share, 4)
-            dest.append(r)
+        keep = [r for r in rows if r['line_code'] not in drop_lines]
+        # JV rollup sheets reclassify (within-group at 100%, non-op offset) rather than
+        # share-scale uniformly — reproduces the file's section split (see JV_RECLASS).
+        if n in JV_RECLASS.get(fn, set()):
+            keep = _jv_reclass_rows(keep, resolver, share_spec)
+            for r in keep:
+                r = dict(r); r['project_code'] = code; r['sheet'] = n
+                dest.append(r)
+        else:
+            for r in keep:
+                r = dict(r); r['project_code'] = code; r['sheet'] = n
+                share = _resolve_share(share_spec, r['year'], r['month'])
+                if share != 1.0:
+                    r['value'] = round(r['value'] * share, 4)
+                dest.append(r)
         gi = resolver.gacc.get(tight(code))
         sheet_meta[n] = {'sheet': n, 'code': code,
                          'role': _role_of(code, n, area_item, jv), 'is_jv': jv,

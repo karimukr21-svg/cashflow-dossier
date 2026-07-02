@@ -1610,6 +1610,11 @@ body, html, #root {
 
 .crp-projpick { display: flex; gap: 10px; flex-wrap: wrap; }
 .crp-projtop { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.crp-pick { display: flex; align-items: center; gap: 6px; }
+.crp-pick-l { font-size: 10px; letter-spacing: .4px; text-transform: uppercase; color: var(--mute); font-weight: 700; margin-right: 2px; }
+.crp-pickbtn { border: 1px solid var(--border); background: var(--surface, #fff); color: var(--ink); font-size: 12px; font-weight: 600; padding: 5px 11px; border-radius: 7px; cursor: pointer; }
+.crp-pickbtn:hover { border-color: var(--crimson); color: var(--crimson); }
+.crp-pickbtn:disabled { opacity: .45; cursor: default; }
 .crp-grid--proj { grid-template-columns: 340px 1fr; }
 .crp-projlist { display: flex; flex-direction: column; max-height: 620px; overflow-y: auto; margin-top: 2px; }
 .crp-projrow { display: grid; grid-template-columns: auto 1fr 72px 58px; align-items: center; gap: 9px; padding: 4px 2px; border-bottom: 1px solid var(--border); }

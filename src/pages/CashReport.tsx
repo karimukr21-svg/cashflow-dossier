@@ -381,6 +381,7 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
   const [cells, setCells] = useState<(CfCell & { project_code: string | null; currency?: string })[]>([])
   const [project, setProject] = useState<string>('')   // holds the composite key (area|code)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [anchor, setAnchor] = useState<number | null>(null)   // last-clicked row for shift-range
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -440,6 +441,15 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
   const showBody = !loading && !!sel && fxOk && matrix.sections.length > 0
 
   const toggle = (key: string) => setSelected(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
+  // Quick-pick the top-N ranked projects (big movers first) so you don't tick each box.
+  const pickTop = (n: number) => { setSelected(new Set(ranking.slice(0, n).map(r => r.key))); setAnchor(null) }
+  // Shift-click a checkbox to select the whole range from the last clicked row.
+  const rangeSelect = (idx: number) => setSelected(prev => {
+    if (anchor == null) return prev
+    const n = new Set(prev), [a, b] = anchor < idx ? [anchor, idx] : [idx, anchor]
+    for (let i = a; i <= b; i++) n.add(ranking[i].key)
+    return n
+  })
   const printProjects = (keys: string[]) => {
     const w = window.open('', '_blank'); if (!w) return
     const list = keys.map(k => matrixFor(k))
@@ -464,6 +474,16 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
           <option value={ALL}>All areas</option>
           {areaOptions.map(a => <option key={a.areaId} value={a.areaId}>{a.label}</option>)}
         </select>
+        {ranking.length > 0 && (
+          <div className="crp-pick">
+            <span className="crp-pick-l">Select</span>
+            {[5, 10, 20].filter(n => n < ranking.length).map(n => (
+              <button key={n} className="crp-pickbtn" onClick={() => pickTop(n)}>Top {n}</button>
+            ))}
+            <button className="crp-pickbtn" onClick={() => pickTop(ranking.length)}>All</button>
+            <button className="crp-pickbtn" disabled={selected.size === 0} onClick={() => { setSelected(new Set()); setAnchor(null) }}>None</button>
+          </div>
+        )}
         <button className="crp-print" disabled={!showBody} onClick={() => printProjects([sel])}>Print this</button>
         <button className="crp-print" disabled={selected.size === 0} onClick={() => printProjects([...selected])}>Print selected ({selected.size})</button>
       </div>
@@ -473,11 +493,13 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
         <div className="crp-card">
           <div className="crp-card-h">Projects <span>· by cash movement</span></div>
           <div className="crp-projlist">
-            {ranking.map(r => {
+            {ranking.map((r, idx) => {
               const big = Math.abs(r.net) >= bigCut
               return (
                 <div key={r.key} className={`crp-projrow ${r.key === sel ? 'active' : ''}`}>
-                  <input type="checkbox" checked={selected.has(r.key)} onChange={() => toggle(r.key)} title="Select to print" />
+                  <input type="checkbox" checked={selected.has(r.key)}
+                    onClick={e => { if (e.shiftKey && anchor != null) { e.preventDefault(); rangeSelect(idx) } else { setAnchor(idx) } }}
+                    onChange={() => toggle(r.key)} title="Tick to select · Shift-click to select a range" />
                   <button className="crp-projname" onClick={() => setProject(r.key)} title="View this project">
                     {big ? <span className="crp-bigdot" /> : null}<span className="crp-projcode">{r.code}</span>{allMode ? <span className="crp-projarea">{areaLabelOf(r.area)}</span> : null}
                   </button>
@@ -488,7 +510,7 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
             })}
             {ranking.length === 0 ? <div className="crp-note crp-note--empty">No project-grain cash flow for this scope.</div> : null}
           </div>
-          <div className="crp-note"><span className="crp-bigdot" /> Big movers (largest cash movement) — the ones worth printing. Tick projects, then “Print selected”. Bars USD, net of the elapsed months.</div>
+          <div className="crp-note"><span className="crp-bigdot" /> Big movers (largest cash movement) — the ones worth printing. Use <b>Top 5/10/20</b> above, or tick projects (shift-click for a range), then “Print selected”. Bars USD, net of the elapsed months.</div>
         </div>
 
         {/* Selected project detail */}
