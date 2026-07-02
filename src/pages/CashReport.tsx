@@ -152,15 +152,18 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
   // Report controls (view tabs + area include/exclude filter + Print) — rendered
   // up in the Dossier top bar (Row 2) via the slot; inline fallback if absent.
   const showAreaFilter = level === 'group' || level === 'area' || level === 'sections'
+  // Order matters: the top bar is right-anchored, so the LAST item sits at the
+  // stable right edge. Put the page selector last so it never shifts as the area
+  // filter / Print button appear and disappear across tabs.
   const controls = (
     <>
+      {showAreaFilter && <AreaFilter areas={cfAreasAll} excluded={excluded} setExcluded={setExcluded} />}
+      {canPrint && <button className="crp-print" style={{ marginLeft: 0 }} onClick={print}>Print</button>}
       <div className="crp-levels">
         {tabs.map(t => (
           <button key={t.key} className={`crp-lvl ${level === t.key ? 'active' : ''}`} onClick={() => setLevel(t.key)}>{t.label}</button>
         ))}
       </div>
-      {showAreaFilter && <AreaFilter areas={cfAreasAll} excluded={excluded} setExcluded={setExcluded} />}
-      {canPrint && <button className="crp-print" style={{ marginLeft: 0 }} onClick={print}>Print</button>}
     </>
   )
 
