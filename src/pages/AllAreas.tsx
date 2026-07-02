@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { fetchActuals, fetchForecasts, type CfCell } from '@/lib/queries'
 import AllAreasPivot from './AllAreasPivot'
+import { DispFmtCtx, makeDisp, DENOM, type Denom, useTopbarExtras } from '@/lib/displayFmt'
 import type { Scope } from './Dossier'
 
 /* Consolidated Group view — sums the selected areas into one block,
@@ -11,6 +13,24 @@ export default function AllAreas({ scope, onSelectArea }: { scope: Scope; onSele
   const [actuals, setActuals] = useState<(CfCell & { source_version: string })[]>([])
   const [forecasts, setForecasts] = useState<(CfCell & { version: string })[]>([])
   const [loading, setLoading] = useState(true)
+
+  // Denomination toggle (Millions / '000 / Units) — a display divisor. Currency
+  // isn't offered here: the consolidation sums multiple areas' native values.
+  // Shares the per-area page's key so the choice carries across both.
+  const [denom, setDenom] = useState<Denom>(() => (localStorage.getItem('dossier-area-denom-v1') as Denom) || 'u')
+  useEffect(() => { try { localStorage.setItem('dossier-area-denom-v1', denom) } catch { /* ignore */ } }, [denom])
+  const disp = useMemo(() => makeDisp(1, denom), [denom])
+  const slot = useTopbarExtras()
+  const controls = (
+    <>
+      <div className="ctrl" style={{ marginLeft: 8 }}><label>Units</label></div>
+      <div className="pill-row">
+        {(['m', 'k', 'u'] as Denom[]).map(d => (
+          <button key={d} className={`pill-btn ${denom === d ? 'active' : ''}`} onClick={() => setDenom(d)}>{DENOM[d].btn}</button>
+        ))}
+      </div>
+    </>
+  )
 
   useEffect(() => {
     let cancel = false
@@ -58,15 +78,18 @@ export default function AllAreas({ scope, onSelectArea }: { scope: Scope; onSele
       <div style={{ marginTop: 4, color: 'var(--mute)', fontSize: 13 }}>
         Summing {titleSuffix} · grouped {ordPretty}.
       </div>
+      {slot ? createPortal(controls, slot) : <div className="area-toolbar no-print">{controls}</div>}
       <div style={{ height: 16 }} />
-      <AllAreasPivot
-        actuals={filteredActuals}
-        forecasts={filteredForecasts}
-        lines={scope.lines}
-        scope={scope}
-        areas={scope.selectedAreas}
-        onSelectArea={onSelectArea}
-      />
+      <DispFmtCtx.Provider value={disp}>
+        <AllAreasPivot
+          actuals={filteredActuals}
+          forecasts={filteredForecasts}
+          lines={scope.lines}
+          scope={scope}
+          areas={scope.selectedAreas}
+          onSelectArea={onSelectArea}
+        />
+      </DispFmtCtx.Provider>
     </div>
   )
 }

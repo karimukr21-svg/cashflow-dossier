@@ -1,7 +1,8 @@
 import { Fragment, useMemo, useState } from 'react'
 import type { CfCell, CfLine, CanonicalArea } from '@/lib/queries'
 import type { Scope } from './Dossier'
-import { fmt, classNum } from '@/lib/format'
+import { classNum } from '@/lib/format'
+import { useDisp } from '@/lib/displayFmt'
 import { buildColumns } from './AreaDrill'
 import { computeDerivedBalances, getColumnYMEndpoints } from '@/lib/derivedBalances'
 
@@ -83,6 +84,7 @@ function useExpandedAreas() {
 function AreaOuter({
   actuals, forecasts, lines, scope, areas,
 }: Omit<Props, 'onSelectArea'>) {
+  const disp = useDisp()
   const innerGroupBy: 'category' | 'nature' = scope.ord[1] === 'N' ? 'nature' : 'category'
   const { expanded, toggle } = useExpandedAreas()
 
@@ -194,9 +196,9 @@ function AreaOuter({
                   <td className="label pivot-balance-label">Opening · {area.display_name}</td>
                   {columns.map(col => {
                     const v = balanceForCol(area.area_id, col, 'opening')
-                    return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
+                    return <td key={col.key} className={classNum(v)}>{v == null ? '' : disp(v)}</td>
                   })}
-                  <td className={classNum(openingTotal)}>{openingTotal == null ? '' : fmt(openingTotal)}</td>
+                  <td className={classNum(openingTotal)}>{openingTotal == null ? '' : disp(openingTotal)}</td>
                 </tr>
                 {/* Movement (Net) row — clickable header. */}
                 <tr className={`pivot-area-headrow subtotal-row clickable ${isOpen ? 'open' : ''}`}
@@ -208,10 +210,10 @@ function AreaOuter({
                   </td>
                   {columns.map(col => {
                     const v = areaNet(area.area_id, col.matches)
-                    return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
+                    return <td key={col.key} className={classNum(v)}>{v == null ? '' : disp(v)}</td>
                   })}
                   <td className={classNum(rowTotal)} style={{ fontWeight: 600 }}>
-                    {rowTotal == null ? '' : fmt(rowTotal)}
+                    {rowTotal == null ? '' : disp(rowTotal)}
                   </td>
                 </tr>
                 {/* Closing row — derived, always visible. */}
@@ -219,9 +221,9 @@ function AreaOuter({
                   <td className="label pivot-balance-label">Closing · {area.display_name}</td>
                   {columns.map(col => {
                     const v = balanceForCol(area.area_id, col, 'closing')
-                    return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
+                    return <td key={col.key} className={classNum(v)}>{v == null ? '' : disp(v)}</td>
                   })}
-                  <td className={classNum(closingTotal)}>{closingTotal == null ? '' : fmt(closingTotal)}</td>
+                  <td className={classNum(closingTotal)}>{closingTotal == null ? '' : disp(closingTotal)}</td>
                 </tr>
                 {isOpen && bucket && (
                   <AreaInnerRows
@@ -460,6 +462,7 @@ function SectionRow({
   sumCells: (lineCodes: Set<string>, areaIds: Set<string> | null, matches: (y: number, m: number) => boolean) => number | null;
   onSelectArea: (areaId: string) => void;
 }) {
+  const disp = useDisp()
   const [open, setOpen] = useState(false)
   const allLineCodes = useMemo(() => new Set(sec.lines.map(l => l.line_code)), [sec.lines])
   const headTotal = sumCells(allLineCodes, null, () => true)
@@ -474,10 +477,10 @@ function SectionRow({
         </td>
         {columns.map(col => {
           const v = sumCells(allLineCodes, null, col.matches)
-          return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
+          return <td key={col.key} className={classNum(v)}>{v == null ? '' : disp(v)}</td>
         })}
         <td className={classNum(headTotal)} style={{ fontWeight: 600 }}>
-          {sec.kind === 'balance' || headTotal == null ? '' : fmt(headTotal)}
+          {sec.kind === 'balance' || headTotal == null ? '' : disp(headTotal)}
         </td>
       </tr>
       {open && (sec.kind === 'balance'
@@ -576,6 +579,7 @@ function SubgroupRow({
   sectionKey: string;
   onSelectArea: (areaId: string) => void;
 }) {
+  const disp = useDisp()
   const [open, setOpen] = useState(false)
   const lineCodes = useMemo(() => new Set(lines.map(l => l.line_code)), [lines])
   const subtotal = sumCells(lineCodes, null, () => true)
@@ -589,9 +593,9 @@ function SubgroupRow({
         </td>
         {columns.map(col => {
           const v = sumCells(lineCodes, null, col.matches)
-          return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
+          return <td key={col.key} className={classNum(v)}>{v == null ? '' : disp(v)}</td>
         })}
-        <td className={classNum(subtotal)} style={{ fontWeight: 500 }}>{subtotal == null ? '' : fmt(subtotal)}</td>
+        <td className={classNum(subtotal)} style={{ fontWeight: 500 }}>{subtotal == null ? '' : disp(subtotal)}</td>
       </tr>
       {open && areas.map(area => (
         <AreaLeafRow
@@ -660,6 +664,7 @@ function CategoryRow({
   sectionKey: string;
   onSelectArea: (areaId: string) => void;
 }) {
+  const disp = useDisp()
   const [open, setOpen] = useState(false)
   const subtotal = sumCells(lineCodes, null, () => true)
   return (
@@ -672,9 +677,9 @@ function CategoryRow({
         </td>
         {columns.map(col => {
           const v = sumCells(lineCodes, null, col.matches)
-          return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
+          return <td key={col.key} className={classNum(v)}>{v == null ? '' : disp(v)}</td>
         })}
-        <td className={classNum(subtotal)} style={{ fontWeight: 500 }}>{subtotal == null ? '' : fmt(subtotal)}</td>
+        <td className={classNum(subtotal)} style={{ fontWeight: 500 }}>{subtotal == null ? '' : disp(subtotal)}</td>
       </tr>
       {open && areas.map(area => (
         <AreaLeafRow
@@ -704,6 +709,7 @@ function AreaLeafRow({
   depth: number;
   onSelectArea: (areaId: string) => void;
 }) {
+  const disp = useDisp()
   const areaSet = useMemo(() => new Set([area.area_id]), [area.area_id])
   const rowTotal = isBalance ? null : sumCells(lineCodes, areaSet, () => true)
   const indent = 12 + depth * 24
@@ -715,12 +721,12 @@ function AreaLeafRow({
         const v = sumCells(lineCodes, areaSet, col.matches)
         return (
           <td key={col.key} className={`${classNum(v)} ${col.isActual ? 'cell actual' : 'cell forecast'}`}>
-            {v == null ? '' : fmt(v)}
+            {v == null ? '' : disp(v)}
           </td>
         )
       })}
       <td className={classNum(rowTotal)} style={{ fontWeight: 500 }}>
-        {rowTotal == null ? '' : fmt(rowTotal)}
+        {rowTotal == null ? '' : disp(rowTotal)}
       </td>
     </tr>
   )
@@ -831,6 +837,7 @@ function InnerSectionRow({
   sumLine: (lc: string, m: (y: number, mo: number) => boolean) => number | null;
   sumLines: (lcs: string[], m: (y: number, mo: number) => boolean) => number | null;
 }) {
+  const disp = useDisp()
   const [open, setOpen] = useState(false)
   const allCodes = sec.lines.map(l => l.line_code)
   const headTotal = sumLines(allCodes, () => true)
@@ -844,10 +851,10 @@ function InnerSectionRow({
         </td>
         {columns.map(col => {
           const v = sumLines(allCodes, col.matches)
-          return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
+          return <td key={col.key} className={classNum(v)}>{v == null ? '' : disp(v)}</td>
         })}
         <td className={classNum(headTotal)} style={{ fontWeight: 600 }}>
-          {sec.kind === 'balance' || headTotal == null ? '' : fmt(headTotal)}
+          {sec.kind === 'balance' || headTotal == null ? '' : disp(headTotal)}
         </td>
       </tr>
       {open && (sec.kind === 'balance'
@@ -947,6 +954,7 @@ function InnerSubgroupRow({
   sumLine: (lc: string, m: (y: number, mo: number) => boolean) => number | null;
   sumLines: (lcs: string[], m: (y: number, mo: number) => boolean) => number | null;
 }) {
+  const disp = useDisp()
   const [open, setOpen] = useState(false)
   const codes = lines.map(l => l.line_code)
   const subtotal = sumLines(codes, () => true)
@@ -960,9 +968,9 @@ function InnerSubgroupRow({
         </td>
         {columns.map(col => {
           const v = sumLines(codes, col.matches)
-          return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
+          return <td key={col.key} className={classNum(v)}>{v == null ? '' : disp(v)}</td>
         })}
-        <td className={classNum(subtotal)} style={{ fontWeight: 500 }}>{subtotal == null ? '' : fmt(subtotal)}</td>
+        <td className={classNum(subtotal)} style={{ fontWeight: 500 }}>{subtotal == null ? '' : disp(subtotal)}</td>
       </tr>
       {open && lines.map(l => (
         <InnerLineRow key={`${areaKey}|${sectionKey}|${label}|${l.line_code}`} line={l} columns={columns} sumLine={sumLine} depth={3} />
@@ -982,6 +990,7 @@ function InnerCategoryRow({
   sumLine: (lc: string, m: (y: number, mo: number) => boolean) => number | null;
   sumLines: (lcs: string[], m: (y: number, mo: number) => boolean) => number | null;
 }) {
+  const disp = useDisp()
   const [open, setOpen] = useState(false)
   const codes = lines.map(l => l.line_code)
   const subtotal = sumLines(codes, () => true)
@@ -995,9 +1004,9 @@ function InnerCategoryRow({
         </td>
         {columns.map(col => {
           const v = sumLines(codes, col.matches)
-          return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
+          return <td key={col.key} className={classNum(v)}>{v == null ? '' : disp(v)}</td>
         })}
-        <td className={classNum(subtotal)} style={{ fontWeight: 500 }}>{subtotal == null ? '' : fmt(subtotal)}</td>
+        <td className={classNum(subtotal)} style={{ fontWeight: 500 }}>{subtotal == null ? '' : disp(subtotal)}</td>
       </tr>
       {open && lines.map(l => (
         <InnerLineRow key={`${areaKey}|${sectionKey}|${category}|${l.line_code}`} line={l} columns={columns} sumLine={sumLine} depth={3} />
@@ -1014,6 +1023,7 @@ function InnerLineRow({
   sumLine: (lc: string, m: (y: number, mo: number) => boolean) => number | null;
   depth: number;
 }) {
+  const disp = useDisp()
   const rowTotal = sumLine(line.line_code, () => true)
   const indent = 12 + depth * 24
   return (
@@ -1023,12 +1033,12 @@ function InnerLineRow({
         const v = sumLine(line.line_code, col.matches)
         return (
           <td key={col.key} className={`${classNum(v)} ${col.isActual ? 'cell actual' : 'cell forecast'}`}>
-            {v == null ? '' : fmt(v)}
+            {v == null ? '' : disp(v)}
           </td>
         )
       })}
       <td className={classNum(rowTotal)} style={{ fontWeight: 500 }}>
-        {rowTotal == null ? '' : fmt(rowTotal)}
+        {rowTotal == null ? '' : disp(rowTotal)}
       </td>
     </tr>
   )
