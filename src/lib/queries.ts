@@ -301,6 +301,22 @@ export async function fetchForecasts(opts: {
     .map(r => ({ ...r, value: Number(r.value) }))
 }
 
+/** Project-grain cash-flow cells for ONE cf area (Tony's cf label), a version
+ *  and period window. Carries project_code + currency for the Project report. */
+export async function fetchProjectCells(opts: {
+  version: string; cfArea: string; fromYear: number; fromMonth: number; toYear: number; toMonth: number;
+}): Promise<(CfCell & { project_code: string | null; currency?: string })[]> {
+  const { data, error } = await supabase
+    .from('cf_forecasts')
+    .select('area, project_code, line_code, year, month, value, currency')
+    .eq('version', opts.version).eq('area', opts.cfArea)
+    .gte('year', opts.fromYear).lte('year', opts.toYear)
+  if (error) throw error
+  return (data || [])
+    .filter(r => inRange(r, opts.fromYear, opts.fromMonth, opts.toYear, opts.toMonth))
+    .map(r => ({ ...r, value: Number(r.value) }))
+}
+
 export type BridgeEntry = { area_id: string; area_label: string; sort_order: number }
 
 /** Maps ANY cf label — cf_area (old vintages) or cf_country (2026-05+) — to its

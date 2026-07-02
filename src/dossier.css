@@ -1558,6 +1558,9 @@ body, html, #root {
 .crp-table--pos .crp-total td { border-top: 0; }
 .crp-sep-l { border-left: 1px solid var(--border); }
 
+.crp-projpick { display: flex; gap: 10px; flex-wrap: wrap; }
+.crp-table--matrix th, .crp-table--matrix td { white-space: nowrap; }
+.crp-table--matrix td.r { min-width: 58px; }
 .crp-clickable { cursor: pointer; }
 .crp-clickable:hover td { background: rgba(225,0,32,0.04); }
 

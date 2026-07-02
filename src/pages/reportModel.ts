@@ -129,37 +129,44 @@ export type StmtSection = { label: string; receipts: StmtBucket[]; payments: Stm
 
 const THRESH = 50_000   // hide buckets that round to 0.0m
 
-/** Build the grouped cash-flow statement: sections → receipts[] then payments[]
- *  (each rolled to LINE_GROUPS buckets), with per-nature subtotals + section net
- *  and an overall net cash movement. */
-export function buildStatement(lineUsd: Map<string, number>, lines: CfLine[]): { sections: StmtSection[]; netMovement: number } {
+/** Bucket definitions per section (the grouping skeleton), keeping the member
+ *  line_codes so both the single-column statement and the monthly matrix roll
+ *  the same buckets. */
+type BucketDef = { label: string; order: number; codes: string[] }
+export type SectionDef = { label: string; receipts: BucketDef[]; payments: BucketDef[] }
+
+export function groupSections(lines: CfLine[]): SectionDef[] {
   const linesByCat = new Map<string, CfLine[]>()
   for (const l of lines) { if (l.nature === 'Balance') continue; const a = linesByCat.get(l.category) || []; a.push(l); linesByCat.set(l.category, a) }
-
-  const roll = (secLines: CfLine[], nature: 'Receipts' | 'Payments'): StmtBucket[] => {
-    const m = new Map<string, { value: number; order: number }>()
+  const defs = (secLines: CfLine[], nature: 'Receipts' | 'Payments'): BucketDef[] => {
+    const m = new Map<string, BucketDef>()
     for (const l of secLines) {
       if (l.nature !== nature) continue
       const g = LINE_GROUPS[l.line_code]
       const label = g?.label ?? l.description
       const order = g?.order ?? l.sort_order
-      const cur = m.get(label) || { value: 0, order }
-      cur.value += lineUsd.get(l.line_code) ?? 0
-      cur.order = Math.min(cur.order, order)
-      m.set(label, cur)
+      let b = m.get(label)
+      if (!b) { b = { label, order, codes: [] }; m.set(label, b) }
+      b.codes.push(l.line_code); b.order = Math.min(b.order, order)
     }
-    return [...m.entries()]
-      .map(([label, x]) => ({ label, value: x.value, order: x.order }))
-      .filter(b => Math.abs(b.value) >= THRESH)
-      .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label))
-      .map(({ label, value }) => ({ label, value }))
+    return [...m.values()].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label))
   }
+  return flowSections(lines).map(sec => {
+    const secLines = sec.categories.flatMap(c => linesByCat.get(c) || [])
+    return { label: sec.label, receipts: defs(secLines, 'Receipts'), payments: defs(secLines, 'Payments') }
+  })
+}
 
+/** Build the grouped cash-flow statement: sections → receipts[] then payments[]
+ *  (each rolled to LINE_GROUPS buckets), with per-nature subtotals + section net
+ *  and an overall net cash movement. */
+export function buildStatement(lineUsd: Map<string, number>, lines: CfLine[]): { sections: StmtSection[]; netMovement: number } {
+  const sum = (codes: string[]) => codes.reduce((t, c) => t + (lineUsd.get(c) ?? 0), 0)
   const out: StmtSection[] = []
   let netMovement = 0
-  for (const sec of flowSections(lines)) {
-    const secLines = sec.categories.flatMap(c => linesByCat.get(c) || [])
-    const receipts = roll(secLines, 'Receipts'), payments = roll(secLines, 'Payments')
+  for (const sec of groupSections(lines)) {
+    const receipts = sec.receipts.map(b => ({ label: b.label, value: sum(b.codes) })).filter(b => Math.abs(b.value) >= THRESH)
+    const payments = sec.payments.map(b => ({ label: b.label, value: sum(b.codes) })).filter(b => Math.abs(b.value) >= THRESH)
     if (receipts.length === 0 && payments.length === 0) continue
     const recTotal = receipts.reduce((t, b) => t + b.value, 0)
     const payTotal = payments.reduce((t, b) => t + b.value, 0)
@@ -168,4 +175,32 @@ export function buildStatement(lineUsd: Map<string, number>, lines: CfLine[]): {
     out.push({ label: sec.label, receipts, payments, recTotal, payTotal, net })
   }
   return { sections: out, netMovement }
+}
+
+export type MatrixBucket = { label: string; monthly: number[]; total: number }
+export type MatrixSection = { label: string; receipts: MatrixBucket[]; payments: MatrixBucket[]; recTotal: number[]; payTotal: number[]; net: number[]; netTot: number }
+
+/** Monthly matrix version of the statement: same buckets, one value per month
+ *  (in `months` order) + a YTD total. `perCode` = line_code → (month → USD). */
+export function buildStatementMatrix(perCode: Map<string, Map<number, number>>, lines: CfLine[], months: number[]): { sections: MatrixSection[]; netMovement: number[]; netTotal: number } {
+  const monthlyOf = (codes: string[]) => months.map(m => codes.reduce((t, c) => t + (perCode.get(c)?.get(m) ?? 0), 0))
+  const sumRows = (rows: MatrixBucket[]) => months.map((_, i) => rows.reduce((t, r) => t + r.monthly[i], 0))
+  const out: MatrixSection[] = []
+  const netMovement = months.map(() => 0)
+  let netTotal = 0
+  for (const sec of groupSections(lines)) {
+    const mk = (defs: BucketDef[]): MatrixBucket[] => defs.map(b => {
+      const monthly = monthlyOf(b.codes)
+      return { label: b.label, monthly, total: monthly.reduce((a, c) => a + c, 0) }
+    }).filter(b => Math.abs(b.total) >= THRESH)
+    const receipts = mk(sec.receipts), payments = mk(sec.payments)
+    if (receipts.length === 0 && payments.length === 0) continue
+    const recTotal = sumRows(receipts), payTotal = sumRows(payments)
+    const net = months.map((_, i) => recTotal[i] + payTotal[i])
+    net.forEach((v, i) => netMovement[i] += v)
+    const netTot = net.reduce((a, c) => a + c, 0)
+    netTotal += netTot
+    out.push({ label: sec.label, receipts, payments, recTotal, payTotal, net, netTot })
+  }
+  return { sections: out, netMovement, netTotal }
 }

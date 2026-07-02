@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  fetchActuals, fetchForecasts, fetchPayablesTrajectory, fetchFxRate,
+  fetchActuals, fetchForecasts, fetchPayablesTrajectory, fetchFxRate, fetchProjectCells,
   type CfCell, type PayablesTrajRow,
 } from '@/lib/queries'
 import { fmt, fmtDelta } from '@/lib/format'
-import { buildModel, buildStatement, type AreaAgg, type StmtSection } from './reportModel'
+import { buildModel, buildStatement, buildStatementMatrix, type AreaAgg, type StmtSection, type MatrixSection } from './reportModel'
 import { buildReportHtml } from './reportPrint'
 import type { Scope } from './Dossier'
 
@@ -39,6 +39,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
 
   const [level, setLevel] = useState<Level>('group')
   const [groupArea, setGroupArea] = useState<string>('')   // '' = all matched (the group)
+  const [projArea, setProjArea] = useState<string>('')     // selected area for the Project grain
 
   const [cells, setCells] = useState<(CfCell & { currency?: string })[]>([])
   const [payTraj, setPayTraj] = useState<PayablesTrajRow[]>([])
@@ -78,6 +79,13 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
   const matched = useMemo(() =>
     scope.areas.map(a => model.get(a.area_id)).filter((a): a is AreaAgg => !!a && a.matched)
       .sort((x, y) => Math.abs(y.netOps) - Math.abs(x.netOps)),
+    [model, scope.areas])
+
+  // Project grain covers any area with pushed cash flow that is FX-convertible
+  // (payables mapping not required — project view is cash-flow only).
+  const projAreaOptions = useMemo(() =>
+    scope.areas.filter(a => { const m = model.get(a.area_id); return m?.hasCf && m.fxOk })
+      .map(a => ({ areaId: a.area_id, label: a.display_name })),
     [model, scope.areas])
 
   const tabs: { key: Level; label: string }[] = [
@@ -122,7 +130,8 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
 
       {loading ? <div className="placeholder-box">Loading…</div>
         : level === 'group' ? <GroupView scope={scope} model={model} matched={matched} groupArea={groupArea} year={year} asOfLabel={asOfLabel} startLabel={startLabel} />
-        : level === 'area' ? <AreaView matched={matched} year={year} asOfLabel={asOfLabel} startLabel={startLabel} onSelectArea={onSelectArea} />
+        : level === 'area' ? <AreaView matched={matched} year={year} asOfLabel={asOfLabel} startLabel={startLabel} onOpenProjects={(id) => { setProjArea(id); setLevel('project') }} />
+        : level === 'project' ? <ProjectView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} projArea={projArea} setProjArea={setProjArea} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} />
         : <StubView level={level} />}
     </div>
   )
@@ -226,8 +235,8 @@ function PosBar({ start, end, startLabel, endLabel }: { start: number; end: numb
 }
 
 /* ── Area view — one row per matched area ───────────────────────────────────── */
-function AreaView({ matched, year, asOfLabel, startLabel, onSelectArea }: {
-  matched: AreaAgg[]; year: number; asOfLabel: string; startLabel: string; onSelectArea?: (id: string) => void
+function AreaView({ matched, year, asOfLabel, startLabel, onOpenProjects }: {
+  matched: AreaAgg[]; year: number; asOfLabel: string; startLabel: string; onOpenProjects?: (id: string) => void
 }) {
   const tot = matched.reduce((t, a) => ({
     netOps: t.netOps + a.netOps, payStart: t.payStart + (a.payStart ?? 0), payEnd: t.payEnd + (a.payEnd ?? 0),
@@ -255,7 +264,7 @@ function AreaView({ matched, year, asOfLabel, startLabel, onSelectArea }: {
           </tr></thead>
           <tbody>
             {matched.map(a => (
-              <tr key={a.areaId} className="crp-clickable" onClick={() => onSelectArea?.(a.areaId)} title="Open area / projects">
+              <tr key={a.areaId} className="crp-clickable" onClick={() => onOpenProjects?.(a.areaId)} title="Open this area's projects">
                 <td>{a.label}</td>
                 <td className={`r ${cls(a.netOps)}`}>{fMm(a.netOps)}</td>
                 <td className={`r crp-sep-l ${cls(a.payStart)}`}>{fMm(a.payStart)}</td>
@@ -272,17 +281,125 @@ function AreaView({ matched, year, asOfLabel, startLabel, onSelectArea }: {
             </tr>
           </tbody>
         </table>
-        <div className="crp-note">Net cash from operations (receipts − payments, USD-converted). Payables = trade_payables (Midas TB). Δ positive = paid down. Click an area to drill to its projects (next pass).</div>
+        <div className="crp-note">Net cash from operations (receipts − payments, USD-converted). Payables = trade_payables (Midas TB). Δ positive = paid down. Click an area to drill into its projects.</div>
       </div>
     </div>
   )
 }
 
+/* ── Project view — line items × actual months (USD) ────────────────────────── */
+function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, asOfMonth, asOfLabel }: {
+  scope: Scope; fxMap: Map<string, number | null>; areaOptions: { areaId: string; label: string }[]
+  projArea: string; setProjArea: (id: string) => void; year: number; asOfMonth: number; asOfLabel: string
+}) {
+  const areaId = projArea || areaOptions[0]?.areaId || ''
+  const [cells, setCells] = useState<(CfCell & { project_code: string | null; currency?: string })[]>([])
+  const [project, setProject] = useState<string>('')
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!areaId || !scope.primaryVersion) { setCells([]); return }
+    let cancel = false; setLoading(true)
+    fetchProjectCells({ version: scope.primaryVersion, cfArea: areaId, fromYear: year, fromMonth: 1, toYear: year, toMonth: asOfMonth })
+      .then(rows => { if (!cancel) { setCells(rows); setProject('') } })
+      .catch(() => { if (!cancel) setCells([]) })
+      .finally(() => { if (!cancel) setLoading(false) })
+    return () => { cancel = true }
+  }, [areaId, scope.primaryVersion, year, asOfMonth])
+
+  const projects = useMemo(() => {
+    const s = new Set(cells.map(c => c.project_code).filter(Boolean) as string[])
+    return [...s].sort()
+  }, [cells])
+  const sel = project || projects[0] || ''
+  const months = useMemo(() => Array.from({ length: asOfMonth }, (_, i) => i + 1), [asOfMonth])
+
+  // perCode: line_code → (month → USD) for the selected project
+  const { matrix, currency, fxOk } = useMemo(() => {
+    const perCode = new Map<string, Map<number, number>>()
+    let cur = 'USD'; let ok = true
+    for (const c of cells) {
+      if (c.project_code !== sel) continue
+      cur = c.currency || cur
+      const rate = (c.currency || 'USD') === 'USD' ? 1 : (fxMap.get(c.currency || '') ?? null)
+      if (rate == null) { ok = false; continue }
+      let m = perCode.get(c.line_code); if (!m) { m = new Map(); perCode.set(c.line_code, m) }
+      m.set(c.month, (m.get(c.month) ?? 0) + c.value * rate)
+    }
+    return { matrix: buildStatementMatrix(perCode, scope.lines, months), currency: cur, fxOk: ok }
+  }, [cells, sel, fxMap, scope.lines, months])
+
+  const areaLabel = areaOptions.find(a => a.areaId === areaId)?.label || areaId
+
+  return (
+    <div className="crp-page">
+      <div className="crp-head">
+        <div>
+          <h1>Cash Flow Report — Project</h1>
+          <div className="crp-sub">{areaLabel}{sel ? ` · ${sel}` : ''} · monthly actuals Jan–{asOfLabel} · USD millions{currency !== 'USD' ? ` (converted from ${currency})` : ''}</div>
+        </div>
+        <div className="crp-brand"><span className="crp-glyph">C</span> CCC · Treasury</div>
+      </div>
+
+      <div className="crp-projpick no-print">
+        <select className="crp-select" value={areaId} onChange={e => { setProjArea(e.target.value); setProject('') }}>
+          {areaOptions.map(a => <option key={a.areaId} value={a.areaId}>{a.label}</option>)}
+        </select>
+        <select className="crp-select" value={sel} onChange={e => setProject(e.target.value)} disabled={projects.length === 0}>
+          {projects.length === 0 && <option value="">No projects</option>}
+          {projects.map(p => <option key={p} value={p}>{p}</option>)}
+        </select>
+      </div>
+
+      <div className="crp-card">
+        {loading ? <div className="crp-note crp-note--empty">Loading…</div>
+          : !sel ? <div className="crp-note crp-note--empty">No project-grain cash flow for this area.</div>
+          : !fxOk ? <div className="crp-note crp-note--empty">No FX rate for {currency} — cannot show this project in USD.</div>
+          : <table className="crp-table crp-table--matrix">
+              <thead><tr>
+                <th>Line item</th>
+                {months.map(m => <th key={m} className="r">{MONTHS[m - 1]}</th>)}
+                <th className="r crp-sep-l">YTD</th>
+              </tr></thead>
+              <tbody>
+                {matrix.sections.map(sec => <MatrixSectionRows key={sec.label} sec={sec} months={months} />)}
+                <tr className="crp-total">
+                  <td>Net cash movement</td>
+                  {months.map((_, i) => <td key={i} className={`r ${cls(matrix.netMovement[i])}`}>{fMm(matrix.netMovement[i])}</td>)}
+                  <td className={`r crp-sep-l ${cls(matrix.netTotal)}`}>{fMm(matrix.netTotal)}</td>
+                </tr>
+              </tbody>
+            </table>}
+        <div className="crp-note">Monthly actual cash flow for the selected project, USD-converted at the cycle FX. Grouped to the same line buckets as the Group view.</div>
+      </div>
+    </div>
+  )
+}
+
+function MatrixSectionRows({ sec, months }: { sec: MatrixSection; months: number[] }) {
+  const row = (label: string, monthly: number[], total: number, klass: string) => (
+    <tr className={klass}>
+      <td className={klass === '' ? 'crp-item' : ''}>{label}</td>
+      {monthly.map((v, i) => <td key={i} className={`r ${cls(v)}`}>{fMm(v)}</td>)}
+      <td className={`r crp-sep-l ${cls(total)}`}>{fMm(total)}</td>
+    </tr>
+  )
+  const sum = (rows: { monthly: number[] }[], i: number) => rows.reduce((t, r) => t + r.monthly[i], 0)
+  return (
+    <>
+      <tr className="crp-sec"><td colSpan={months.length + 2}>{sec.label}</td></tr>
+      {sec.receipts.map(b => row(b.label, b.monthly, b.total, ''))}
+      {sec.receipts.length > 1 && row('Total receipts', months.map((_, i) => sum(sec.receipts, i)), sec.receipts.reduce((t, b) => t + b.total, 0), 'crp-natsub')}
+      {sec.payments.map(b => row(b.label, b.monthly, b.total, ''))}
+      {sec.payments.length > 1 && row('Total payments', months.map((_, i) => sum(sec.payments, i)), sec.payments.reduce((t, b) => t + b.total, 0), 'crp-natsub')}
+      {row(`Net ${sec.label.toLowerCase()}`, sec.net, sec.netTot, 'crp-subtot')}
+    </>
+  )
+}
+
 function StubView({ level }: { level: Level }) {
-  const msg = level === 'project'
-    ? 'Project grain — cash-flow line items × actual months (USD). Building in the next pass.'
-    : level === 'coverage'
-      ? 'Coverage — which areas are matched (cash flow ↔ payables) and which are not yet mapped. Building in the next pass.'
-      : 'Definitions — the account groups and exactly which accounts feed trade_payables, for the inclusion discussion with Amr. Building in the next pass.'
+  const msg = level === 'coverage'
+    ? 'Coverage — which areas are matched (cash flow ↔ payables) and which are not yet mapped. Building next.'
+    : 'Definitions — the account groups and exactly which accounts feed trade_payables, for the inclusion discussion with Amr. Building next.'
   return <div className="crp-page"><div className="crp-card"><div className="crp-note crp-note--empty">{msg}</div></div></div>
 }
