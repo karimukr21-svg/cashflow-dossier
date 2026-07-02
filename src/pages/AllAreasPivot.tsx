@@ -424,12 +424,10 @@ function SectionOuter({ actuals, forecasts, lines, scope, areas, onSelectArea }:
     return out
   }, [activeLines, outer])
 
-  /* V1: all section-outer orderings (NCA / CNA / NAC / CAN) treat Area as
-   * the leaf with per-area total rows. NAC / CAN technically place Area in
-   * the middle position (line items beneath each area) — that view is
-   * deferred to v2. middle / inner are unused below for that reason but
-   * we keep them in scope so the dispatcher (Dossier) can still set them. */
-  void middle; void inner;
+  /* middle === 'A' → Area sits in the middle position (per-area subgroups,
+   * with the remaining dimension broken out beneath each area). Otherwise
+   * Area is the leaf (per-area total rows under Nature/Category subgroups). */
+  const areaMiddle = middle === 'A'
 
   return (
     <div style={{ overflowX: 'auto' }}>
@@ -456,6 +454,8 @@ function SectionOuter({ actuals, forecasts, lines, scope, areas, onSelectArea }:
               key={sec.key}
               sec={sec}
               outer={outer}
+              areaMiddle={areaMiddle}
+              inner={inner}
               columns={columns}
               areas={areas}
               sumCells={sumCells}
@@ -474,10 +474,12 @@ function SectionOuter({ actuals, forecasts, lines, scope, areas, onSelectArea }:
  * line up vertically and Karim can scan period-by-period across the
  * whole picture. */
 function SectionRow({
-  sec, outer, columns, areas, sumCells, onSelectArea,
+  sec, outer, areaMiddle, inner, columns, areas, sumCells, onSelectArea,
 }: {
   sec: { key: string; label: string; kind: SectionKind; lines: CfLine[]; receipts: CfLine[]; payments: CfLine[]; natureClass: string };
   outer: 'N' | 'C';
+  areaMiddle: boolean;
+  inner: 'A' | 'N' | 'C';
   columns: Column[];
   areas: CanonicalArea[];
   sumCells: (lineCodes: Set<string>, areaIds: Set<string> | null, matches: (y: number, m: number) => boolean) => number | null;
@@ -505,11 +507,156 @@ function SectionRow({
           {sec.kind === 'balance' || headTotal == null ? '' : disp(headTotal)}
         </td>
       </tr>
-      {open && (sec.kind === 'balance'
-        ? <BalanceAreaRows sec={sec} columns={columns} areas={areas} sumCells={sumCells} onSelectArea={onSelectArea} />
-        : <FlowSectionChildren sec={sec} outer={outer} columns={columns} areas={areas} sumCells={sumCells} onSelectArea={onSelectArea} />
+      {open && (areaMiddle
+        ? <AreaMiddleRows sec={sec} outer={outer} inner={inner} columns={columns} areas={areas} sumCells={sumCells} onSelectArea={onSelectArea} />
+        : sec.kind === 'balance'
+          ? <BalanceAreaRows sec={sec} columns={columns} areas={areas} sumCells={sumCells} onSelectArea={onSelectArea} />
+          : <FlowSectionChildren sec={sec} outer={outer} columns={columns} areas={areas} sumCells={sumCells} onSelectArea={onSelectArea} />
       )}
     </>
+  )
+}
+
+/* ───── Area-middle expansion (NAC / CAN orderings) ─────
+ * Area sits at the middle level: one collapsible row per area, and beneath
+ * each open area the remaining dimension (`inner`) broken out — categories
+ * for a Nature-outer section, Receipts/Payments for a Category-outer one.
+ * Balance sections have no further breakdown, so the per-area row is the leaf. */
+function AreaMiddleRows({
+  sec, outer, inner, columns, areas, sumCells, onSelectArea,
+}: {
+  sec: { key: string; label: string; kind: SectionKind; lines: CfLine[]; receipts: CfLine[]; payments: CfLine[] };
+  outer: 'N' | 'C';
+  inner: 'A' | 'N' | 'C';
+  columns: Column[];
+  areas: CanonicalArea[];
+  sumCells: (lineCodes: Set<string>, areaIds: Set<string> | null, matches: (y: number, m: number) => boolean) => number | null;
+  onSelectArea: (areaId: string) => void;
+}) {
+  const allLineCodes = useMemo(() => new Set(sec.lines.map(l => l.line_code)), [sec.lines])
+  return (
+    <>
+      {areasWithValues(areas, allLineCodes, columns, sumCells).map(area => (
+        <AreaMiddleRow
+          key={`${sec.key}|${area.area_id}`}
+          area={area}
+          sec={sec}
+          outer={outer}
+          inner={inner}
+          columns={columns}
+          sumCells={sumCells}
+          onSelectArea={onSelectArea}
+        />
+      ))}
+    </>
+  )
+}
+
+function AreaMiddleRow({
+  area, sec, outer, inner, columns, sumCells, onSelectArea,
+}: {
+  area: CanonicalArea;
+  sec: { key: string; kind: SectionKind; lines: CfLine[]; receipts: CfLine[]; payments: CfLine[] };
+  outer: 'N' | 'C';
+  inner: 'A' | 'N' | 'C';
+  columns: Column[];
+  sumCells: (lineCodes: Set<string>, areaIds: Set<string> | null, matches: (y: number, m: number) => boolean) => number | null;
+  onSelectArea: (areaId: string) => void;
+}) {
+  const disp = useDisp()
+  const [open, setOpen] = useState(false)
+  const areaSet = useMemo(() => new Set([area.area_id]), [area.area_id])
+  const allLineCodes = useMemo(() => new Set(sec.lines.map(l => l.line_code)), [sec.lines])
+  const isBalance = sec.kind === 'balance'
+  const rowTotal = isBalance ? null : sumCells(allLineCodes, areaSet, () => true)
+  // Balance sections have no inner breakdown → the area row is a plain leaf.
+  const expandable = !isBalance
+
+  /* Inner subgroups scoped to this single area. */
+  const innerGroups = useMemo(() => {
+    if (!expandable) return []
+    if (inner === 'N') {
+      return [
+        { key: 'receipts', label: 'Receipts', codes: new Set(sec.receipts.map(l => l.line_code)) },
+        { key: 'payments', label: 'Payments', codes: new Set(sec.payments.map(l => l.line_code)) },
+      ].filter(g => g.codes.size > 0)
+    }
+    // inner === 'C' → group this section's lines by category
+    const byCat = new Map<string, Set<string>>()
+    for (const l of sec.lines) {
+      let s = byCat.get(l.category); if (!s) { s = new Set(); byCat.set(l.category, s) }
+      s.add(l.line_code)
+    }
+    return [...byCat.entries()].map(([label, codes]) => ({ key: label, label, codes }))
+  }, [expandable, inner, sec])
+
+  return (
+    <>
+      <tr className={`pivot-subgroup-row subtotal-row clickable ${open ? 'open' : ''}`}
+          onClick={() => expandable && setOpen(o => !o)}>
+        <td className="label" style={{ paddingLeft: 32 }}>
+          {expandable && <span className="pivot-card-chev">▶</span>}
+          <span
+            className="pivot-area-link"
+            onClick={e => { e.stopPropagation(); onSelectArea(area.area_id) }}
+            title={`Open ${area.display_name} drill`}
+            style={{ cursor: 'pointer', textDecoration: 'underline' }}
+          >
+            {area.display_name}
+          </span>
+        </td>
+        {columns.map(col => {
+          const v = sumCells(allLineCodes, areaSet, col.matches)
+          return <td key={col.key} className={classNum(v)}>{v == null ? '' : disp(v)}</td>
+        })}
+        <td className={classNum(rowTotal)} style={{ fontWeight: 500 }}>
+          {rowTotal == null ? '' : disp(rowTotal)}
+        </td>
+      </tr>
+      {open && expandable && innerGroups.map(g => (
+        <AreaInnerLeafRow
+          key={`${sec.key}|${area.area_id}|${g.key}`}
+          label={g.label}
+          lineCodes={g.codes}
+          areaSet={areaSet}
+          columns={columns}
+          sumCells={sumCells}
+        />
+      ))}
+    </>
+  )
+}
+
+/* Leaf row inside an expanded area (area-middle mode): the inner dimension
+ * subtotal (a category, or Receipts/Payments) scoped to that one area. */
+function AreaInnerLeafRow({
+  label, lineCodes, areaSet, columns, sumCells,
+}: {
+  label: string;
+  lineCodes: Set<string>;
+  areaSet: Set<string>;
+  columns: Column[];
+  sumCells: (lineCodes: Set<string>, areaIds: Set<string> | null, matches: (y: number, m: number) => boolean) => number | null;
+}) {
+  const disp = useDisp()
+  const rowTotal = sumCells(lineCodes, areaSet, () => true)
+  // Hide rows with no value in any column for this area.
+  if (!columns.some(col => sumCells(lineCodes, areaSet, col.matches) != null)) return null
+  return (
+    <tr className="pivot-area-row">
+      <td className="label" style={{ paddingLeft: 64 }}>{label}</td>
+      {columns.map(col => {
+        const v = sumCells(lineCodes, areaSet, col.matches)
+        return (
+          <td key={col.key} className={`${classNum(v)} ${col.isActual ? 'cell actual' : 'cell forecast'}`}>
+            {v == null ? '' : disp(v)}
+          </td>
+        )
+      })}
+      <td className={classNum(rowTotal)} style={{ fontWeight: 500 }}>
+        {rowTotal == null ? '' : disp(rowTotal)}
+      </td>
+    </tr>
   )
 }
 

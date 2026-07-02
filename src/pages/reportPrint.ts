@@ -104,11 +104,11 @@ function groupSheet(o: GroupOpts): string {
     return `<div class="chartcard stmtcard"><div class="ch-h"><span class="sh-t">${s.label}</span><b class="sh-n ${cl(s.net)}">${f.fM(s.net)}</b></div><table class="t"><tbody>${rows}</tbody></table></div>`
   }
   const stmtCols = arrangeByColumns(o.statement.sections, STMT_COLUMNS)
-    .map(col => `<div class="seccol">${col.map(secCard).join('')}</div>`).join('')
+    .map((col, i) => `<div class="seccol${i === 1 ? ' spaced' : ''}">${col.map(secCard).join('')}</div>`).join('')
 
   const charts = `<div class="seccol">
     <div class="chartcard"><div class="ch-h">How the cash moved <span>· sections → net movement</span></div>
-      ${waterfallSvg(o.statement.sections.map(s => ({ label: s.label, value: s.net })), nm, chartDisp)}</div>
+      ${waterfallSvg(o.statement.sections.map(s => ({ label: s.label, value: s.net })), nm, chartDisp, 1.35)}</div>
     <div class="chartcard"><div class="ch-h">Trade payables · monthly · ${o.startLabel} → ${o.asOfLabel} · ${o.disp.payUnit}</div>
       ${o.hasPay ? `${payablesTrendSvg(o.paySeries ?? [], chartDisp)}
         <div class="paysum"><span>${o.startLabel} <b class="${cl(o.payStart)}">${f.fM(o.payStart)}</b></span><span>${o.asOfLabel} <b class="${cl(o.payEnd)}">${f.fM(o.payEnd)}</b></span><span>Δ <b class="${cl(payDelta)}">${f.fD(payDelta)}</b></span></div>
@@ -244,7 +244,8 @@ const STYLE = `
   /* Group page — justified 3-column grid: Operations · four sections · charts */
   .groupcols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; align-items: start; }
   .groupcols .seccol { gap: 10px; }
-  .stmtcard table.t, .stmtcard .t td { padding-top: 2px; padding-bottom: 2px; }
+  .groupcols .seccol.spaced { gap: 20px; }
+  .stmtcard .t td { padding-top: 4px; padding-bottom: 4px; }
   .paysum { display: flex; gap: 16px; margin-top: 6px; font-size: 10px; color: #64748b; }
   .paysum b { font-variant-numeric: tabular-nums; }
   .note { font-size: 10.5px; color: #64748b; line-height: 1.5; margin-top: 8px; } .note b { color: #15233b; }`

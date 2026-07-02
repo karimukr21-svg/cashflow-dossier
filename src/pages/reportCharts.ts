@@ -15,9 +15,11 @@ const labf = (v: number, d: ChartDisp): string => {
   return r < 0 ? `(${s})` : s
 }
 
-/* Waterfall: how the section nets build to net cash movement. */
-export function waterfallSvg(items: { label: string; value: number }[], total: number, disp: ChartDisp = DEF): string {
+/* Waterfall: how the section nets build to net cash movement. zoom scales the
+ * value + axis-label fonts (geometry unchanged). */
+export function waterfallSvg(items: { label: string; value: number }[], total: number, disp: ChartDisp = DEF, zoom = 1): string {
   const lab = (v: number) => labf(v, disp)
+  const vf = (10.5 * zoom).toFixed(1), lf = (9 * zoom).toFixed(1)
   const W = 560, H = 300, padL = 6, padR = 6, top = 30, bottom = 62
   const plotW = W - padL - padR, plotH = H - top - bottom
   const bars = [...items.map(it => ({ label: it.label, value: it.value, total: false })), { label: 'Net movement', value: total, total: true }]
@@ -39,15 +41,15 @@ export function waterfallSvg(items: { label: string; value: number }[], total: n
     const fill = g.total ? INK : (up ? GOOD : CRIM)
     s += `<rect x="${(cx(i) - bw / 2).toFixed(1)}" y="${t.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${fill}" opacity="${g.total ? 1 : 0.85}" rx="2"/>`
     const vy = up ? t - 5 : t + h + 12
-    s += `<text x="${cx(i).toFixed(1)}" y="${vy.toFixed(1)}" text-anchor="middle" font-size="10.5" font-weight="700" fill="${fill}">${lab(g.value)}</text>`
+    s += `<text x="${cx(i).toFixed(1)}" y="${vy.toFixed(1)}" text-anchor="middle" font-size="${vf}" font-weight="700" fill="${fill}">${lab(g.value)}</text>`
     if (i < geo.length - 1 && !geo[i + 1].total)
       s += `<line x1="${(cx(i) + bw / 2).toFixed(1)}" y1="${yB.toFixed(1)}" x2="${(cx(i + 1) - bw / 2).toFixed(1)}" y2="${yB.toFixed(1)}" stroke="${MUTE}" stroke-width="0.8" stroke-dasharray="3,2"/>`
     const words = g.label.split(' ')
     const split = words.length > 1 && g.label.length > 9
     const l1 = split ? words.slice(0, Math.ceil(words.length / 2)).join(' ') : g.label
     const l2 = split ? words.slice(Math.ceil(words.length / 2)).join(' ') : ''
-    s += `<text x="${cx(i).toFixed(1)}" y="${(H - bottom + 18).toFixed(1)}" text-anchor="middle" font-size="9" font-weight="${g.total ? 700 : 500}" fill="${g.total ? INK : MUTE}">${l1}</text>`
-    if (l2) s += `<text x="${cx(i).toFixed(1)}" y="${(H - bottom + 29).toFixed(1)}" text-anchor="middle" font-size="9" font-weight="${g.total ? 700 : 500}" fill="${g.total ? INK : MUTE}">${l2}</text>`
+    s += `<text x="${cx(i).toFixed(1)}" y="${(H - bottom + 18).toFixed(1)}" text-anchor="middle" font-size="${lf}" font-weight="${g.total ? 700 : 500}" fill="${g.total ? INK : MUTE}">${l1}</text>`
+    if (l2) s += `<text x="${cx(i).toFixed(1)}" y="${(H - bottom + 29).toFixed(1)}" text-anchor="middle" font-size="${lf}" font-weight="${g.total ? 700 : 500}" fill="${g.total ? INK : MUTE}">${l2}</text>`
   })
   s += `</svg>`
   return s

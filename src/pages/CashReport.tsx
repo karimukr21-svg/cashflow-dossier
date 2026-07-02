@@ -298,7 +298,7 @@ function CashTimeline({ startCash, endCash, netMovement, drivers, hasCash, start
  * nature has more than one bucket). */
 function StmtSectionCard({ sec }: { sec: StmtSection }) {
   return (
-    <div className="crp-card">
+    <div className="crp-card crp-stmtcard">
       <div className="crp-sechead">
         <span className="crp-sechead-t">{sec.label}</span>
         <b className={`crp-sechead-n ${cls(sec.net)}`}>{fMm(sec.net)}</b>
@@ -347,7 +347,7 @@ function GroupView({ scope, matched, year, asOfLabel, startLabel, cashStartLabel
       {/* Justified 3-column grid: Operations · the four stacked sections · charts */}
       <div className="crp-groupcols">
         {arrangeByColumns(sections, STMT_COLUMNS).map((col, i) => (
-          <div className="crp-seccol" key={i}>
+          <div className={`crp-seccol${i === 1 ? ' crp-seccol--spaced' : ''}`} key={i}>
             {col.map(sec => <StmtSectionCard key={sec.label} sec={sec} />)}
           </div>
         ))}
@@ -356,7 +356,7 @@ function GroupView({ scope, matched, year, asOfLabel, startLabel, cashStartLabel
           {/* How the cash moved — waterfall */}
           <div className="crp-card">
             <div className="crp-card-h">How the cash moved <span>· sections → net movement</span></div>
-            <Svg html={waterfallSvg(sections.map(s => ({ label: s.label, value: s.net })), netMovement)} />
+            <Svg html={waterfallSvg(sections.map(s => ({ label: s.label, value: s.net })), netMovement, undefined, 1.35)} />
           </div>
 
           {/* Trade payables — monthly trajectory */}

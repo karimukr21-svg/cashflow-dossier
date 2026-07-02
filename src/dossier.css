@@ -1596,6 +1596,10 @@ body, html, #root {
 @media (max-width: 900px) { .crp-seccols { grid-template-columns: 1fr; } }
 .crp-groupcols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; align-items: start; }
 @media (max-width: 900px) { .crp-groupcols { grid-template-columns: 1fr; } }
+/* Operations card — roomier line spacing so column 1 stretches toward column 2 */
+.crp-stmtcard .crp-table td { padding-top: 6.5px; padding-bottom: 6.5px; }
+/* Column 2 (the four stacked sections) — wider gaps to reach column 3's height */
+.crp-seccol--spaced { gap: 26px; }
 /* Top-bar area include/exclude filter */
 .crp-areafilter { position: relative; display: inline-block; }
 .crp-af-btn { cursor: pointer; white-space: nowrap; }
