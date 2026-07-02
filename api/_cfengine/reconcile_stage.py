@@ -221,10 +221,15 @@ SHEET_SHARE = {
         # Legacy JV (Zafarana is 100%, not a JV share — per Karim)
         'Helwan': 0.5, 'Cairo West': 0.5, 'Mivida': 0.5, 'Nile Plaza': 0.5,
         'Madinaty CP03': 0.5, 'CFC': 0.5, 'CFC MEP': 0.5,
-        # Time-varying shares (list of (year, month, share) breakpoints, applied from that
-        # month onward): CCC Egypt leg + CCCEgypt area step 45% (Jan-2025) -> 60% (Feb-2025+).
+        # Time-varying FLOW shares: CCC Egypt leg + CCCEgypt area book Jan-2025 flows at
+        # 45%, Feb-2025+ at 60% (they have Jan-2025 activity that steps). CCC EGP on / CCC
+        # Egypt 25 stay flat 60% — their Jan flows are already booked at 60% in CONSOLIDATED
+        # (stepping them broke the tie), even though CCC EGP on's balance is part of the
+        # Feb-2025 share-restatement top-up (a balance-only item; see EGYPT_OPENING_ADJ).
         'CCC  Egypt leg': [(2025, 1, 0.45), (2025, 2, 0.60)],
         'CCCEgypt area': [(2025, 1, 0.45), (2025, 2, 0.60)],
+        'CCC EGP on': 0.6,
+        'CCC Egypt 25': 0.6,
     },
 }
 
