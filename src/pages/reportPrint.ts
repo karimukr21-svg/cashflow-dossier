@@ -225,8 +225,7 @@ const STYLE = `
   .chartcard { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; break-inside: avoid; }
   .chartcard svg { display: block; width: 100%; }
   .ch-h { font-size: 11px; font-weight: 700; margin-bottom: 4px; } .ch-h span { color: #94a3b8; font-weight: 500; }
-  .seccols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; align-items: stretch; }
-  .seccols .seccol { justify-content: space-between; }
+  .seccols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; align-items: start; }
   .seccol { display: flex; flex-direction: column; gap: 14px; }
   .seccol .chartcard { margin-bottom: 0; padding: 12px 14px; }
   .seccol .ch-h, .netcard .ch-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
