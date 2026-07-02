@@ -133,6 +133,14 @@ START_YEAR_OVERRIDE = {
     'KAZH_Apr_2026_CashFlow.xlsx': 2025,
 }
 
+# Per-file end-year ceiling (drop years after this). Default = no cap.
+# Qatar: the file carries a PLAN 2027 block; for the APR-2026 cycle the canonical
+# store keeps the 2024-2026 actual+forecast horizon only (per Karim), so the 2027
+# plan year is dropped at stage time.
+END_YEAR_OVERRIDE = {
+    'Qatar_Apr_2026_CashFlow_Updated.xlsx': 2026,
+}
+
 # Sheets that, despite classifying as 'project', are NOT real projects to sum:
 # by-project In/Out/NET summaries + sub-rollups that would double-count.
 EXCLUDE_SHEETS = {
@@ -734,6 +742,21 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
                 rollup_balances[bk] = {k: v for k, v in rollup_balances[bk].items()
                                        if int(k[:4]) >= start_year}
         rollup_sections = {sk: {k: v for k, v in d.items() if int(k[:4]) >= start_year}
+                           for sk, d in rollup_sections.items()}
+        n_act = sum(1 for r in staged if r['kind'] == 'actual')
+        n_fc = sum(1 for r in staged if r['kind'] == 'forecast')
+
+    # Per-file end-year ceiling (see END_YEAR_OVERRIDE). Drops out-of-horizon plan
+    # years, symmetric to the start-year floor. Applied to staged rows + the rollup
+    # balances/sections so the recon stays like-for-like. Recompute A/F counts after.
+    end_year = END_YEAR_OVERRIDE.get(fn)
+    if end_year:
+        staged = [r for r in staged if r['year'] <= end_year]
+        for bk in ('opening', 'ending', 'accum_loans', 'accum_od'):
+            if isinstance(rollup_balances.get(bk), dict):
+                rollup_balances[bk] = {k: v for k, v in rollup_balances[bk].items()
+                                       if int(k[:4]) <= end_year}
+        rollup_sections = {sk: {k: v for k, v in d.items() if int(k[:4]) <= end_year}
                            for sk, d in rollup_sections.items()}
         n_act = sum(1 for r in staged if r['kind'] == 'actual')
         n_fc = sum(1 for r in staged if r['kind'] == 'forecast')
