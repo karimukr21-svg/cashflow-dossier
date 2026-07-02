@@ -172,6 +172,25 @@ function projectSheet(p: ProjectPrint, disp: PrintDisp): string {
     + band + `<div class="cols"><div>${table}</div><div>${chart}</div></div>`)
 }
 
+type SectionsOpts = {
+  asOfLabel: string; matchedCount: number
+  sections: { label: string; net: number; rows: { label: string; value: number }[] }[]
+  disp: PrintDisp
+}
+function sectionsSheet(o: SectionsOpts): string {
+  const f = fmtFor(o.disp)
+  const chartDisp = { div: o.disp.div, dec: o.disp.dec }
+  const totalNet = o.sections.reduce((t, s) => t + s.net, 0)
+  const band = kpis([
+    ...o.sections.map(s => ({ label: s.label, value: f.fM(s.net), cls: cl(s.net) })),
+    { label: 'Net cash movement', value: f.fM(totalNet), cls: cl(totalNet) },
+  ])
+  const cards = o.sections.map(s =>
+    `<div class="chartcard"><div class="ch-h"><span class="sh-t">${s.label}</span><b class="sh-n ${cl(s.net)}">${f.fM(s.net)}</b></div>${areaBarsSvg(s.rows, chartDisp)}</div>`).join('')
+  return sheet(head('Cash Flow Report — Sections', `Actual to date · Jan–${o.asOfLabel} · ${o.disp.lineUnit} · ${o.matchedCount} areas · each section's net, by area`)
+    + band + `<div class="secgrid">${cards}</div>`)
+}
+
 const sheet = (inner: string) => `<div class="page"><div class="sheet">${inner}</div></div>`
 
 /* ── skeleton: shared style + fit-to-page script ────────────────────────────── */
@@ -215,6 +234,10 @@ const STYLE = `
   .chartcard { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; break-inside: avoid; }
   .chartcard svg { display: block; width: 100%; }
   .ch-h { font-size: 11px; font-weight: 700; margin-bottom: 4px; } .ch-h span { color: #94a3b8; font-weight: 500; }
+  .secgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; align-items: start; }
+  .secgrid .chartcard { margin-bottom: 0; }
+  .secgrid .ch-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .sh-t { font-weight: 700; color: #15233b; } .sh-n { font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .paysum { display: flex; gap: 16px; margin-top: 6px; font-size: 10px; color: #64748b; }
   .paysum b { font-variant-numeric: tabular-nums; }
   .note { font-size: 9px; color: #64748b; line-height: 1.5; margin-top: 8px; } .note b { color: #15233b; }`
@@ -236,7 +259,7 @@ function skeleton(title: string, sheets: string): string {
 
 /* ── public builders ────────────────────────────────────────────────────────── */
 type Opts = {
-  level: 'group' | 'area'
+  level: 'group' | 'area' | 'sections'
   scopeLabel: string; year: number; asOfLabel: string; startLabel: string; cashStartLabel?: string; matchedCount?: number
   statement?: { sections: StmtSection[]; netMovement: number }
   payStart?: number; payEnd?: number; hasPay?: boolean
@@ -244,10 +267,13 @@ type Opts = {
   paySeries?: { label: string; value: number }[]
   areaRows?: { label: string; netOps: number; payStart: number | null; payEnd: number | null }[]
   areaTotals?: { netOps: number; payStart: number; payEnd: number }
+  sections?: { label: string; net: number; rows: { label: string; value: number }[] }[]
   disp?: PrintDisp
 }
 export function buildReportHtml(o: Opts): string {
   const disp = o.disp ?? DEF
+  if (o.level === 'sections' && o.sections)
+    return skeleton('Cash Flow Report — Sections', sectionsSheet({ asOfLabel: o.asOfLabel, matchedCount: o.matchedCount ?? 0, sections: o.sections, disp }))
   if (o.level === 'area' && o.areaRows && o.areaTotals)
     return skeleton('Cash Flow Report — Areas', areaSheet({ asOfLabel: o.asOfLabel, startLabel: o.startLabel, areaRows: o.areaRows, areaTotals: o.areaTotals, disp }))
   return skeleton(`Cash Flow Report — ${o.scopeLabel}`, groupSheet({

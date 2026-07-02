@@ -4,7 +4,7 @@ import { useTopbarExtras } from '@/lib/displayFmt'
 import {
   fetchActuals, fetchForecasts, fetchPayablesTrajectory, fetchFxRate, fetchProjectCells,
   fetchAccountGroups, fetchGroupAccounts, subgroupMatchesArea,
-  type CfCell, type PayablesTrajRow, type GroupDef, type GroupAccount,
+  type CfCell, type CfLine, type PayablesTrajRow, type GroupDef, type GroupAccount,
 } from '@/lib/queries'
 import { fmt, fmtDelta } from '@/lib/format'
 import { buildModel, buildStatement, buildStatementMatrix, payablesSeries, type AreaAgg, type StmtSection, type MatrixSection, type PaySeriesPt } from './reportModel'
@@ -109,7 +109,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
     { key: 'group', label: 'Group' }, { key: 'area', label: 'Area' }, { key: 'sections', label: 'Sections' },
     { key: 'project', label: 'Project' }, { key: 'coverage', label: 'Coverage' }, { key: 'definitions', label: 'Definitions' },
   ]
-  const canPrint = level === 'group' || level === 'area'
+  const canPrint = level === 'group' || level === 'area' || level === 'sections'
   const slot = useTopbarExtras()
 
   const print = () => {
@@ -119,11 +119,17 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
       const areaRows = cfAreas.map(a => ({ label: a.label, netOps: a.netOps, payStart: a.payStart, payEnd: a.payEnd }))
       const areaTotals = cfAreas.reduce((t, a) => ({ netOps: t.netOps + a.netOps, payStart: t.payStart + (a.payStart ?? 0), payEnd: t.payEnd + (a.payEnd ?? 0) }), { netOps: 0, payStart: 0, payEnd: 0 })
       html = buildReportHtml({ level: 'area', scopeLabel: 'Areas', year, asOfLabel, startLabel, areaRows, areaTotals, matchedCount: cfAreas.length })
+    } else if (level === 'sections') {
+      html = buildReportHtml({
+        level: 'sections', scopeLabel: 'Sections', year, asOfLabel, startLabel, matchedCount: cfAreas.length,
+        sections: sectionCards(cfAreas, scope.lines),
+      })
     } else {
-      const { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash, endCash } = aggregateScope(model, cfAreas, groupArea)
+      const { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash } = aggregateScope(model, cfAreas, groupArea)
+      const stmt = buildStatement(lineUsd, scope.lines)
       html = buildReportHtml({
         level: 'group', scopeLabel, year, asOfLabel, startLabel, cashStartLabel, matchedCount: groupArea ? undefined : cfAreas.length,
-        statement: buildStatement(lineUsd, scope.lines), payStart, payEnd, hasPay, startCash, endCash,
+        statement: stmt, payStart, payEnd, hasPay, startCash, endCash: startCash + stmt.netMovement,   // derived ending
         paySeries: paySeries.map(p => ({ label: MONTHS[(p.period % 100) - 1] ?? '', value: p.usd })),
       })
     }
@@ -178,6 +184,24 @@ function aggregateScope(model: Map<string, AreaAgg>, matched: AreaAgg[], groupAr
   }
   const scopeLabel = groupArea ? (model.get(groupArea)?.label || 'area') : 'the Group'
   return { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash, endCash }
+}
+
+/* One card per cash-flow section (canonical statement order) — each carries the
+ * section's net + that net broken down by area. Shared by the Sections screen
+ * and its print. Sections/areas below THRESH (50k) drop out. */
+export type SectionCard = { label: string; net: number; rows: { label: string; value: number }[] }
+function sectionCards(matched: AreaAgg[], lines: CfLine[]): SectionCard[] {
+  const agg = new Map<string, number>()
+  for (const a of matched) for (const [lc, v] of a.lineUsd) agg.set(lc, (agg.get(lc) ?? 0) + v)
+  const stmt = buildStatement(agg, lines)
+  const byArea = matched.map(a => ({
+    label: a.label,
+    nets: new Map(buildStatement(a.lineUsd, lines).sections.map(s => [s.label, s.net])),
+  }))
+  return stmt.sections.map(s => ({
+    label: s.label, net: s.net,
+    rows: byArea.map(a => ({ label: a.label, value: a.nets.get(s.label) ?? 0 })).filter(r => Math.abs(r.value) >= 50000),
+  })).filter(c => c.rows.length > 0)
 }
 
 /* KPI tile band — the headline numbers, shared across the three pages. */
@@ -245,10 +269,15 @@ function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLab
   scope: Scope; model: Map<string, AreaAgg>; matched: AreaAgg[]; groupArea: string
   year: number; asOfLabel: string; startLabel: string; cashStartLabel: string; paySeries: PaySeriesPt[]
 }) {
-  const { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash, endCash } = aggregateScope(model, matched, groupArea)
+  const { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash } = aggregateScope(model, matched, groupArea)
   const payDelta = hasPay ? payEnd - payStart : null
   const { sections, netMovement } = buildStatement(lineUsd, scope.lines)
   const drivers = sections.map(s => ({ label: s.label, value: s.net }))
+  // Ending cash is DERIVED (opening + net movement), not read from the stored
+  // "balance at end" line — a cash-flow statement's closing position is opening
+  // plus the flows by definition, so the walk always reconciles. (The stored
+  // ending vs this derived one is a data-quality check that lives in staging.)
+  const endCash = startCash + netMovement
   const hasCash = Math.abs(startCash) > 1 || Math.abs(endCash) > 1
 
   return (
@@ -311,25 +340,8 @@ function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLab
 function SectionsView({ scope, matched, asOfLabel }: {
   scope: Scope; matched: AreaAgg[]; asOfLabel: string
 }) {
-  // Section order + accurate section nets from the aggregated group statement.
-  const { order, aggNet } = useMemo(() => {
-    const agg = new Map<string, number>()
-    for (const a of matched) for (const [lc, v] of a.lineUsd) agg.set(lc, (agg.get(lc) ?? 0) + v)
-    const stmt = buildStatement(agg, scope.lines)
-    return { order: stmt.sections.map(s => s.label), aggNet: new Map(stmt.sections.map(s => [s.label, s.net])) }
-  }, [matched, scope.lines])
-
-  // Per-area section nets — one full statement per area, keyed section → net.
-  const byArea = useMemo(() => matched.map(a => ({
-    label: a.label,
-    nets: new Map(buildStatement(a.lineUsd, scope.lines).sections.map(s => [s.label, s.net])),
-  })), [matched, scope.lines])
-
-  const cards = order.map(label => ({
-    label,
-    net: aggNet.get(label) ?? 0,
-    rows: byArea.map(a => ({ label: a.label, value: a.nets.get(label) ?? 0 })).filter(r => Math.abs(r.value) >= 50000),
-  })).filter(c => c.rows.length > 0)
+  const cards = useMemo(() => sectionCards(matched, scope.lines), [matched, scope.lines])
+  const netMovement = cards.reduce((t, c) => t + c.net, 0)
 
   return (
     <div className="crp-page">
@@ -342,16 +354,24 @@ function SectionsView({ scope, matched, asOfLabel }: {
         <div className="crp-brand">Treasury</div>
       </div>
 
+      {/* Overview — every section's net at a glance + how they sum to net movement */}
+      <KpiBand cards={[
+        ...cards.map(c => ({ label: c.label, value: fMm(c.net), cls: cls(c.net) })),
+        { label: 'Net cash movement', value: fMm(netMovement), cls: cls(netMovement) },
+      ]} />
+
       <div className="crp-secgrid">
         {cards.map(c => (
           <div className="crp-card" key={c.label}>
-            <div className="crp-card-h">{c.label} <span>· net by area</span></div>
+            <div className="crp-sechead">
+              <span className="crp-sechead-t">{c.label}<span> · by area</span></span>
+              <b className={`crp-sechead-n ${cls(c.net)}`}>{fMm(c.net)}</b>
+            </div>
             <Svg html={areaBarsSvg(c.rows.map(r => ({ label: r.label, value: r.value })))} />
-            <div className="crp-secnet"><span>Section net</span><b className={cls(c.net)}>{fMm(c.net)}</b></div>
           </div>
         ))}
       </div>
-      <div className="crp-note">Each card is one cash-flow section; bars show that section's net cash per area (green = generated, crimson = consumed), USD, year-to-date. The section nets tie the "How the cash moved" waterfall on the Group page.</div>
+      <div className="crp-note">Each card is one cash-flow section; the tiles above are the section nets, which sum to net cash movement. Bars show that section's net cash per area (green = generated, crimson = consumed), USD, year-to-date. Section nets tie the "How the cash moved" waterfall on the Group page.</div>
     </div>
   )
 }

@@ -1542,8 +1542,8 @@ body, html, #root {
 .crp-lede { font-size: 15px; line-height: 1.55; color: #334155; max-width: 1180px; }
 .crp-lede b { color: var(--ink); font-weight: 700; }
 .crp-lede b.neg { color: var(--crimson); } .crp-lede b.pos { color: var(--good); }
-.crp-kpis { display: flex; gap: 12px; }
-.crp-kpi { flex: 1; border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; border-left: 3px solid var(--crimson); background: var(--surface, #fff); }
+.crp-kpis { display: flex; gap: 12px; flex-wrap: wrap; }
+.crp-kpi { flex: 1 1 120px; min-width: 120px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; border-left: 3px solid var(--crimson); background: var(--surface, #fff); }
 .crp-kpi-l { font-size: 8.5px; letter-spacing: .4px; text-transform: uppercase; color: var(--mute); font-weight: 700; }
 .crp-kpi-v { font-size: 25px; font-weight: 800; margin-top: 2px; color: var(--ink); }
 .crp-kpi-v.neg { color: var(--crimson); } .crp-kpi-v.pos { color: var(--good); }
@@ -1592,9 +1592,11 @@ body, html, #root {
 .crp-grid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 14px; align-items: start; }
 @media (max-width: 900px) { .crp-grid { grid-template-columns: 1fr; } }
 .crp-secgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; align-items: start; }
-.crp-secnet { display: flex; justify-content: space-between; align-items: baseline; border-top: 2px solid var(--ink); margin-top: 8px; padding-top: 6px; font-size: 12.5px; }
-.crp-secnet b { font-size: 15px; font-variant-numeric: tabular-nums; }
-.crp-secnet .neg { color: var(--crimson); } .crp-secnet .pos { color: var(--good); }
+.crp-sechead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; gap: 8px; }
+.crp-sechead-t { font-size: 13px; font-weight: 700; color: var(--ink); }
+.crp-sechead-t span { color: #94a3b8; font-weight: 500; }
+.crp-sechead-n { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.crp-sechead-n.neg { color: var(--crimson); } .crp-sechead-n.pos { color: var(--good); }
 .crp-card { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; background: var(--surface, #fff); }
 .crp-card-h { font-size: 13px; font-weight: 700; color: var(--ink); margin-bottom: 8px; }
 .crp-card-h span { color: #94a3b8; font-weight: 500; }
