@@ -130,7 +130,6 @@ export default function Dossier() {
 
   // Resolve state from URL
   const primaryVersion = sp.get('v') || versions[0]?.version_code || ''
-  const compareVersion = sp.get('c') || ''
   const preset = (sp.get('p') || 'ytd') as PresetKey
   const grain = (sp.get('g') || 'monthly') as Grain
   const groupBy = (sp.get('gb') === 'nature' ? 'nature' : 'category') as GroupBy
@@ -296,7 +295,7 @@ export default function Dossier() {
     for (const a of areas) for (const cf of a.cf_areas) cfToCanonical.set(cf, a)
 
     const scope = {
-      primaryVersion, compareVersion,
+      primaryVersion,
       fromYear: fy, fromMonth: fm, toYear: ty, toMonth: tm,
       areas, lines, versions, latestActualYM, grain, groupBy, ord,
       selectedAreas, cfToCanonical,
@@ -359,20 +358,6 @@ export default function Dossier() {
                 {v.version_code}
               </button>
             ))}
-          </div>
-          <div className="ctrl" style={{ marginLeft: 8 }}><label>Compare</label></div>
-          <div className="pill-row">
-            <button onClick={() => setUrl({ c: null })}
-              className={`pill-btn ${compareVersion === '' ? 'active' : ''}`}>None</button>
-            {versions.filter(v => v.version_code !== primaryVersion).map(v => (
-              <button key={v.version_code}
-                onClick={() => setUrl({ c: v.version_code })}
-                className={`pill-btn ${compareVersion === v.version_code ? 'active' : ''}`}>
-                {v.version_code}
-              </button>
-            ))}
-            <button onClick={() => setUrl({ c: 'Actual' })}
-              className={`pill-btn ${compareVersion === 'Actual' ? 'active' : ''}`}>Actual</button>
           </div>
         </div>
 
@@ -505,7 +490,6 @@ export default function Dossier() {
 
 export type Scope = {
   primaryVersion: string;
-  compareVersion: string;
   fromYear: number; fromMonth: number; toYear: number; toMonth: number;
   /* Canonical areas (public.areas joined with public.cashflow_sheets).
    * Each row carries the cf_areas list — Tony's labels in cf_actuals.area
