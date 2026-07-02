@@ -307,15 +307,22 @@ export async function fetchForecasts(opts: {
 export async function fetchProjectCells(opts: {
   version: string; cfArea?: string; fromYear: number; fromMonth: number; toYear: number; toMonth: number;
 }): Promise<(CfCell & { project_code: string | null; currency?: string })[]> {
-  let q = supabase
-    .from('cf_forecasts')
-    .select('area, project_code, line_code, year, month, value, currency')
+  // Project-grain cells span BOTH tables once a version is published: elapsed
+  // periods live in cf_actuals (shared, version-agnostic — moved there by
+  // cf_publish_version), forward periods stay in cf_forecasts for the version.
+  // Read both, else a published cycle's Project view goes blank for the elapsed
+  // window (actuals ≤ as-of and forecasts ≥ as-of+1 don't overlap → no dupes).
+  const sel = 'area, project_code, line_code, year, month, value, currency'
+  let qf = supabase.from('cf_forecasts').select(sel)
     .eq('version', opts.version)
     .gte('year', opts.fromYear).lte('year', opts.toYear)
-  if (opts.cfArea) q = q.eq('area', opts.cfArea)
-  const { data, error } = await q
-  if (error) throw error
-  return (data || [])
+  let qa = supabase.from('cf_actuals').select(sel)
+    .gte('year', opts.fromYear).lte('year', opts.toYear)
+  if (opts.cfArea) { qf = qf.eq('area', opts.cfArea); qa = qa.eq('area', opts.cfArea) }
+  const [rf, ra] = await Promise.all([qf, qa])
+  if (rf.error) throw rf.error
+  if (ra.error) throw ra.error
+  return [...(ra.data || []), ...(rf.data || [])]
     .filter(r => inRange(r, opts.fromYear, opts.fromMonth, opts.toYear, opts.toMonth))
     .map(r => ({ ...r, value: Number(r.value) }))
 }
