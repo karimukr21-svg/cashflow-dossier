@@ -313,6 +313,9 @@ JV_RECLASS = {
         'Arkan', 'Arkan Towers', 'Madinaty CP05 MEP', 'FS Luxor MEP', 'CCC EGP on', 'CCC Egypt 25',
         # Legacy JV
         'Helwan', 'Cairo West', 'Mivida', 'Nile Plaza', 'Madinaty CP03', 'CFC', 'CFC MEP', 'CCC  Egypt leg',
+        # Offshore: CCCEgypt area is reclassified the same way in the AREA sheet
+        # (0.6×non-op − 0.4×within-group, within-group at 100%); CCIC/CCCE/CCC RE are 100%.
+        'CCCEgypt area',
     },
 }
 
