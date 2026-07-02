@@ -1561,6 +1561,25 @@ body, html, #root {
 .crp-cw-arrow span { font-size: 16px; font-weight: 800; color: var(--ink); }
 .crp-cw-arrow span.neg { color: var(--crimson); } .crp-cw-arrow span.pos { color: var(--good); }
 .crp-cw-arrow i { font-size: 8px; letter-spacing: .4px; text-transform: uppercase; color: var(--mute); font-weight: 700; font-style: normal; margin-top: 2px; }
+/* Cash-journey timeline (Group top band): Start → net movement + drivers → End */
+.crp-timeline { display: flex; align-items: stretch; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--surface, #fff); }
+.crp-tl-node { flex: 0 0 auto; min-width: 200px; padding: 12px 18px; display: flex; flex-direction: column; justify-content: center; }
+.crp-tl-node--end { border-left: 1px solid var(--border); background: #f9fafb; }
+.crp-tl-cap { font-size: 8.5px; letter-spacing: .4px; text-transform: uppercase; color: var(--mute); font-weight: 700; }
+.crp-tl-val { font-size: 26px; font-weight: 800; margin-top: 2px; color: var(--ink); }
+.crp-tl-val.neg { color: var(--crimson); } .crp-tl-val.pos { color: var(--good); }
+.crp-tl-flow { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 12px 18px; background: #f6f7f9; border-left: 1px solid var(--border); }
+.crp-timeline--nocash .crp-tl-flow { border-left: 0; }
+.crp-tl-move { font-size: 21px; font-weight: 800; color: var(--ink); display: flex; align-items: baseline; gap: 8px; }
+.crp-tl-move.neg { color: var(--crimson); } .crp-tl-move.pos { color: var(--good); }
+.crp-tl-move i { font-size: 8px; letter-spacing: .4px; text-transform: uppercase; color: var(--mute); font-weight: 700; font-style: normal; }
+.crp-tl-chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.crp-tl-chip { font-size: 10.5px; color: var(--mute); font-weight: 600; border: 1px solid var(--border); border-radius: 20px; padding: 3px 11px; background: #fff; }
+.crp-tl-chip b { font-weight: 800; font-variant-numeric: tabular-nums; }
+.crp-tl-chip b.neg { color: var(--crimson); } .crp-tl-chip b.pos { color: var(--good); }
+.crp-paysum { display: flex; gap: 18px; margin-top: 10px; font-size: 12px; color: var(--mute); }
+.crp-paysum b { font-variant-numeric: tabular-nums; color: var(--ink); }
+.crp-paysum b.neg { color: var(--crimson); } .crp-paysum b.pos { color: var(--good); }
 
 .crp-page { display: flex; flex-direction: column; gap: 14px; }
 .crp-head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2.5px solid var(--crimson); padding-bottom: 8px; }

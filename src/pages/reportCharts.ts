@@ -77,6 +77,38 @@ export function areaBarsSvg(rows: { label: string; value: number }[], disp: Char
   return s
 }
 
+/* Monthly trade-payables level — magnitude bars across the elapsed months with a
+ * trajectory line over the tops. Payables are credit balances (negative); bars
+ * show the magnitude, labels show the signed value. A falling line = paying down. */
+export function payablesTrendSvg(points: { label: string; value: number }[], disp: ChartDisp = DEF): string {
+  const lab = (v: number) => labf(v, disp)
+  if (points.length === 0) return `<svg viewBox="0 0 560 40" width="100%"><text x="280" y="24" text-anchor="middle" font-size="12" fill="#94a3b8" font-family="sans-serif">No data</text></svg>`
+  const W = 560, H = 210, padL = 8, padR = 8, top = 28, bottom = 32
+  const plotW = W - padL - padR, plotH = H - top - bottom
+  const max = Math.max(1, ...points.map(p => Math.abs(p.value)))
+  const n = points.length, slot = plotW / n, bw = Math.min(50, slot * 0.5)
+  const cx = (i: number) => padL + (i + 0.5) * slot
+  const base = top + plotH
+  const yTop = (mag: number) => base - (mag / max) * plotH
+  const FILL = 'rgba(225,0,32,0.5)'
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">`
+  s += `<line x1="${padL}" y1="${base.toFixed(1)}" x2="${W - padR}" y2="${base.toFixed(1)}" stroke="${INK}" stroke-width="1"/>`
+  points.forEach((p, i) => {
+    const yt = yTop(Math.abs(p.value)), h = Math.max(1.5, base - yt)
+    s += `<rect x="${(cx(i) - bw / 2).toFixed(1)}" y="${yt.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${FILL}" rx="2"/>`
+  })
+  const line = points.map((p, i) => `${cx(i).toFixed(1)},${yTop(Math.abs(p.value)).toFixed(1)}`).join(' ')
+  s += `<polyline points="${line}" fill="none" stroke="${CRIM}" stroke-width="1.5" opacity="0.85"/>`
+  points.forEach((p, i) => {
+    const yt = yTop(Math.abs(p.value))
+    s += `<circle cx="${cx(i).toFixed(1)}" cy="${yt.toFixed(1)}" r="2.4" fill="${CRIM}"/>`
+    s += `<text x="${cx(i).toFixed(1)}" y="${(yt - 6).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="${CRIM}">${lab(p.value)}</text>`
+    s += `<text x="${cx(i).toFixed(1)}" y="${(base + 16).toFixed(1)}" text-anchor="middle" font-size="10" fill="${MUTE}">${p.label}</text>`
+  })
+  s += `</svg>`
+  return s
+}
+
 /* Monthly net-cash bars — the project's cash movement per elapsed month. */
 export function netTrendSvg(labels: string[], values: number[], disp: ChartDisp = DEF): string {
   const lab = (v: number) => labf(v, disp)

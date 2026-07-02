@@ -190,6 +190,28 @@ export function buildStatement(lineUsd: Map<string, number>, lines: CfLine[]): {
   return { sections: out, netMovement }
 }
 
+export type PaySeriesPt = { period: number; usd: number }
+/** Monthly trade-payables series (USD) for a set of scoped areas, mirroring
+ *  buildModel's subgroup→area assignment (first matching area wins) so the
+ *  endpoints tie the Start/End position shown in the summary. */
+export function payablesSeries(
+  payTraj: PayablesTrajRow[], scopedIds: Set<string>, areas: CanonicalArea[],
+  periodStart: number, periodEnd: number,
+): PaySeriesPt[] {
+  const byPeriod = new Map<number, number>()
+  const periods = new Set<number>()
+  for (const r of payTraj) {
+    if (r.period < periodStart || r.period > periodEnd) continue
+    periods.add(r.period)
+    for (const a of areas) {
+      if (!subgroupMatchesArea(r.subgroup, a.area_id)) continue
+      if (scopedIds.has(a.area_id)) byPeriod.set(r.period, (byPeriod.get(r.period) ?? 0) + r.usdTotal)
+      break
+    }
+  }
+  return [...periods].sort((x, y) => x - y).map(p => ({ period: p, usd: byPeriod.get(p) ?? 0 }))
+}
+
 export type MatrixBucket = { label: string; monthly: number[]; total: number }
 export type MatrixSection = { label: string; receipts: MatrixBucket[]; payments: MatrixBucket[]; recTotal: number[]; payTotal: number[]; net: number[]; netTot: number }
 

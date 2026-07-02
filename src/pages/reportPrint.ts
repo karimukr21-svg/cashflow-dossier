@@ -1,5 +1,5 @@
 import type { StmtSection, MatrixSection } from './reportModel'
-import { waterfallSvg, areaBarsSvg, netTrendSvg } from './reportCharts'
+import { waterfallSvg, areaBarsSvg, netTrendSvg, payablesTrendSvg } from './reportCharts'
 
 /* Print mirror of the Cash Flow Report (CashReport.tsx), A4 LANDSCAPE, one sheet
  * per report. Each sheet is scaled to fit a single page (fit-to-page script), so
@@ -80,6 +80,7 @@ type GroupOpts = {
   statement: { sections: StmtSection[]; netMovement: number }
   payStart?: number; payEnd?: number; hasPay?: boolean
   startCash?: number; endCash?: number
+  paySeries?: { label: string; value: number }[]
   disp: PrintDisp
 }
 function groupSheet(o: GroupOpts): string {
@@ -107,10 +108,9 @@ function groupSheet(o: GroupOpts): string {
   const right = `
     <div class="chartcard"><div class="ch-h">How the cash moved <span>· sections → net movement</span></div>
       ${waterfallSvg(o.statement.sections.map(s => ({ label: s.label, value: s.net })), o.statement.netMovement, chartDisp)}</div>
-    <div class="chartcard"><div class="ch-h">Trade payables · then vs now · ${o.disp.payUnit}</div>
-      ${o.hasPay ? `<table class="t tpos"><thead><tr><th>Liabilities</th><th class="r">${o.startLabel}</th><th class="r">${o.asOfLabel}</th><th class="r">Δ</th></tr></thead>
-        <tbody><tr class="total"><td>Trade payables</td>
-          <td class="r ${cl(o.payStart)}">${f.fM(o.payStart)}</td><td class="r ${cl(o.payEnd)}">${f.fM(o.payEnd)}</td><td class="r ${cl(payDelta)}">${f.fD(payDelta)}</td></tr></tbody></table>
+    <div class="chartcard"><div class="ch-h">Trade payables · monthly · ${o.startLabel} → ${o.asOfLabel} · ${o.disp.payUnit}</div>
+      ${o.hasPay ? `${payablesTrendSvg(o.paySeries ?? [], chartDisp)}
+        <div class="paysum"><span>${o.startLabel} <b class="${cl(o.payStart)}">${f.fM(o.payStart)}</b></span><span>${o.asOfLabel} <b class="${cl(o.payEnd)}">${f.fM(o.payEnd)}</b></span><span>Δ <b class="${cl(payDelta)}">${f.fD(payDelta)}</b></span></div>
         <div class="note">Suppliers, subcontractors &amp; taxes — the editable <b>trade_payables</b> group (Midas TB, USD). Δ positive = paid down. Recent months still posting.</div>`
         : `<div class="note">No matched payables for this scope.</div>`}</div>`
   return sheet(head(`Cash Flow Report — ${o.scopeLabel}`, `Actual to date · Jan–${o.asOfLabel} · ${o.disp.lineUnit}${o.matchedCount != null ? ` · ${o.matchedCount} matched areas` : ''}`)
@@ -212,6 +212,8 @@ const STYLE = `
   .chartcard { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; break-inside: avoid; }
   .chartcard svg { display: block; width: 100%; }
   .ch-h { font-size: 11px; font-weight: 700; margin-bottom: 4px; } .ch-h span { color: #94a3b8; font-weight: 500; }
+  .paysum { display: flex; gap: 16px; margin-top: 6px; font-size: 10px; color: #64748b; }
+  .paysum b { font-variant-numeric: tabular-nums; }
   .note { font-size: 9px; color: #64748b; line-height: 1.5; margin-top: 8px; } .note b { color: #15233b; }`
 
 // Scale each sheet down so it fits exactly one landscape page (never spills).
@@ -236,6 +238,7 @@ type Opts = {
   statement?: { sections: StmtSection[]; netMovement: number }
   payStart?: number; payEnd?: number; hasPay?: boolean
   startCash?: number; endCash?: number
+  paySeries?: { label: string; value: number }[]
   areaRows?: { label: string; netOps: number; payStart: number | null; payEnd: number | null }[]
   areaTotals?: { netOps: number; payStart: number; payEnd: number }
   disp?: PrintDisp
@@ -246,7 +249,8 @@ export function buildReportHtml(o: Opts): string {
     return skeleton('Cash Flow Report — Areas', areaSheet({ asOfLabel: o.asOfLabel, startLabel: o.startLabel, areaRows: o.areaRows, areaTotals: o.areaTotals, disp }))
   return skeleton(`Cash Flow Report — ${o.scopeLabel}`, groupSheet({
     scopeLabel: o.scopeLabel, asOfLabel: o.asOfLabel, startLabel: o.startLabel, matchedCount: o.matchedCount,
-    statement: o.statement!, payStart: o.payStart, payEnd: o.payEnd, hasPay: o.hasPay, startCash: o.startCash, endCash: o.endCash, disp,
+    statement: o.statement!, payStart: o.payStart, payEnd: o.payEnd, hasPay: o.hasPay, startCash: o.startCash, endCash: o.endCash,
+    paySeries: o.paySeries, disp,
   }))
 }
 

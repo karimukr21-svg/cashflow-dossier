@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useTopbarExtras } from '@/lib/displayFmt'
 import {
   fetchActuals, fetchForecasts, fetchPayablesTrajectory, fetchFxRate, fetchProjectCells,
   fetchAccountGroups, fetchGroupAccounts, subgroupMatchesArea,
   type CfCell, type PayablesTrajRow, type GroupDef, type GroupAccount,
 } from '@/lib/queries'
 import { fmt, fmtDelta } from '@/lib/format'
-import { buildModel, buildStatement, buildStatementMatrix, type AreaAgg, type StmtSection, type MatrixSection } from './reportModel'
+import { buildModel, buildStatement, buildStatementMatrix, payablesSeries, type AreaAgg, type StmtSection, type MatrixSection, type PaySeriesPt } from './reportModel'
 import { buildReportHtml, buildProjectsPrintHtml } from './reportPrint'
-import { waterfallSvg, areaBarsSvg, netTrendSvg } from './reportCharts'
+import { waterfallSvg, areaBarsSvg, netTrendSvg, payablesTrendSvg } from './reportCharts'
 import type { Scope } from './Dossier'
 
 /* ── The Cash Flow Report ───────────────────────────────────────────────────
@@ -83,6 +85,13 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
       .sort((x, y) => Math.abs(y.netOps) - Math.abs(x.netOps)),
     [model, scope.areas])
 
+  // Monthly trade-payables series (Dec → as-of) for the current Group scope
+  // (all matched areas, or the one selected area). Endpoints tie payStart/payEnd.
+  const paySeries = useMemo(() => {
+    const scopedIds = new Set(groupArea ? [groupArea] : matched.map(a => a.areaId))
+    return payablesSeries(payTraj, scopedIds, scope.areas, (year - 1) * 100 + 12, asOf)
+  }, [payTraj, groupArea, matched, scope.areas, year, asOf])
+
   // Project grain covers any area with pushed cash flow that is FX-convertible
   // (payables mapping not required — project view is cash-flow only).
   const projAreaOptions = useMemo(() =>
@@ -95,6 +104,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
     { key: 'coverage', label: 'Coverage' }, { key: 'definitions', label: 'Definitions' },
   ]
   const canPrint = level === 'group' || level === 'area'
+  const slot = useTopbarExtras()
 
   const print = () => {
     const w = window.open('', '_blank'); if (!w) return
@@ -108,30 +118,37 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
       html = buildReportHtml({
         level: 'group', scopeLabel, year, asOfLabel, startLabel, matchedCount: groupArea ? undefined : matched.length,
         statement: buildStatement(lineUsd, scope.lines), payStart, payEnd, hasPay, startCash, endCash,
+        paySeries: paySeries.map(p => ({ label: MONTHS[(p.period % 100) - 1] ?? '', value: p.usd })),
       })
     }
     w.document.write(html); w.document.close()
   }
 
+  // Report controls (view tabs + area dropdown + Print) — rendered up in the
+  // Dossier top bar (Row 2) via the slot; inline fallback if the slot is absent.
+  const controls = (
+    <>
+      <div className="crp-levels">
+        {tabs.map(t => (
+          <button key={t.key} className={`crp-lvl ${level === t.key ? 'active' : ''}`} onClick={() => setLevel(t.key)}>{t.label}</button>
+        ))}
+      </div>
+      {level === 'group' && (
+        <select className="crp-select" value={groupArea} onChange={e => setGroupArea(e.target.value)}>
+          <option value="">All matched areas (Group)</option>
+          {matched.map(a => <option key={a.areaId} value={a.areaId}>{a.label}</option>)}
+        </select>
+      )}
+      {canPrint && <button className="crp-print" style={{ marginLeft: 0 }} onClick={print}>Print</button>}
+    </>
+  )
+
   return (
     <div className="crp">
-      <div className="crp-toolbar no-print">
-        <div className="crp-levels">
-          {tabs.map(t => (
-            <button key={t.key} className={`crp-lvl ${level === t.key ? 'active' : ''}`} onClick={() => setLevel(t.key)}>{t.label}</button>
-          ))}
-        </div>
-        {level === 'group' && (
-          <select className="crp-select" value={groupArea} onChange={e => setGroupArea(e.target.value)}>
-            <option value="">All matched areas (Group)</option>
-            {matched.map(a => <option key={a.areaId} value={a.areaId}>{a.label}</option>)}
-          </select>
-        )}
-        {canPrint && <button className="crp-print" onClick={print}>Print</button>}
-      </div>
+      {slot ? createPortal(controls, slot) : <div className="crp-toolbar no-print">{controls}</div>}
 
       {loading ? <div className="placeholder-box">Loading…</div>
-        : level === 'group' ? <GroupView scope={scope} model={model} matched={matched} groupArea={groupArea} year={year} asOfLabel={asOfLabel} startLabel={startLabel} />
+        : level === 'group' ? <GroupView scope={scope} model={model} matched={matched} groupArea={groupArea} year={year} asOfLabel={asOfLabel} startLabel={startLabel} paySeries={paySeries} />
         : level === 'area' ? <AreaView matched={matched} year={year} asOfLabel={asOfLabel} startLabel={startLabel} onOpenProjects={(id) => { setProjArea(id); setLevel('project') }} />
         : level === 'project' ? <ProjectView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} projArea={projArea} setProjArea={setProjArea} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} />
         : level === 'coverage' ? <CoverageView scope={scope} model={model} payTraj={payTraj} />
@@ -172,6 +189,34 @@ function KpiBand({ cards }: { cards: { label: string; value: string; cls?: strin
 }
 const Svg = ({ html }: { html: string }) => <div className="crp-svg" dangerouslySetInnerHTML={{ __html: html }} />
 
+/* Cash-journey timeline — the top band of the Group page. Starting cash → the
+ * net movement (with net operations / net financing as the headline drivers) →
+ * ending cash, read left to right. Replaces the KPI tiles + cash-walk strip. */
+function CashTimeline({ startCash, endCash, netMovement, opsNet, finNet, hasCash, startLabel, asOfLabel }: {
+  startCash: number; endCash: number; netMovement: number; opsNet: number; finNet: number
+  hasCash: boolean; startLabel: string; asOfLabel: string
+}) {
+  const chip = (label: string, v: number) => (
+    <span className="crp-tl-chip">{label} <b className={cls(v)}>{fMd(v)}</b></span>
+  )
+  return (
+    <div className={`crp-timeline${hasCash ? '' : ' crp-timeline--nocash'}`}>
+      {hasCash ? <div className="crp-tl-node">
+        <div className="crp-tl-cap">Starting cash · {startLabel}</div>
+        <div className={`crp-tl-val ${cls(startCash)}`}>{fMm(startCash)}</div>
+      </div> : null}
+      <div className="crp-tl-flow">
+        <div className={`crp-tl-move ${cls(netMovement)}`}>{netMovement < 0 ? '−' : '+'}{fMm(Math.abs(netMovement))}<i>net cash movement</i></div>
+        <div className="crp-tl-chips">{chip('Operations', opsNet)}{chip('Financing', finNet)}</div>
+      </div>
+      {hasCash ? <div className="crp-tl-node crp-tl-node--end">
+        <div className="crp-tl-cap">Ending cash · {asOfLabel}</div>
+        <div className={`crp-tl-val ${cls(endCash)}`}>{fMm(endCash)}</div>
+      </div> : null}
+    </div>
+  )
+}
+
 /* One statement section: receipts grouped, then payments grouped, then net.
  * Per-nature subtotals show only when a nature has more than one bucket. */
 function StmtSectionRows({ sec }: { sec: StmtSection }) {
@@ -188,9 +233,9 @@ function StmtSectionRows({ sec }: { sec: StmtSection }) {
 }
 
 /* ── Group view — cash-flow statement + separated payables position ─────────── */
-function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLabel }: {
+function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLabel, paySeries }: {
   scope: Scope; model: Map<string, AreaAgg>; matched: AreaAgg[]; groupArea: string
-  year: number; asOfLabel: string; startLabel: string
+  year: number; asOfLabel: string; startLabel: string; paySeries: PaySeriesPt[]
 }) {
   const { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash, endCash } = aggregateScope(model, matched, groupArea)
   const payDelta = hasPay ? payEnd - payStart : null
@@ -214,18 +259,7 @@ function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLab
         {hasPay ? <> Trade payables moved from <b>{fMm(Math.abs(payStart))}m</b> to <b>{fMm(Math.abs(payEnd))}m</b> — <b className={cls(payDelta)}>{(payDelta ?? 0) >= 0 ? 'paid down' : 'up'} {fMm(Math.abs(payDelta ?? 0))}m</b>.</> : null}
       </div>
 
-      {hasCash ? <div className="crp-cashwalk">
-        <div className="crp-cw-pt"><div className="crp-cw-l">Starting cash · {startLabel}</div><div className={`crp-cw-v ${cls(startCash)}`}>{fMm(startCash)}</div></div>
-        <div className="crp-cw-arrow"><span className={cls(netMovement)}>{netMovement < 0 ? '−' : '+'}{fMm(Math.abs(netMovement))}</span><i>net movement</i></div>
-        <div className="crp-cw-pt"><div className="crp-cw-l">Ending cash · {asOfLabel}</div><div className={`crp-cw-v ${cls(endCash)}`}>{fMm(endCash)}</div></div>
-      </div> : null}
-
-      <KpiBand cards={[
-        { label: 'Net from operations', value: fMm(opsNet), cls: cls(opsNet) },
-        { label: 'Net financing', value: fMm(finNet), cls: cls(finNet) },
-        { label: 'Net cash movement', value: fMm(netMovement), cls: cls(netMovement) },
-        { label: `Trade payables · ${asOfLabel}`, value: fMm(payEnd), cls: cls(payEnd), sub: hasPay ? `${fMd(payDelta)} since ${startLabel}` : 'not mapped' },
-      ]} />
+      <CashTimeline startCash={startCash} endCash={endCash} netMovement={netMovement} opsNet={opsNet} finNet={finNet} hasCash={hasCash} startLabel={startLabel} asOfLabel={asOfLabel} />
 
       <div className="crp-grid">
         {/* Cash flow statement */}
@@ -247,20 +281,16 @@ function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLab
             <Svg html={waterfallSvg(sections.map(s => ({ label: s.label, value: s.net })), netMovement)} />
           </div>
 
-          {/* Trade payables — then vs now */}
-          <div className="crp-card crp-card--pos">
-            <div className="crp-card-h">Trade payables <span>· then vs now</span></div>
+          {/* Trade payables — monthly trajectory */}
+          <div className="crp-card">
+            <div className="crp-card-h">Trade payables <span>· monthly · {startLabel} → {asOfLabel}</span></div>
             {hasPay ? <>
-              <table className="crp-table crp-table--pos">
-                <thead><tr><th>Liabilities</th><th className="r">{startLabel}</th><th className="r">{asOfLabel}</th><th className="r">Δ</th></tr></thead>
-                <tbody>
-                  <tr className="crp-total"><td>Trade payables</td>
-                    <td className={`r ${cls(payStart)}`}>{fMm(payStart)}</td>
-                    <td className={`r ${cls(payEnd)}`}>{fMm(payEnd)}</td>
-                    <td className={`r ${cls(payDelta)}`}>{fMd(payDelta)}</td></tr>
-                </tbody>
-              </table>
-              <PosBar start={payStart} end={payEnd} startLabel={startLabel} endLabel={asOfLabel} />
+              <Svg html={payablesTrendSvg(paySeries.map(p => ({ label: MONTHS[(p.period % 100) - 1] ?? '', value: p.usd })))} />
+              <div className="crp-paysum">
+                <span>{startLabel} <b className={cls(payStart)}>{fMm(payStart)}</b></span>
+                <span>{asOfLabel} <b className={cls(payEnd)}>{fMm(payEnd)}</b></span>
+                <span>Δ <b className={cls(payDelta)}>{fMd(payDelta)}</b></span>
+              </div>
               <div className="crp-note">Suppliers, subcontractors &amp; taxes — the editable <b>trade_payables</b> group (Midas TB, USD). Δ positive = paid down. Recent months are still posting, so the latest may understate.</div>
             </> : <div className="crp-note crp-note--empty">No matched payables for this scope.</div>}
           </div>
@@ -268,19 +298,6 @@ function GroupView({ scope, model, matched, groupArea, year, asOfLabel, startLab
       </div>
     </div>
   )
-}
-
-/* Two-bar Start→End magnitude comparison for the payables position. */
-function PosBar({ start, end, startLabel, endLabel }: { start: number; end: number; startLabel: string; endLabel: string }) {
-  const max = Math.max(Math.abs(start), Math.abs(end), 1)
-  const row = (label: string, v: number) => (
-    <div className="crp-posbar-row">
-      <div className="crp-posbar-lab">{label}</div>
-      <div className="crp-posbar-track"><div className="crp-posbar-fill" style={{ width: `${(Math.abs(v) / max) * 100}%` }} /></div>
-      <div className="crp-posbar-val">{fMm(v)}</div>
-    </div>
-  )
-  return <div className="crp-posbar">{row(startLabel, start)}{row(endLabel, end)}</div>
 }
 
 /* ── Area view — one row per matched area ───────────────────────────────────── */
