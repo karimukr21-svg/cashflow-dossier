@@ -1,4 +1,4 @@
-import { fmt } from '@/lib/format'
+import { useDisp } from '@/lib/displayFmt'
 
 type Props = {
   /* The cf_area label this cell writes to (cf_actuals.area). When the
@@ -19,5 +19,6 @@ type Props = {
  * <td>. Props are kept stable so callers are unchanged. */
 export function EditableCell(props: Props) {
   const { scenarioValue, className } = props
-  return <td className={className}>{scenarioValue == null ? '' : fmt(scenarioValue)}</td>
+  const disp = useDisp()
+  return <td className={className}>{disp(scenarioValue)}</td>
 }

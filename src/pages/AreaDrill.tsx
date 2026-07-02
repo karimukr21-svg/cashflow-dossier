@@ -1,17 +1,26 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
-import { fetchActuals, fetchForecasts, type CfCell, type CfLine } from '@/lib/queries'
-import { fmt, classNum } from '@/lib/format'
+import { fetchActuals, fetchForecasts, fetchFxRate, type CfCell, type CfLine } from '@/lib/queries'
+import { classNum } from '@/lib/format'
 import { EditableCell } from '@/components/EditableCell'
 import { computeDerivedBalances, getColumnYMEndpoints } from '@/lib/derivedBalances'
+import { DispFmtCtx, useDisp, makeDisp, DENOM, unitLabel, type Denom } from '@/lib/displayFmt'
 import type { Scope, Grain, GroupBy } from './Dossier'
 
 /* `area` is now the canonical area_id (e.g. 'KSA', 'ACR', 'CYP'). The
  * cf_areas list — Tony's labels in cf_actuals.area that fold into this
  * canonical area — comes from scope.areas[area_id]. */
 export default function AreaDrill({ area, scope }: { area: string; scope: Scope }) {
-  const [actuals, setActuals] = useState<(CfCell & { source_version: string })[]>([])
-  const [forecasts, setForecasts] = useState<(CfCell & { version: string })[]>([])
+  const [actuals, setActuals] = useState<(CfCell & { source_version: string; currency?: string })[]>([])
+  const [forecasts, setForecasts] = useState<(CfCell & { version: string; currency?: string })[]>([])
   const [loading, setLoading] = useState(true)
+
+  // Display currency + denomination (verify the figures against the source
+  // Excel — native currency, in '000). Persisted so it carries across areas.
+  const [ccy, setCcy] = useState<'local' | 'usd'>(() => (localStorage.getItem('dossier-area-ccy-v1') as 'local' | 'usd') || 'local')
+  const [denom, setDenom] = useState<Denom>(() => (localStorage.getItem('dossier-area-denom-v1') as Denom) || 'u')
+  const [fxRate, setFxRate] = useState<number | null>(null)
+  useEffect(() => { try { localStorage.setItem('dossier-area-ccy-v1', ccy) } catch { /* ignore */ } }, [ccy])
+  useEffect(() => { try { localStorage.setItem('dossier-area-denom-v1', denom) } catch { /* ignore */ } }, [denom])
 
   const canonical = scope.areas.find(a => a.area_id === area)
   const cfAreas = canonical?.cf_areas || []
@@ -36,6 +45,26 @@ export default function AreaDrill({ area, scope }: { area: string; scope: Scope 
     return () => { cancel = true }
   }, [area, scope.primaryVersion, scope.fromYear, scope.fromMonth, scope.toYear, scope.toMonth, cfAreas.join('|')])
 
+  // The area's native currency (from the fetched cells) and its FX→USD rate at
+  // the cycle's as-of date. Local = raw native (no FX); USD = ×rate.
+  const nativeCur = useMemo(
+    () => [...actuals, ...forecasts].find(c => c.currency && c.currency !== 'USD')?.currency || 'USD',
+    [actuals, forecasts])
+  const selVer = scope.versions?.find(v => v.version_code === scope.primaryVersion)
+  const asOfDate = selVer?.as_of_date || `${Math.floor(scope.latestActualYM / 100)}-${String(scope.latestActualYM % 100).padStart(2, '0')}-01`
+  useEffect(() => {
+    if (nativeCur === 'USD') { setFxRate(1); return }
+    let cancel = false
+    fetchFxRate(nativeCur, asOfDate).then(r => { if (!cancel) setFxRate(r) }).catch(() => { if (!cancel) setFxRate(null) })
+    return () => { cancel = true }
+  }, [nativeCur, asOfDate])
+
+  const localAvail = nativeCur !== 'USD'
+  const useUsd = ccy === 'usd' && localAvail && fxRate != null
+  const rate = useUsd ? (fxRate as number) : 1
+  const dispCur = useUsd ? 'USD' : nativeCur
+  const disp = useMemo(() => makeDisp(rate, denom), [rate, denom])
+
   if (loading) return <div className="placeholder-box">Loading {titleLabel}…</div>
   if (!canonical) return <div className="placeholder-box">Unknown area: {area}</div>
 
@@ -53,16 +82,37 @@ export default function AreaDrill({ area, scope }: { area: string; scope: Scope 
           </span>
         </div>
       )}
-      <div style={{ height: 16 }} />
-      <AreaCategoryCards
-        actuals={actuals}
-        forecasts={forecasts}
-        lines={scope.lines}
-        grain={scope.grain}
-        scope={scope}
-        groupBy={scope.groupBy}
-        cfArea={cfAreas[0]}
-      />
+
+      <div className="area-toolbar no-print">
+        <div className="unit-seg">
+          <button className={!useUsd ? 'active' : ''} disabled={!localAvail}
+            onClick={() => setCcy('local')}
+            title={localAvail ? 'Native currency, no FX — ties to the source Excel' : 'This area is already reported in USD'}
+          >{localAvail ? nativeCur : 'Local'}</button>
+          <button className={useUsd ? 'active' : ''} disabled={!localAvail || fxRate == null}
+            onClick={() => setCcy('usd')}
+            title={localAvail && fxRate == null ? 'No FX rate for this area/period' : 'Convert to USD at the cycle rate'}
+          >USD</button>
+        </div>
+        <div className="unit-seg">
+          {(['m', 'k', 'u'] as Denom[]).map(d => (
+            <button key={d} className={denom === d ? 'active' : ''} onClick={() => setDenom(d)}>{DENOM[d].btn}</button>
+          ))}
+        </div>
+        <span className="unit-cap">Showing {unitLabel(dispCur, denom)}</span>
+      </div>
+
+      <DispFmtCtx.Provider value={disp}>
+        <AreaCategoryCards
+          actuals={actuals}
+          forecasts={forecasts}
+          lines={scope.lines}
+          grain={scope.grain}
+          scope={scope}
+          groupBy={scope.groupBy}
+          cfArea={cfAreas[0]}
+        />
+      </DispFmtCtx.Provider>
     </div>
   )
 }
@@ -335,6 +385,7 @@ function BalanceCard({
   tableMinWidth: number;
   sumLineCol: (lineCode: string, matches: (y: number, m: number) => boolean) => number | null;
 }) {
+  const disp = useDisp()
   return (
     <div className="cat-group">
       <div className={`cat-group-header ${block.natureClass}`}>
@@ -361,7 +412,7 @@ function BalanceCard({
                 const v = sumLineCol(l.line_code, col.matches)
                 return (
                   <td key={col.key} className={`${classNum(v)} ${col.isActual ? 'cell actual' : 'cell forecast'}`}>
-                    {v == null ? '' : fmt(v)}
+                    {v == null ? '' : disp(v)}
                   </td>
                 )
               })}
@@ -394,6 +445,7 @@ function FlowCard({
   expanded: Set<string>;
   toggle: (key: string) => void;
 }) {
+  const disp = useDisp()
   const hasReceipts = block.receipts.length > 0
   const hasPayments = block.payments.length > 0
   const showNet = hasReceipts && hasPayments  // suppressed in Nature mode where one side is always empty
@@ -419,13 +471,13 @@ function FlowCard({
       <div className={`cat-group-header ${block.natureClass}`}>
         <span>{block.label}</span>
         {netTotal != null && (
-          <span className="cat-totals">Net: {fmt(netTotal)}</span>
+          <span className="cat-totals">Net: {disp(netTotal)}</span>
         )}
         {!showNet && receiptsTotal != null && (
-          <span className="cat-totals">Total: {fmt(receiptsTotal)}</span>
+          <span className="cat-totals">Total: {disp(receiptsTotal)}</span>
         )}
         {!showNet && paymentsTotal != null && (
-          <span className="cat-totals">Total: {fmt(paymentsTotal)}</span>
+          <span className="cat-totals">Total: {disp(paymentsTotal)}</span>
         )}
       </div>
       <table className="cf-table" style={{ tableLayout: 'fixed', width: tableMinWidth }}>
@@ -479,11 +531,11 @@ function FlowCard({
                 const v = (r == null && p == null) ? null : ((r ?? 0) + (p ?? 0))
                 return (
                   <td key={col.key} className={classNum(v)}>
-                    {v == null ? '' : fmt(v)}
+                    {v == null ? '' : disp(v)}
                   </td>
                 )
               })}
-              <td className={classNum(netTotal)}>{netTotal == null ? '' : fmt(netTotal)}</td>
+              <td className={classNum(netTotal)}>{netTotal == null ? '' : disp(netTotal)}</td>
             </tr>
           )}
           {/* Nature-mode: per-block Total footer row (Receipts-only or Payments-only).
@@ -496,14 +548,14 @@ function FlowCard({
                 const v = sumLinesCol(codes, col.matches)
                 return (
                   <td key={col.key} className={classNum(v)}>
-                    {v == null ? '' : fmt(v)}
+                    {v == null ? '' : disp(v)}
                   </td>
                 )
               })}
               <td className={classNum(hasReceipts ? receiptsTotal : paymentsTotal)}>
                 {hasReceipts
-                  ? (receiptsTotal == null ? '' : fmt(receiptsTotal))
-                  : (paymentsTotal == null ? '' : fmt(paymentsTotal))}
+                  ? (receiptsTotal == null ? '' : disp(receiptsTotal))
+                  : (paymentsTotal == null ? '' : disp(paymentsTotal))}
               </td>
             </tr>
           )}
@@ -525,6 +577,7 @@ function NetMovementCard({
   tableMinWidth: number;
   sumLinesCol: (lineCodes: string[], matches: (y: number, m: number) => boolean) => number | null;
 }) {
+  const disp = useDisp()
   const receiptCodes = receiptsLines.map(l => l.line_code)
   const paymentCodes = paymentsLines.map(l => l.line_code)
   const totalReceipts = sumLinesCol(receiptCodes, () => true)
@@ -534,7 +587,7 @@ function NetMovementCard({
     <div className="cat-group">
       <div className="cat-group-header nature-balance">
         <span>Net Movement (period)</span>
-        <span className="cat-totals">{fmt(netTotal)}</span>
+        <span className="cat-totals">{disp(netTotal)}</span>
       </div>
       <table className="cf-table" style={{ tableLayout: 'fixed', width: tableMinWidth }}>
         <colgroup>
@@ -547,17 +600,17 @@ function NetMovementCard({
             <td className="label">Receipts total</td>
             {columns.map(col => {
               const v = sumLinesCol(receiptCodes, col.matches)
-              return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
+              return <td key={col.key} className={classNum(v)}>{v == null ? '' : disp(v)}</td>
             })}
-            <td className={classNum(totalReceipts)}>{totalReceipts == null ? '' : fmt(totalReceipts)}</td>
+            <td className={classNum(totalReceipts)}>{totalReceipts == null ? '' : disp(totalReceipts)}</td>
           </tr>
           <tr className="total net-row">
             <td className="label">Payments total</td>
             {columns.map(col => {
               const v = sumLinesCol(paymentCodes, col.matches)
-              return <td key={col.key} className={classNum(v)}>{v == null ? '' : fmt(v)}</td>
+              return <td key={col.key} className={classNum(v)}>{v == null ? '' : disp(v)}</td>
             })}
-            <td className={classNum(totalPayments)}>{totalPayments == null ? '' : fmt(totalPayments)}</td>
+            <td className={classNum(totalPayments)}>{totalPayments == null ? '' : disp(totalPayments)}</td>
           </tr>
           <tr className="total net-row" style={{ borderTop: '2px solid var(--border)' }}>
             <td className="label" style={{ fontWeight: 600 }}>Net movement</td>
@@ -565,9 +618,9 @@ function NetMovementCard({
               const r = sumLinesCol(receiptCodes, col.matches)
               const p = sumLinesCol(paymentCodes, col.matches)
               const v = (r == null && p == null) ? null : ((r ?? 0) + (p ?? 0))
-              return <td key={col.key} className={classNum(v)} style={{ fontWeight: 600 }}>{v == null ? '' : fmt(v)}</td>
+              return <td key={col.key} className={classNum(v)} style={{ fontWeight: 600 }}>{v == null ? '' : disp(v)}</td>
             })}
-            <td className={classNum(netTotal)} style={{ fontWeight: 600 }}>{fmt(netTotal)}</td>
+            <td className={classNum(netTotal)} style={{ fontWeight: 600 }}>{disp(netTotal)}</td>
           </tr>
         </tbody>
       </table>
@@ -593,6 +646,7 @@ function FlowSubgroup({
   toggle: (key: string) => void;
   showSubgroupHeader: boolean;
 }) {
+  const disp = useDisp()
   const allLineCodes = groups.flatMap(g => g.lines.map(l => l.line_code))
   const subtotal = sumLinesCol(allLineCodes, () => true)
 
@@ -617,11 +671,11 @@ function FlowSubgroup({
             const v = sumLinesCol(allLineCodes, col.matches)
             return (
               <td key={col.key} className={classNum(v)}>
-                {v == null ? '' : fmt(v)}
+                {v == null ? '' : disp(v)}
               </td>
             )
           })}
-          <td className={classNum(subtotal)}>{subtotal == null ? '' : fmt(subtotal)}</td>
+          <td className={classNum(subtotal)}>{subtotal == null ? '' : disp(subtotal)}</td>
         </tr>
       )}
       {!subgroupCollapsed && groups.map(grp => {
@@ -642,11 +696,11 @@ function FlowSubgroup({
                   const v = sumLinesCol(catLineCodes, col.matches)
                   return (
                     <td key={col.key} className={classNum(v)}>
-                      {v == null ? '' : fmt(v)}
+                      {v == null ? '' : disp(v)}
                     </td>
                   )
                 })}
-                <td className={classNum(catSubtotal)}>{catSubtotal == null ? '' : fmt(catSubtotal)}</td>
+                <td className={classNum(catSubtotal)}>{catSubtotal == null ? '' : disp(catSubtotal)}</td>
               </tr>
             )}
             {!catCollapsed && grp.lines.map(l => {
@@ -673,7 +727,7 @@ function FlowSubgroup({
                     )
                   })}
                   <td className={classNum(rowTotal)} style={{ fontWeight: 500 }}>
-                    {rowTotal == null ? '' : fmt(rowTotal)}
+                    {rowTotal == null ? '' : disp(rowTotal)}
                   </td>
                 </tr>
               )
