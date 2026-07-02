@@ -131,6 +131,9 @@ SCALE_OVERRIDE = {
 START_YEAR_OVERRIDE = {
     'MOZAMBIQUE_Apr_2026_CashFlow.xlsx': 2025,
     'KAZH_Apr_2026_CashFlow.xlsx': 2025,
+    # Egypt: the ACT-2024 column is a single messy history month (offsetting within-group
+    # / non-op vs CONSOLIDATED); the cycle horizon is 2025-2026, so drop 2024 (Karim's call).
+    'Egypt 2026 Cash flow Consolidated - April 2026-2.xlsx': 2025,
 }
 
 # Per-file end-year ceiling (drop years after this). Default = no cap.
