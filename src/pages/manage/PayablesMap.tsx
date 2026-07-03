@@ -130,6 +130,11 @@ export default function PayablesMap({ canManage }: { canManage: boolean }) {
   }, [cfProjs])
 
   const unassignedUsd = useMemo(() => unassigned.reduce((s, b) => s + b.ccc_share_usd, 0), [unassigned])
+  const bucketByArea = useMemo(() => {
+    const m = new Map<string, Book[]>()
+    for (const b of unassigned) { const a = b.area || '—'; const arr = m.get(a) ?? []; arr.push(b); m.set(a, arr) }
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  }, [unassigned])
 
   const overall = useMemo(() => {
     const mapped = cfProjs.filter(p => p.canonId && (booksByCanon.get(p.canonId)?.length ?? 0) > 0).length
@@ -208,6 +213,32 @@ export default function PayablesMap({ canManage }: { canManage: boolean }) {
           </section>
         )
       })}
+
+      {!onlyOpen && bucketByArea.length > 0 && (
+        <div className="pm-bucketwrap">
+          <div className="pm-bucket-title">Area &amp; other projects <span>· unassigned books, by area — assign any via a project's “+ Add book”</span></div>
+          {bucketByArea.map(([area, bks]) => {
+            const tot = bks.reduce((s, b) => s + b.ccc_share_usd, 0)
+            return (
+              <details className="pm-bkt" key={area}>
+                <summary>
+                  <span className="pm-bkt-a">{area}</span>
+                  <span className="pm-bkt-c">{bks.length} book{bks.length === 1 ? '' : 's'} · {fmtM(tot)}m</span>
+                </summary>
+                <div className="pm-bkt-list">
+                  {bks.sort((a, b) => a.ccc_share_usd - b.ccc_share_usd).map(b => (
+                    <div className="pm-bkt-row" key={b.book_code}>
+                      <span className="pm-code">{b.book_code}</span>
+                      <span className="pm-bkt-co" title={b.companyname ?? ''}>{b.companyname}</span>
+                      <span className="pm-num">{fmtM(b.ccc_share_usd)}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )
+          })}
+        </div>
+      )}
 
       {picker && (
         <div className="pm-modal-bg" onClick={() => { setPicker(null); setQ('') }}>

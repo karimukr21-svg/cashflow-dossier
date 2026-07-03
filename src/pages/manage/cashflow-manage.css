@@ -741,6 +741,25 @@
 .pm-chip-x:hover { color: #b45309; }
 .pm-area--bucket .pm-area-h { background: #fafbfc; }
 .pm-area--bucket h4 { color: #64748b; }
+
+/* Area & other projects — collapsible unassigned-book browser (view-only) */
+.pm-bucketwrap { border: 1px solid var(--border, #e5e7eb); border-radius: 11px; overflow: hidden; }
+.pm-bucket-title { padding: 10px 14px; font-weight: 800; font-size: 13px; background: #fafbfc; border-bottom: 1px solid var(--border, #e5e7eb); }
+.pm-bucket-title span { font-weight: 500; color: #94a3b8; font-size: 11px; }
+.pm-bkt { border-bottom: 1px solid #f2f4f6; }
+.pm-bkt:last-child { border-bottom: 0; }
+.pm-bkt > summary { cursor: pointer; padding: 8px 14px; list-style: none; display: flex; align-items: center; gap: 10px; font-size: 12.5px; }
+.pm-bkt > summary::-webkit-details-marker { display: none; }
+.pm-bkt > summary::before { content: "▸"; color: #94a3b8; font-size: 10px; }
+.pm-bkt[open] > summary::before { content: "▾"; }
+.pm-bkt-a { font-weight: 700; }
+.pm-bkt-c { margin-left: auto; color: #64748b; font-variant-numeric: tabular-nums; font-size: 11.5px; }
+.pm-bkt-list { padding: 2px 0 8px; }
+.pm-bkt-row { display: grid; grid-template-columns: 90px 1fr 84px; gap: 10px; align-items: center; padding: 4px 14px 4px 30px; font-size: 11.5px; }
+.pm-bkt-row:hover { background: #fafbfc; }
+.pm-bkt-co { color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pm-bkt-row .pm-code { font-size: 11.5px; }
+.pm-bkt-row .pm-num { text-align: right; }
 .pm-card-foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 2px; padding-top: 6px; border-top: 1px solid #f2f4f6; }
 .pm-proj { font-weight: 700; color: #0f766e; font-size: 11.5px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pm-bucket { color: #94a3b8; font-size: 11.5px; flex: 1; }
