@@ -163,6 +163,9 @@ function areaSheet(o: AreaOpts): string {
 export type ProjectPrint = {
   areaLabel: string; project: string; currency: string; asOfLabel: string; months: number[]
   matrix: { sections: MatrixSection[]; netMovement: number[]; netTotal: number }
+  /* Trade-payables balance (USD, CCC share), aligned to `months`; `start` is the
+   * Dec prior-year opening; `change` = latest − start. Undefined = not mapped. */
+  payables?: { monthly: (number | null)[]; start: number | null; change: number | null }
 }
 function projectSheet(p: ProjectPrint, disp: PrintDisp): string {
   const f = fmtFor(disp)
@@ -173,9 +176,16 @@ function projectSheet(p: ProjectPrint, disp: PrintDisp): string {
     { label: 'Net from operations', value: f.fM(secNet('Operations')), cls: cl(secNet('Operations')) },
     { label: 'Net financing', value: f.fM(secNet('Bank Financing')), cls: cl(secNet('Bank Financing')) },
   ])
-  const table = `<table class="t"><thead><tr><th>Line item</th>${p.months.map(m => `<th class="r">${MONTHS[m - 1]}</th>`).join('')}<th class="r sepl">YTD</th></tr></thead>
+  const pv = p.payables
+  const payRows = pv ? (() => {
+    const cell = (v: number | null) => `<td class="r ${cl(v)}">${v != null ? f.fM(v) : '—'}</td>`
+    return `<tr class="sec"><td colspan="${p.months.length + 2}">Trade payables — balance (CCC share)${pv.start != null ? ` · from Dec ${f.fM(pv.start)}` : ''}</td></tr>`
+      + `<tr class="subtot"><td>Payables balance</td>${p.months.map((_, i) => cell(pv.monthly[i])).join('')}<td class="r sepl ${cl(pv.change)}">${pv.change != null ? f.fM(pv.change) : '—'}</td></tr>`
+  })() : ''
+  const table = `<table class="t"><thead><tr><th>Line item</th>${p.months.map(m => `<th class="r">${MONTHS[m - 1]}</th>`).join('')}<th class="r sepl">YTD${pv ? ' / Δ' : ''}</th></tr></thead>
     <tbody>${p.matrix.sections.map(s => matrixRows(s, p.months, f)).join('')}
       <tr class="total"><td>Net cash movement</td>${p.months.map((_, i) => `<td class="r ${cl(p.matrix.netMovement[i])}">${f.fM(p.matrix.netMovement[i])}</td>`).join('')}<td class="r sepl ${cl(p.matrix.netTotal)}">${f.fM(p.matrix.netTotal)}</td></tr>
+      ${payRows}
     </tbody></table>`
   const chart = `<div class="chartcard"><div class="ch-h">Net cash movement <span>· by month</span></div>${netTrendSvg(p.months.map(m => MONTHS[m - 1]), p.matrix.netMovement, chartDisp)}</div>`
   return sheet(head(`Cash Flow Report — ${p.project}`, `${p.areaLabel} · monthly actuals Jan–${p.asOfLabel} · ${disp.lineUnit}`)

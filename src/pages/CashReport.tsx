@@ -644,13 +644,28 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
     for (let i = a; i <= b; i++) n.add(ranking[i].key)
     return n
   })
-  const printProjects = (keys: string[]) => {
+  const printProjects = async (keys: string[]) => {
     const w = window.open('', '_blank'); if (!w) return
-    const list = keys.map(k => matrixFor(k))
-      .filter(x => x.fxOk && x.matrix.sections.length > 0)
-      .map(x => ({ areaLabel: areaLabelOf(x.area), project: x.code, currency: x.currency, asOfLabel, months, matrix: x.matrix }))
-    if (list.length === 0) { w.close(); return }
-    w.document.write(buildProjectsPrintHtml(list)); w.document.close()
+    w.document.write('<p style="font:14px -apple-system,sans-serif;padding:24px;color:#475569">Preparing print…</p>')
+    const base = keys.map(k => matrixFor(k)).filter(x => x.fxOk && x.matrix.sections.length > 0)
+    if (base.length === 0) { w.close(); return }
+    const fromP = (year - 1) * 100 + 12, toP = year * 100 + asOfMonth
+    const list = await Promise.all(base.map(async x => {
+      // Trade-payables balance movement for this project (Dec → as-of), aligned to months.
+      let payables: import('./reportPrint').ProjectPrint['payables']
+      const cid = payMaps?.cfCodeToCanon.get(x.code.toUpperCase())
+      const books = cid ? (payMaps?.canonToBooks.get(cid) ?? []) : []
+      if (books.length) {
+        const s = await fetchPayablesForBooks(books, fromP, toP)
+        const byP = new Map(s.map(p => [p.period, p.usd]))
+        const monthly = months.map(m => byP.has(year * 100 + m) ? byP.get(year * 100 + m)! : null)
+        const start = byP.has(fromP) ? byP.get(fromP)! : null
+        const last = [...monthly].reverse().find(v => v != null) ?? null
+        payables = { monthly, start, change: last != null && start != null ? last - start : null }
+      }
+      return { areaLabel: areaLabelOf(x.area), project: x.code, currency: x.currency, asOfLabel, months, matrix: x.matrix, payables }
+    }))
+    w.document.open(); w.document.write(buildProjectsPrintHtml(list)); w.document.close()
   }
 
   return (
