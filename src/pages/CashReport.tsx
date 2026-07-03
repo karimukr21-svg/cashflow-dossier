@@ -3,9 +3,8 @@ import { createPortal } from 'react-dom'
 import { useTopbarExtras, useTopbarScope } from '@/lib/displayFmt'
 import {
   fetchActuals, fetchForecasts, fetchDebtStocks, fetchPayablesTrajectory, fetchFxRate, fetchProjectCells,
-  fetchAccountGroups, fetchGroupAccounts, subgroupMatchesArea,
   fetchPayablesMaps, fetchPayablesForBooks,
-  type CfCell, type CfLine, type PayablesTrajRow, type GroupDef, type GroupAccount,
+  type CfCell, type CfLine, type PayablesTrajRow,
   type CanonicalArea, type AreaGroup, type PayablesMaps,
 } from '@/lib/queries'
 import AreaFilterPopover from '@/components/AreaFilterPopover'
@@ -28,8 +27,8 @@ import type { Scope } from './Dossier'
  * Payables = the editable trade_payables account-group (see the Definitions
  * pass). Coverage of matched vs unmapped areas is its own pass. */
 
-type Level = 'group' | 'area' | 'sections' | 'project' | 'coverage' | 'definitions'
-const LEVELS: Level[] = ['group', 'area', 'sections', 'project', 'coverage', 'definitions']
+type Level = 'group' | 'area' | 'sections' | 'project'
+const LEVELS: Level[] = ['group', 'area', 'sections', 'project']
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 const fMm = (v: number | null | undefined) => v == null ? '—' : fmt(v / 1e6, { decimals: 1 })
@@ -133,7 +132,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
 
   const tabs: { key: Level; label: string }[] = [
     { key: 'group', label: 'Group' }, { key: 'area', label: 'Area' }, { key: 'sections', label: 'Sections' },
-    { key: 'project', label: 'Project' }, { key: 'coverage', label: 'Coverage' }, { key: 'definitions', label: 'Definitions' },
+    { key: 'project', label: 'Project' },
   ]
   const canPrint = level === 'group' || level === 'area' || level === 'sections'
   const slot = useTopbarExtras()
@@ -198,8 +197,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
         : level === 'area' ? <AreaView matched={cfAreas} year={year} asOfLabel={asOfLabel} startLabel={startLabel} onOpenProjects={(id) => { setProjArea(id); setLevel('project') }} />
         : level === 'sections' ? <SectionsView scope={scope} matched={cfAreas} asOfLabel={asOfLabel} />
         : level === 'project' ? <ProjectView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} projArea={projArea} setProjArea={setProjArea} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} />
-        : level === 'coverage' ? <CoverageView scope={scope} model={model} payTraj={payTraj} />
-        : <DefinitionsView period={asOf} asOfLabel={asOfLabel} />}
+        : null}
     </div>
   )
 }
@@ -792,122 +790,5 @@ function MatrixSectionRows({ sec, months }: { sec: MatrixSection; months: number
       {sec.payments.length > 1 && row('Total payments', months.map((_, i) => sum(sec.payments, i)), sec.payments.reduce((t, b) => t + b.total, 0), 'crp-natsub')}
       {row(`Net ${sec.label.toLowerCase()}`, sec.net, sec.netTot, 'crp-subtot')}
     </>
-  )
-}
-
-/* ── Coverage — which areas are matched vs not yet mapped ───────────────────── */
-function CoverageView({ scope, model, payTraj }: { scope: Scope; model: Map<string, AreaAgg>; payTraj: PayablesTrajRow[] }) {
-  const STATUS: Record<string, { label: string; cls: string }> = {
-    matched:   { label: 'Matched', cls: 'ok' },
-    nopay:     { label: 'No payables mapping', cls: 'warn' },
-    nofx:      { label: 'No FX rate', cls: 'warn' },
-    nocf:      { label: 'No cash-flow data', cls: 'mute' },
-  }
-  const rows = scope.areas.map(a => {
-    const m = model.get(a.area_id)
-    let key = 'matched'
-    if (!m || !m.hasCf) key = 'nocf'
-    else if (!m.fxOk) key = 'nofx'
-    else if (!m.hasPay) key = 'nopay'
-    return { areaId: a.area_id, label: a.display_name, key, note: key === 'nofx' ? (m?.currency ?? '') : '' }
-  }).sort((a, b) => (a.key === 'matched' ? 0 : 1) - (b.key === 'matched' ? 0 : 1) || a.label.localeCompare(b.label))
-  const matchedN = rows.filter(r => r.key === 'matched').length
-
-  // trade-payables books (org_chart subgroups) that don't map to any cf area
-  const orphans = [...new Set(payTraj.map(r => r.subgroup).filter(Boolean) as string[])]
-    .filter(sg => !scope.areas.some(a => subgroupMatchesArea(sg, a.area_id))).sort()
-
-  return (
-    <div className="crp-page">
-      <div className="crp-head">
-        <img className="crp-logo" src="/ccc-logo.png" alt="CCC" />
-        <div className="crp-head-t">
-          <h1>Cash Flow Report — Coverage</h1>
-          <div className="crp-sub">{matchedN} of {rows.length} areas matched (cash flow ↔ trade-payables) · cash flow covers all areas; the trade-payables column covers only the matched ones</div>
-        </div>
-        <div className="crp-brand">Treasury</div>
-      </div>
-      <div className="crp-grid">
-        <div className="crp-card">
-          <div className="crp-card-h">Areas <span>· match status</span></div>
-          <table className="crp-table">
-            <thead><tr><th>Area</th><th>Status</th></tr></thead>
-            <tbody>
-              {rows.map(r => (
-                <tr key={r.areaId}>
-                  <td>{r.label}</td>
-                  <td><span className={`crp-pill crp-pill--${STATUS[r.key].cls}`}>{STATUS[r.key].label}{r.note ? ` (${r.note})` : ''}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="crp-note">Matched = the area has pushed cash flow, a trade-payables mapping, and an FX rate. Cash flow is shown for every area with an FX rate; only the trade-payables column waits on the mapping. No FX rate = excluded from the USD totals until a rate is set.</div>
-        </div>
-        <div className="crp-card">
-          <div className="crp-card-h">Unmapped payables books <span>· in the TB, no area</span></div>
-          {orphans.length === 0 ? <div className="crp-note crp-note--empty">All payables books map to an area.</div>
-            : <><ul className="crp-list">{orphans.map(o => <li key={o}>{o}</li>)}</ul>
-              <div className="crp-note">These org_chart subgroups carry trade payables but don't match a cash-flow area by name — pending the canonical crosswalk.</div></>}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/* ── Definitions — the account groups + what feeds trade_payables ───────────── */
-function DefinitionsView({ period, asOfLabel }: { period: number; asOfLabel: string }) {
-  const [groups, setGroups] = useState<GroupDef[]>([])
-  const [tp, setTp] = useState<{ accounts: GroupAccount[]; total: number }>({ accounts: [], total: 0 })
-  const [loading, setLoading] = useState(true)
-  useEffect(() => {
-    let cancel = false; setLoading(true)
-    Promise.all([fetchAccountGroups(), fetchGroupAccounts('trade_payables', period)])
-      .then(([g, t]) => { if (!cancel) { setGroups(g); setTp(t) } })
-      .catch(() => {})
-      .finally(() => { if (!cancel) setLoading(false) })
-    return () => { cancel = true }
-  }, [period])
-
-  return (
-    <div className="crp-page">
-      <div className="crp-head">
-        <img className="crp-logo" src="/ccc-logo.png" alt="CCC" />
-        <div className="crp-head-t">
-          <h1>Cash Flow Report — Definitions</h1>
-          <div className="crp-sub">Liability account-groups & what feeds trade_payables · balances at {asOfLabel} · USD millions</div>
-        </div>
-        <div className="crp-brand">Treasury</div>
-      </div>
-      {loading ? <div className="placeholder-box">Loading…</div> : <div className="crp-grid">
-        <div className="crp-card">
-          <div className="crp-card-h">Account groups <span>· defined in Chart of Accounts</span></div>
-          <table className="crp-table">
-            <thead><tr><th>Group</th><th className="r">Accounts</th></tr></thead>
-            <tbody>
-              {groups.map(g => (
-                <tr key={g.key} className={g.key === 'trade_payables' ? 'crp-hl' : ''}>
-                  <td>{g.label}<span className="crp-key"> · {g.key}</span></td>
-                  <td className="r">{g.accountCount}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="crp-note">Groups are defined and edited in the Chart of Accounts module (Group Accounts Workspace). This report is read-only — a basis to decide inclusions.</div>
-        </div>
-        <div className="crp-card">
-          <div className="crp-card-h">trade_payables <span>· included accounts</span></div>
-          <table className="crp-table">
-            <thead><tr><th>Account</th><th>Name</th><th className="r">USD m</th></tr></thead>
-            <tbody>
-              {tp.accounts.map(a => (
-                <tr key={a.account}><td className="crp-mono">{a.account}</td><td className="crp-item">{a.name}</td><td className={`r ${cls(a.balance)}`}>{fMm(a.balance)}</td></tr>
-              ))}
-              <tr className="crp-total"><td colSpan={2}>Total trade payables ({tp.accounts.length} accounts)</td><td className={`r ${cls(tp.total)}`}>{fMm(tp.total)}</td></tr>
-            </tbody>
-          </table>
-          <div className="crp-note">The accounts currently rolled into trade_payables. Add/remove in the Chart of Accounts module to change what the report treats as payables.</div>
-        </div>
-      </div>}
-    </div>
   )
 }
