@@ -157,7 +157,12 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
   // filter / Print button appear and disappear across tabs.
   const controls = (
     <>
-      {showAreaFilter && <AreaFilter areas={cfAreasAll} excluded={excluded} setExcluded={setExcluded} />}
+      {showAreaFilter && (
+        <>
+          <div className="ctrl"><label>Areas</label></div>
+          <AreaFilter areas={cfAreasAll} excluded={excluded} setExcluded={setExcluded} />
+        </>
+      )}
       {canPrint && <button className="crp-print" style={{ marginLeft: 0 }} onClick={print}>Print</button>}
       <div className="crp-levels">
         {tabs.map(t => (
@@ -199,8 +204,10 @@ function AreaFilter({ areas, excluded, setExcluded }: {
   const toggle = (id: string) => { const n = new Set(excluded); n.has(id) ? n.delete(id) : n.add(id); setExcluded(n) }
   return (
     <div className="crp-areafilter" ref={ref}>
-      <button className="crp-select crp-af-btn" onClick={() => setOpen(o => !o)}>
-        Areas: {included}/{areas.length} <span className="crp-af-caret">▾</span>
+      <button className={`areas-dd ${excluded.size > 0 ? 'filtered' : ''}`} onClick={() => setOpen(o => !o)}
+              aria-haspopup="menu" aria-expanded={open}
+              title="Select which areas are included in the report">
+        {included} of {areas.length} <span className="areas-dd-caret">▾</span>
       </button>
       {open && (
         <div className="crp-af-panel">
