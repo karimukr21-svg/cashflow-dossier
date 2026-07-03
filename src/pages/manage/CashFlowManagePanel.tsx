@@ -4,6 +4,7 @@ import ImportRunsManager from './ImportRunsManager'
 import CycleVersionManager from './CycleVersionManager'
 import LabelsManager from './LabelsManager'
 import AdjustmentsPanel from './AdjustmentsPanel'
+import PayablesMap from './PayablesMap'
 import './cashflow-manage.css'
 
 // Manage & Adjust (Treasury) — the data-management module.
@@ -18,6 +19,7 @@ const TABS = [
   { key: 'runs', label: 'Import runs' },
   { key: 'versions', label: 'Cycles & versions' },
   { key: 'adjust', label: 'Adjustments' },
+  { key: 'payables', label: 'Payables map' },
   { key: 'labels', label: 'Labels & mappings' },
 ]
 
@@ -53,6 +55,7 @@ export default function CashFlowManagePanel() {
       {tab === 'runs' && <ImportRunsManager canManage={canManage} />}
       {tab === 'versions' && <CycleVersionManager canManage={canManage} />}
       {tab === 'adjust' && <AdjustmentsPanel canManage={canManage} />}
+      {tab === 'payables' && <PayablesMap canManage={canManage} />}
       {tab === 'labels' && <LabelsManager canManage={canManage} />}
     </div>
   )

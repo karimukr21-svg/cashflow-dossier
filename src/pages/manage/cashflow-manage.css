@@ -701,3 +701,54 @@
 .adj-num { text-align: right; font-variant-numeric: tabular-nums; font-family: "SFMono-Regular", ui-monospace, "Roboto Mono", monospace; }
 .adj-num.up { color: #0e7c4a; } .adj-num.down { color: #c4122e; } .adj-num.zero { color: #aeb4bd; }
 .adj-empty { text-align: center; color: #6b7280; padding: 22px; }
+
+/* ── Payables map ─────────────────────────────────────────────────── */
+.pm { display: flex; flex-direction: column; gap: 14px; }
+.pm-head { display: flex; gap: 20px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+.pm-head h3 { font-size: 16px; font-weight: 800; color: var(--ink, #1a1a2e); margin: 0 0 4px; }
+.pm-sub { font-size: 12px; color: #64748b; max-width: 62ch; line-height: 1.5; margin: 0; }
+.pm-cov { min-width: 220px; text-align: right; }
+.pm-cov-v { font-size: 30px; font-weight: 800; color: #0f172a; font-variant-numeric: tabular-nums; line-height: 1; }
+.pm-cov-l { font-size: 10.5px; color: #64748b; margin-top: 3px; }
+.pm-cov-bar { height: 6px; border-radius: 4px; background: #eef0f3; margin-top: 6px; overflow: hidden; }
+.pm-cov-bar span { display: block; height: 100%; background: #0f766e; border-radius: 4px; }
+.pm-toggle { font-size: 12px; color: #475569; display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
+
+.pm-area { border: 1px solid var(--border, #e5e7eb); border-radius: 11px; overflow: hidden; background: #fff; }
+.pm-area-h { display: flex; align-items: center; gap: 12px; padding: 9px 14px; background: #f6f7f9; border-bottom: 1px solid var(--border, #e5e7eb); }
+.pm-area-h h4 { font-size: 13px; font-weight: 800; color: #0f172a; margin: 0; }
+.pm-area-c { font-size: 11px; font-weight: 700; color: #0f766e; }
+.pm-area-b { margin-left: auto; font-size: 11px; color: #94a3b8; font-variant-numeric: tabular-nums; }
+
+.pm-rows { display: flex; flex-direction: column; }
+.pm-row { display: grid; grid-template-columns: minmax(0,1.4fr) minmax(0,1.5fr) 92px 88px; gap: 12px; align-items: center;
+          padding: 8px 14px; border-bottom: 1px solid #f2f4f6; position: relative; }
+.pm-row:last-child { border-bottom: 0; }
+.pm-row.is-pinned { background: #f7fbfa; }
+.pm-bk { min-width: 0; }
+.pm-code { font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums; }
+.pm-co { display: block; font-size: 10.5px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pm-assign { min-width: 0; font-size: 12px; }
+.pm-proj { font-weight: 600; color: #0f172a; }
+.pm-bucket { color: #94a3b8; }
+.pm-sugg { color: #64748b; } .pm-sugg b { color: #0f172a; font-weight: 600; }
+.pm-accept { margin-left: 8px; border: 1px solid #0f766e; background: #ecfdf5; color: #0f766e; font-size: 10px; font-weight: 800;
+             padding: 1px 8px; border-radius: 20px; cursor: pointer; }
+.pm-num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; font-size: 12px; }
+.pm-act { text-align: right; }
+.pm-assignbtn, .pm-x { border: 1px solid var(--border, #e5e7eb); background: #fff; font-size: 11px; font-weight: 600; padding: 3px 10px;
+             border-radius: 7px; cursor: pointer; color: #334155; }
+.pm-assignbtn:hover { border-color: #0f766e; color: #0f766e; }
+.pm-x:hover { border-color: #b45309; color: #b45309; }
+
+.pm-picker { grid-column: 1 / -1; margin-top: 6px; border: 1px solid var(--border, #e5e7eb); border-radius: 9px; background: #fff;
+             box-shadow: 0 6px 20px rgba(0,0,0,.1); overflow: hidden; }
+.pm-search { width: 100%; border: 0; border-bottom: 1px solid var(--border, #e5e7eb); padding: 8px 12px; font: inherit; font-size: 12px; outline: none; }
+.pm-list { max-height: 240px; overflow-y: auto; }
+.pm-opt { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; width: 100%; text-align: left;
+          border: 0; background: #fff; padding: 7px 12px; cursor: pointer; font-size: 12px; border-bottom: 1px solid #f2f4f6; }
+.pm-opt:hover { background: #f0fdf9; }
+.pm-opt em { font-style: normal; color: #94a3b8; font-size: 10.5px; white-space: nowrap; }
+.pm-noopt { padding: 10px 12px; font-size: 12px; color: #94a3b8; }
+.pm-empty, .pm-err { padding: 20px; color: #64748b; font-size: 13px; }
+.pm-err { color: #c81e1e; }
