@@ -184,81 +184,80 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
                 const al = legsByAction.get(a.id) ?? []
                 const net = al.reduce((s, l) => s + Number(l.delta_usd || 0), 0)
                 const neutral = Math.abs(net) < 0.5
-                const froms = al.filter(l => l.role === 'from')
-                const tos = al.filter(l => l.role === 'to')
-                const singles = al.filter(l => l.role === 'single')
-                const isMove = froms.length > 0 || tos.length > 0
+                const isMove = a.action_type === 'reclass' || a.action_type === 'reschedule'
                 const np = signParts(net)
 
-                // Single-leg (Adjust): group by line, month chips carry the signed delta.
-                const singleByLine = new Map<string, Leg[]>()
-                for (const l of singles) {
-                  const arr = singleByLine.get(l.line_code) ?? []
-                  arr.push(l); singleByLine.set(l.line_code, arr)
-                }
+                // Column set = the union of months across the action's legs.
+                const monthMap = new Map<string, { y: number; m: number }>()
+                for (const l of al) monthMap.set(`${l.year}-${l.month}`, { y: l.year, m: l.month })
+                const months = [...monthMap.values()].sort((x, y) => (x.y - y.y) || (x.m - y.m))
 
-                // Move (Reclass / Reschedule): from → to, moved amount per month.
-                const fromLines = [...new Set(froms.map(l => lineDesc(l.line_code)))]
-                const toLines = [...new Set(tos.map(l => lineDesc(l.line_code)))]
-                const moveMonths = new Map<string, { m: number; y: number; amt: number }>()
-                for (const l of tos.length ? tos : froms) {
-                  const key = `${l.year}-${l.month}`
-                  const e = moveMonths.get(key) ?? { m: l.month, y: l.year, amt: 0 }
-                  e.amt += Math.abs(Number(l.delta_usd || 0))
-                  moveMonths.set(key, e)
+                // Rows = one per (line, role). Reclass/reschedule surface a From/To
+                // tag; a plain Adjust has no tag. Each cell is that month's signed delta.
+                type Row = { line: string; role: Leg['role']; byMonth: Map<string, number>; net: number }
+                const rowMap = new Map<string, Row>()
+                for (const l of al) {
+                  const key = `${l.line_code}|${l.role}`
+                  const r = rowMap.get(key) ?? { line: lineDesc(l.line_code), role: l.role, byMonth: new Map(), net: 0 }
+                  const mk = `${l.year}-${l.month}`
+                  r.byMonth.set(mk, (r.byMonth.get(mk) ?? 0) + Number(l.delta_usd || 0))
+                  r.net += Number(l.delta_usd || 0)
+                  rowMap.set(key, r)
                 }
-                const moveList = [...moveMonths.values()].sort((x, y) => (x.y - y.y) || (x.m - y.m))
+                // From-rows first (the source), then To, then singles.
+                const roleRank = { from: 0, to: 1, single: 2 } as const
+                const rows = [...rowMap.values()].sort((x, y) => roleRank[x.role] - roleRank[y.role])
+
+                const fromLines = [...new Set(al.filter(l => l.role === 'from').map(l => lineDesc(l.line_code)))]
+                const toLines = [...new Set(al.filter(l => l.role === 'to').map(l => lineDesc(l.line_code)))]
 
                 return (
                   <article className="adjv-card" key={a.id}>
                     <div className="adjv-card-top">
                       <span className={`adjv-type adjv-type--${a.action_type}`}>{TYPE_LABEL[a.action_type]}</span>
+                      {isMove && fromLines.length > 0 && (
+                        <span className="adjv-headline">
+                          {fromLines.join(', ')} <span className="adjv-arrow">→</span> {toLines.join(', ')}
+                        </span>
+                      )}
                       <span className={`adjv-cash ${neutral ? 'neutral' : np.cls}`}>
                         {neutral ? 'Cash-neutral' : `Cash ${np.txt}`}
                       </span>
                     </div>
-                    {a.note && <p className="adjv-note">{a.note}</p>}
 
-                    {isMove && (
-                      <>
-                        <div className="adjv-move">
-                          <div className="adjv-move-side">
-                            <span className="adjv-move-lbl">From</span>
-                            <span className="adjv-move-line">{fromLines.join(', ') || '—'}</span>
-                          </div>
-                          <span className="adjv-move-arrow">→</span>
-                          <div className="adjv-move-side">
-                            <span className="adjv-move-lbl">To</span>
-                            <span className="adjv-move-line">{toLines.join(', ') || '—'}</span>
-                          </div>
-                        </div>
-                        <div className="adjv-months">
-                          {moveList.map((e, i) => (
-                            <span className="adjv-chip" key={i}>{monLabel(e.m, e.y)} <b>{disp(e.amt)}</b></span>
-                          ))}
-                        </div>
-                      </>
-                    )}
+                    <div className="adjv-tablewrap">
+                      <table className="adjv-table">
+                        <thead>
+                          <tr>
+                            <th className="adjv-th-line">Line</th>
+                            {months.map((mm, i) => <th key={i} className="adjv-num">{monLabel(mm.m, mm.y)}</th>)}
+                            <th className="adjv-num adjv-th-net">Net</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((r, ri) => {
+                            const rn = signParts(r.net)
+                            return (
+                              <tr key={ri}>
+                                <td className="adjv-td-line">
+                                  {isMove && <span className={`adjv-roletag adjv-roletag--${r.role}`}>{r.role === 'from' ? 'From' : r.role === 'to' ? 'To' : ''}</span>}
+                                  {r.line}
+                                </td>
+                                {months.map((mm, ci) => {
+                                  const v = r.byMonth.get(`${mm.y}-${mm.m}`)
+                                  if (v === undefined) return <td key={ci} className="adjv-num adjv-blank">·</td>
+                                  const sp = signParts(v)
+                                  return <td key={ci} className={`adjv-num ${sp.cls}`}>{sp.txt}</td>
+                                })}
+                                <td className={`adjv-num adjv-td-net ${rn.cls}`}>{rn.txt}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
 
-                    {singleByLine.size > 0 && (
-                      <div className="adjv-legs">
-                        {[...singleByLine.entries()].map(([code, ls]) => (
-                          <div className="adjv-leg" key={code}>
-                            <span className="adjv-leg-line">{lineDesc(code)}</span>
-                            <div className="adjv-months">
-                              {ls.sort((x, y) => (x.year - y.year) || (x.month - y.month)).map((l, i) => {
-                                const sp = signParts(Number(l.delta_usd))
-                                return (
-                                  <span className="adjv-chip" key={i}>
-                                    {monLabel(l.month, l.year)} <b className={sp.cls}>{sp.txt}</b>
-                                  </span>
-                                )
-                              })}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    {a.note && <p className="adjv-note"><span className="adjv-note-lbl">Why</span>{a.note}</p>}
                   </article>
                 )
               })}

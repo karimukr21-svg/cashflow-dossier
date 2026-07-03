@@ -445,7 +445,7 @@ export default function Dossier() {
           {navGroupOrder.map(group => {
             const items = navItems.filter(n => n.group === group)
             const hasActive = items.some(n => isActive(n.view))
-            const alwaysOpen = group === 'SUMMARY' || group === 'BANK POSITION'
+            const alwaysOpen = group === 'REPORT' || group === 'SUMMARY' || group === 'BANK POSITION'
             const collapsed = !alwaysOpen && !hasActive && navCollapsed.has(group)
             return (
               <div key={group}>
