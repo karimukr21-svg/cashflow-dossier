@@ -12,6 +12,10 @@ export type AreaAgg = {
   payStart: number | null; payEnd: number | null; hasPay: boolean
   openCash: number; endCash: number     // cash position (opening Jan / ending as-of), USD
   openLocal: number; endLocal: number   // same, raw native (for the Local toggle)
+  // Debt stocks (point-in-time balances) — start-of-year (Jan) vs current (as-of),
+  // USD. Loans + overdrafts kept separate so the Group report can show the split.
+  loanStart: number; loanEnd: number    // Accumulated Loans stock @Jan / @as-of, USD
+  odStart: number; odEnd: number        // Overdrafts stock @Jan / @as-of, USD
   matched: boolean
 }
 
@@ -31,7 +35,7 @@ export function buildModel(
   const byArea = new Map<string, AreaAgg>()
   const ensure = (areaId: string, label: string): AreaAgg => {
     let a = byArea.get(areaId)
-    if (!a) { a = { areaId, label, currency: 'USD', fxOk: true, hasCf: false, lineUsd: new Map(), lineLocal: new Map(), netOps: 0, payStart: null, payEnd: null, hasPay: false, openCash: 0, endCash: 0, openLocal: 0, endLocal: 0, matched: false }; byArea.set(areaId, a) }
+    if (!a) { a = { areaId, label, currency: 'USD', fxOk: true, hasCf: false, lineUsd: new Map(), lineLocal: new Map(), netOps: 0, payStart: null, payEnd: null, hasPay: false, openCash: 0, endCash: 0, openLocal: 0, endLocal: 0, loanStart: 0, loanEnd: 0, odStart: 0, odEnd: 0, matched: false }; byArea.set(areaId, a) }
     return a
   }
 
@@ -53,6 +57,14 @@ export function buildModel(
     agg.lineUsd.set(c.line_code, (agg.lineUsd.get(c.line_code) ?? 0) + c.value * rate)
     if (cat === 'Opening Balance' && c.month === 1) agg.openCash += c.value * rate
     else if (cat === 'Ending Balance' && c.month === asOfMonth) agg.endCash += c.value * rate
+    // Debt stocks: point-in-time balance at the month, never summed across months.
+    // Read the Jan (start-of-year) and as-of (current) stock; both fire even if
+    // asOfMonth === 1 (start === current, movement 0).
+    else if (cat === 'Accumulated Loans' || cat === 'Overdrafts') {
+      const isLoan = cat === 'Accumulated Loans'
+      if (c.month === 1)         { if (isLoan) agg.loanStart += c.value * rate; else agg.odStart += c.value * rate }
+      if (c.month === asOfMonth) { if (isLoan) agg.loanEnd += c.value * rate;   else agg.odEnd += c.value * rate }
+    }
   }
   for (const agg of byArea.values()) {
     let n = 0

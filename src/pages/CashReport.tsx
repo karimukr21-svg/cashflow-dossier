@@ -148,11 +148,12 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
         sections: sectionCards(cfAreas, scope.lines),
       })
     } else {
-      const { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash } = aggregateScope(cfAreas)
+      const { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash, loanStart, loanEnd, odStart, odEnd } = aggregateScope(cfAreas)
       const stmt = buildStatement(lineUsd, scope.lines)
       html = buildReportHtml({
         level: 'group', scopeLabel, year, asOfLabel, startLabel, cashStartLabel, matchedCount: cfAreas.length,
         statement: stmt, payStart, payEnd, hasPay, startCash, endCash: startCash + stmt.netMovement,   // derived ending
+        loanStart, loanEnd, odStart, odEnd,
         paySeries: paySeries.map(p => ({ label: MONTHS[(p.period % 100) - 1] ?? '', value: p.usd })),
       })
     }
@@ -236,14 +237,16 @@ function AreaFilter({ areas, excluded, setExcluded }: {
 function aggregateScope(matched: AreaAgg[]) {
   const lineUsd = new Map<string, number>()
   let payStart = 0, payEnd = 0, hasPay = false, startCash = 0, endCash = 0
+  let loanStart = 0, loanEnd = 0, odStart = 0, odEnd = 0
   for (const a of matched) {
     for (const [lc, v] of a.lineUsd) lineUsd.set(lc, (lineUsd.get(lc) ?? 0) + v)
     if (a.payStart != null) { payStart += a.payStart; hasPay = true }
     if (a.payEnd != null) { payEnd += a.payEnd; hasPay = true }
     startCash += a.openCash; endCash += a.endCash
+    loanStart += a.loanStart; loanEnd += a.loanEnd; odStart += a.odStart; odEnd += a.odEnd
   }
   const scopeLabel = matched.length === 1 ? (matched[0]?.label || 'area') : 'the Group'
-  return { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash, endCash }
+  return { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash, endCash, loanStart, loanEnd, odStart, odEnd }
 }
 
 /* One card per cash-flow section (canonical statement order) — each carries the
@@ -331,13 +334,47 @@ function StmtSectionCard({ sec }: { sec: StmtSection }) {
   )
 }
 
+/* Loans & Overdrafts — the group's debt position at start of year vs the current
+ * point. These are point-in-time STOCKS (read at the month, never summed across
+ * months), so they sit apart from the cash-flow statement. Δ colour is inverted
+ * vs the flow lines — a fall in debt (negative Δ) is good (green), a rise is
+ * crimson — matching the "paid down = good" reading used on the payables card. */
+function DebtPositionCard({ loanStart, loanEnd, odStart, odEnd, startLabel, asOfLabel }: {
+  loanStart: number; loanEnd: number; odStart: number; odEnd: number; startLabel: string; asOfLabel: string
+}) {
+  const totStart = loanStart + odStart, totEnd = loanEnd + odEnd
+  // debt Δ: down = good (green), up = crimson — inverted from cls()
+  const dCls = (v: number) => Math.abs(v) < 1 ? '' : (v < 0 ? 'pos' : 'neg')
+  const rows = [
+    { label: 'Accumulated loans', start: loanStart, end: loanEnd },
+    { label: 'Overdrafts', start: odStart, end: odEnd },
+  ]
+  return (
+    <div className="crp-card">
+      <div className="crp-card-h">Loans &amp; overdrafts <span>· {startLabel} → {asOfLabel}</span></div>
+      <table className="crp-table">
+        <thead><tr><th></th><th className="r">{startLabel}</th><th className="r">{asOfLabel}</th><th className="r">Δ</th></tr></thead>
+        <tbody>
+          {rows.map(r => {
+            const d = r.end - r.start
+            return <tr key={r.label}><td className="crp-item">{r.label}</td><td className="r">{fMm(r.start)}</td><td className="r">{fMm(r.end)}</td><td className={`r ${dCls(d)}`}>{fMd(d)}</td></tr>
+          })}
+          <tr className="crp-natsub"><td>Total debt</td><td className="r">{fMm(totStart)}</td><td className="r">{fMm(totEnd)}</td><td className={`r ${dCls(totEnd - totStart)}`}>{fMd(totEnd - totStart)}</td></tr>
+        </tbody>
+      </table>
+      <div className="crp-note">Accumulated loans + overdrafts — point-in-time debt balances at start of year vs {asOfLabel} (read at the month, not summed). Δ negative = debt reduced. Netted-rollover areas (Qatar, KSA, Egypt) carry a stock-basis caveat.</div>
+    </div>
+  )
+}
+
 /* ── Group view — cash-flow statement + separated payables position ─────────── */
 function GroupView({ scope, matched, year, asOfLabel, startLabel, cashStartLabel, paySeries }: {
   scope: Scope; matched: AreaAgg[]
   year: number; asOfLabel: string; startLabel: string; cashStartLabel: string; paySeries: PaySeriesPt[]
 }) {
-  const { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash } = aggregateScope(matched)
+  const { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash, loanStart, loanEnd, odStart, odEnd } = aggregateScope(matched)
   const payDelta = hasPay ? payEnd - payStart : null
+  const hasDebt = Math.abs(loanStart) + Math.abs(loanEnd) + Math.abs(odStart) + Math.abs(odEnd) > 1
   const { sections, netMovement } = buildStatement(lineUsd, scope.lines)
   const drivers = sections.map(s => ({ label: s.label, value: s.net }))
   // Ending cash is DERIVED (opening + net movement), not read from the stored
@@ -374,6 +411,9 @@ function GroupView({ scope, matched, year, asOfLabel, startLabel, cashStartLabel
             <div className="crp-card-h">How the cash moved <span>· sections → net movement</span></div>
             <Svg html={waterfallSvg(sections.map(s => ({ label: s.label, value: s.net })), netMovement, undefined, 1.35)} />
           </div>
+
+          {/* Loans & Overdrafts — debt position, start of year vs current */}
+          {hasDebt && <DebtPositionCard loanStart={loanStart} loanEnd={loanEnd} odStart={odStart} odEnd={odEnd} startLabel={cashStartLabel} asOfLabel={asOfLabel} />}
 
           {/* Trade payables — monthly trajectory */}
           <div className="crp-card">
