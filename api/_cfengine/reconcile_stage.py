@@ -250,7 +250,13 @@ DROP_WITHIN_AREA = {'UAE_Apr_2026_CashFlow.xlsx'}
 # sheets then understates the area opening. UAE excludes NEW/LEGACY/NMDCCC (whose
 # openings the CONSOLIDATED AED includes), so Σ-project openings (23.05M) fall short
 # of the consolidated (which is the real area opening). Flows stay Σ-project.
-BALANCE_FROM_TARGET = {'UAE_Apr_2026_CashFlow.xlsx'}
+# Mozambique: the project sheets carry stale, un-reconciled opening balances (Quarry
+# alone opens at +1.89M, larger than the whole area), and folding PMV/PARP/Camp into a
+# phantom _AREA gave a bogus area opening of -757,532 vs the 'new Consolidated' area
+# opening (+51,185, 2026). Take balances from the consolidated target; flows stay
+# Σ-project (keeps project grain per Karim).
+BALANCE_FROM_TARGET = {'UAE_Apr_2026_CashFlow.xlsx',
+                       'MOZAMBIQUE_Apr_2026_CashFlow.xlsx'}
 
 # Disable the per-sheet within-group sign flip for these files. The flip (parse_sheet)
 # negates a sheet's within-group payments when their sum is positive, to catch files
