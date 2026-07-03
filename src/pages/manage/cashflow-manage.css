@@ -712,7 +712,10 @@
 .pm-cov-l { font-size: 10.5px; color: #64748b; margin-top: 3px; }
 .pm-cov-bar { height: 6px; border-radius: 4px; background: #eef0f3; margin-top: 6px; overflow: hidden; }
 .pm-cov-bar span { display: block; height: 100%; background: #0f766e; border-radius: 4px; }
+.pm-subhead { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
 .pm-toggle { font-size: 12px; color: #475569; display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
+.pm-unassigned { font-size: 12px; color: #94a3b8; font-variant-numeric: tabular-nums; }
+.pm-unassigned b { color: #475569; font-weight: 700; }
 
 .pm-area { border: 1px solid var(--border, #e5e7eb); border-radius: 11px; overflow: hidden; background: #fff; }
 .pm-area-h { display: flex; align-items: center; gap: 12px; padding: 9px 14px; background: #f6f7f9; border-bottom: 1px solid var(--border, #e5e7eb); }

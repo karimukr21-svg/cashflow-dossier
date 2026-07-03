@@ -22,7 +22,7 @@ const fmtM = (n: number) => {
   return (m < -0.005 ? `(${Math.abs(m).toFixed(2)})` : m > 0.005 ? m.toFixed(2) : '—')
 }
 
-type Picker = { mode: 'book'; proj: CfProj } | { mode: 'proj'; book: Book } | null
+type Picker = { proj: CfProj } | null   // adding a book to this project
 
 export default function PayablesMap({ canManage }: { canManage: boolean }) {
   const [books, setBooks] = useState<Book[]>([])
@@ -129,22 +129,13 @@ export default function PayablesMap({ canManage }: { canManage: boolean }) {
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]))
   }, [cfProjs])
 
-  const bucketByArea = useMemo(() => {
-    const m = new Map<string, Book[]>()
-    for (const b of unassigned) { const a = b.area || '—'; const arr = m.get(a) ?? []; arr.push(b); m.set(a, arr) }
-    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-  }, [unassigned])
+  const unassignedUsd = useMemo(() => unassigned.reduce((s, b) => s + b.ccc_share_usd, 0), [unassigned])
 
   const overall = useMemo(() => {
     const mapped = cfProjs.filter(p => p.canonId && (booksByCanon.get(p.canonId)?.length ?? 0) > 0).length
     return { total: cfProjs.length, mapped, pct: cfProjs.length ? Math.round(100 * mapped / cfProjs.length) : 0 }
   }, [cfProjs, booksByCanon])
 
-  const projMatches = useMemo(() => {
-    const s = q.trim().toLowerCase()
-    const base = s ? cfProjs.filter(p => p.name.toLowerCase().includes(s) || p.code.toLowerCase().includes(s) || p.area.toLowerCase().includes(s)) : cfProjs
-    return base.slice(0, 60)
-  }, [q, cfProjs])
   const bookMatches = useMemo(() => {
     const s = q.trim().toLowerCase()
     const base = s ? unassigned.filter(b => b.book_code.toLowerCase().includes(s) || (b.companyname ?? '').toLowerCase().includes(s)) : unassigned
@@ -169,10 +160,13 @@ export default function PayablesMap({ canManage }: { canManage: boolean }) {
       </div>
       {err && <div className="pm-err" style={{ padding: '4px 0' }}>{err}</div>}
 
-      <label className="pm-toggle">
-        <input type="checkbox" checked={onlyOpen} onChange={e => setOnlyOpen(e.target.checked)} />
-        Show only projects without a book
-      </label>
+      <div className="pm-subhead">
+        <label className="pm-toggle">
+          <input type="checkbox" checked={onlyOpen} onChange={e => setOnlyOpen(e.target.checked)} />
+          Show only projects without a book
+        </label>
+        <span className="pm-unassigned">Area &amp; other projects · <b>{unassigned.length}</b> unassigned books · <b>{fmtM(unassignedUsd)}m</b></span>
+      </div>
 
       {projByArea.map(([area, ps]) => {
         const rows = onlyOpen ? ps.filter(p => !(p.canonId && (booksByCanon.get(p.canonId)?.length ?? 0) > 0)) : ps
@@ -204,7 +198,7 @@ export default function PayablesMap({ canManage }: { canManage: boolean }) {
                     </div>
                     {canManage && (
                       <div className="pm-card-foot">
-                        <button className="pm-assignbtn" onClick={() => { setPicker({ mode: 'book', proj: p }); setQ('') }}>+ Add book</button>
+                        <button className="pm-assignbtn" onClick={() => { setPicker({ proj: p }); setQ('') }}>+ Add book</button>
                       </div>
                     )}
                   </div>
@@ -215,58 +209,23 @@ export default function PayablesMap({ canManage }: { canManage: boolean }) {
         )
       })}
 
-      {!onlyOpen && bucketByArea.map(([area, bks]) => {
-        const tot = bks.reduce((s, b) => s + b.ccc_share_usd, 0)
-        return (
-          <section className="pm-area pm-area--bucket" key={'bkt-' + area}>
-            <div className="pm-area-h">
-              <h4>Area &amp; other projects · {area}</h4>
-              <span className="pm-area-b">{bks.length} unassigned books · {fmtM(tot)}m</span>
-            </div>
-            <div className="pm-grid">
-              {bks.map(b => (
-                <div className="pm-card" key={b.book_code}>
-                  <div className="pm-card-top">
-                    <span className="pm-code">{b.book_code}</span>
-                    <span className="pm-num">{fmtM(b.ccc_share_usd)}</span>
-                  </div>
-                  <div className="pm-co" title={b.companyname ?? ''}>{b.companyname}</div>
-                  {canManage && (
-                    <div className="pm-card-foot">
-                      <button className="pm-assignbtn" onClick={() => { setPicker({ mode: 'proj', book: b }); setQ('') }}>Assign to project…</button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </section>
-        )
-      })}
-
       {picker && (
         <div className="pm-modal-bg" onClick={() => { setPicker(null); setQ('') }}>
           <div className="pm-modal" onClick={e => e.stopPropagation()}>
             <div className="pm-modal-h">
-              <div>{picker.mode === 'book'
-                ? <>Add a book to <b>{picker.proj.name}</b></>
-                : <>Assign <b>{picker.book.book_code}</b> to a project</>}</div>
-              <div className="pm-modal-co">{picker.mode === 'book' ? `${picker.proj.area} · pick from unassigned books` : picker.book.companyname}</div>
+              <div>Add a book to <b>{picker.proj.name}</b></div>
+              <div className="pm-modal-co">{picker.proj.area} · pick from unassigned books</div>
               <button className="pm-modal-x" onClick={() => { setPicker(null); setQ('') }}>×</button>
             </div>
-            <input autoFocus className="pm-search" placeholder={picker.mode === 'book' ? 'Search books…' : 'Search projects…'} value={q} onChange={e => setQ(e.target.value)} />
+            <input autoFocus className="pm-search" placeholder="Search books…" value={q} onChange={e => setQ(e.target.value)} />
             <div className="pm-list">
-              {picker.mode === 'book'
-                ? (bookMatches.map(b => (
-                    <button key={b.book_code} className="pm-opt" disabled={saving} onClick={() => assign(picker.proj, b)}>
-                      <span>{b.book_code} <em style={{ marginLeft: 6 }}>{b.companyname}</em></span>
-                      <em>{fmtM(b.ccc_share_usd)}</em>
-                    </button>
-                  )).concat(bookMatches.length ? [] : [<div key="n" className="pm-noopt">No unassigned book matches “{q}”.</div>] as any))
-                : (projMatches.map(p => (
-                    <button key={p.code + p.area} className="pm-opt" disabled={saving} onClick={() => assign(p, picker.book)}>
-                      <span>{p.name}</span><em>{p.area}</em>
-                    </button>
-                  )).concat(projMatches.length ? [] : [<div key="n" className="pm-noopt">No project matches “{q}”.</div>] as any))}
+              {bookMatches.map(b => (
+                <button key={b.book_code} className="pm-opt" disabled={saving} onClick={() => assign(picker.proj, b)}>
+                  <span>{b.book_code} <em style={{ marginLeft: 6 }}>{b.companyname}</em></span>
+                  <em>{fmtM(b.ccc_share_usd)}</em>
+                </button>
+              ))}
+              {!bookMatches.length && <div className="pm-noopt">No unassigned book matches “{q}”.</div>}
             </div>
           </div>
         </div>
