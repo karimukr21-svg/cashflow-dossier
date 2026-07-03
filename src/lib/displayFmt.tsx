@@ -32,3 +32,8 @@ export const useDisp = () => useContext(DispFmtCtx)
  * render the currency + denomination pills up in the shared top bar. */
 export const TopbarExtrasCtx = createContext<HTMLElement | null>(null)
 export const useTopbarExtras = () => useContext(TopbarExtrasCtx)
+
+/* A second top-bar slot on Row 1, right after the Period selector, for a page's
+ * scope filter (the Cash Flow Report portals its Areas control here). */
+export const TopbarScopeCtx = createContext<HTMLElement | null>(null)
+export const useTopbarScope = () => useContext(TopbarScopeCtx)

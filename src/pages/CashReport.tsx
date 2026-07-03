@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useTopbarExtras } from '@/lib/displayFmt'
+import { useTopbarExtras, useTopbarScope } from '@/lib/displayFmt'
 import {
   fetchActuals, fetchForecasts, fetchPayablesTrajectory, fetchFxRate, fetchProjectCells,
   fetchAccountGroups, fetchGroupAccounts, subgroupMatchesArea,
@@ -132,6 +132,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
   ]
   const canPrint = level === 'group' || level === 'area' || level === 'sections'
   const slot = useTopbarExtras()
+  const scopeSlot = useTopbarScope()
 
   const print = () => {
     const w = window.open('', '_blank'); if (!w) return
@@ -160,17 +161,16 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
   // Report controls (view tabs + area include/exclude filter + Print) — rendered
   // up in the Dossier top bar (Row 2) via the slot; inline fallback if absent.
   const showAreaFilter = level === 'group' || level === 'area' || level === 'sections'
+  // The Areas scope filter lives on Row 1 right after the Period selector (via
+  // the scope slot); Print + the page tabs live on Row 2 (the extras slot).
+  const areaControl = showAreaFilter
+    ? <AreaFilter areas={cfCanonical} excluded={excluded} setExcluded={setExcluded} />
+    : null
   // Order matters: the top bar is right-anchored, so the LAST item sits at the
-  // stable right edge. Put the page selector last so it never shifts as the area
-  // filter / Print button appear and disappear across tabs.
+  // stable right edge. Put the page selector last so it never shifts as the
+  // Print button appears and disappears across tabs.
   const controls = (
     <>
-      {showAreaFilter && (
-        <>
-          <div className="ctrl"><label>Areas</label></div>
-          <AreaFilter areas={cfCanonical} excluded={excluded} setExcluded={setExcluded} />
-        </>
-      )}
       {canPrint && <button className="crp-print" style={{ marginLeft: 0 }} onClick={print}>Print</button>}
       <div className="crp-levels">
         {tabs.map(t => (
@@ -182,7 +182,10 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
 
   return (
     <div className="crp">
-      {slot ? createPortal(controls, slot) : <div className="crp-toolbar no-print">{controls}</div>}
+      {scopeSlot && areaControl && createPortal(areaControl, scopeSlot)}
+      {slot
+        ? createPortal(controls, slot)
+        : <div className="crp-toolbar no-print">{areaControl}{controls}</div>}
 
       {loading ? <div className="placeholder-box">Loading…</div>
         : level === 'group' ? <GroupView scope={scope} matched={cfAreas} year={year} asOfLabel={asOfLabel} startLabel={startLabel} cashStartLabel={cashStartLabel} paySeries={paySeries} />
@@ -211,7 +214,7 @@ function AreaFilter({ areas, excluded, setExcluded }: {
       <button className={`areas-dd ${excluded.size > 0 ? 'filtered' : ''}`} onClick={() => setOpen(true)}
               aria-haspopup="menu" aria-expanded={open}
               title="Select which areas are included in the report">
-        {included} of {areas.length} <span className="areas-dd-caret">▾</span>
+        Areas · {included} of {areas.length} <span className="areas-dd-caret">▾</span>
       </button>
       {open && (
         <AreaFilterPopover

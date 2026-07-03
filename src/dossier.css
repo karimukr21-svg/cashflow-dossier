@@ -302,6 +302,7 @@ body, html, #root {
    is display:contents so the pills flow into that flex row. Fallback bar used
    only if the slot is unavailable. */
 .topbar-extras { display: contents; }
+.topbar-scope { display: contents; }
 .area-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 4px; }
 .pill-btn:disabled { opacity: .45; cursor: not-allowed; }
 .area-includes-label {

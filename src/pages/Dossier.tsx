@@ -15,7 +15,7 @@ import AllAreas from './AllAreas'
 import AdjustmentsView from './AdjustmentsView'
 import CustomPeriodPopover from '@/components/CustomPeriodPopover'
 import AreaFilterPopover from '@/components/AreaFilterPopover'
-import { TopbarExtrasCtx } from '@/lib/displayFmt'
+import { TopbarExtrasCtx, TopbarScopeCtx } from '@/lib/displayFmt'
 
 export type Grain = 'monthly' | 'quarterly' | 'yearly'
 export type GroupBy = 'category' | 'nature'
@@ -168,6 +168,8 @@ export default function Dossier() {
   const [showAreaFilter, setShowAreaFilter] = useState(false)
   // Top-bar slot (Row 2) the active page can portal its own display controls into.
   const [extrasNode, setExtrasNode] = useState<HTMLDivElement | null>(null)
+  // Row 1 slot (right after the Period selector) for a page's scope filter.
+  const [scopeNode, setScopeNode] = useState<HTMLDivElement | null>(null)
 
   /* All Areas page filter — stores EXCLUDED canonical area_ids so newly-added
    * areas default in without Karim having to re-tick them. Bumped to v2
@@ -321,6 +323,7 @@ export default function Dossier() {
 
   return (
     <TopbarExtrasCtx.Provider value={extrasNode}>
+    <TopbarScopeCtx.Provider value={scopeNode}>
     <div className="shell">
       <div className="topbar">
         {/* Row 1 — data context: what is being viewed.
@@ -334,6 +337,20 @@ export default function Dossier() {
                   title="Change period">
             Period · {periodLabel}
           </button>
+          {/* Scope filter, right after Period. All Areas renders its own areas
+              dropdown here; the Cash Flow Report portals its Areas control into
+              the scope slot below. */}
+          {showAreaFilterChip && (
+            <button
+              className={`areas-dd ${excludedAreas.size > 0 ? 'filtered' : ''}`}
+              onClick={() => setShowAreaFilter(true)}
+              aria-haspopup="menu" aria-expanded={showAreaFilter}
+              title="Select which areas roll up into the consolidation">
+              Areas · {selectedAreas.length} of {areas.length}
+              <span className="areas-dd-caret">▾</span>
+            </button>
+          )}
+          <div className="topbar-scope" ref={setScopeNode} />
           <div style={{ flex: 1 }} />
           <div className="ctrl"><label>Version</label></div>
           <div className="pill-row">
@@ -352,19 +369,6 @@ export default function Dossier() {
            so toggling views never shifts what stays. */}
         <div className="topbar-row topbar-row-display">
           <div style={{ flex: 1 }} />
-          {showAreaFilterChip && (
-            <>
-              <div className="ctrl"><label>Areas</label></div>
-              <button
-                className={`areas-dd ${excludedAreas.size > 0 ? 'filtered' : ''}`}
-                onClick={() => setShowAreaFilter(true)}
-                aria-haspopup="menu" aria-expanded={showAreaFilter}
-                title="Select which areas roll up into the consolidation">
-                {selectedAreas.length} of {areas.length}
-                <span className="areas-dd-caret">▾</span>
-              </button>
-            </>
-          )}
           {showGrain && (
             <>
               <div className="ctrl"><label>Grain</label></div>
@@ -483,6 +487,7 @@ export default function Dossier() {
 
       <div className="content">{renderContent()}</div>
     </div>
+    </TopbarScopeCtx.Provider>
     </TopbarExtrasCtx.Provider>
   )
 }
