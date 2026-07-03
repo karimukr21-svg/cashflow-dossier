@@ -1,19 +1,18 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '@/lib/supabase'
+import { useRole, canManageCashFlow } from '@/lib/role'
 import { makeDisp, DENOM, type Denom, useTopbarExtras } from '@/lib/displayFmt'
 import type { Scope } from './Dossier'
 
-/* Adjustments (read-only) — a Cash Flow lens showing WHAT was changed on the
- * selected version versus the faithful area files. It reads the adjustment
- * ledger (cf_adjustment_actions + cf_adjustment_legs) for scope.primaryVersion.
+/* Adjustments — a Cash Flow lens showing WHAT was changed on the selected
+ * version versus the faithful area files. It reads the adjustment ledger
+ * (cf_adjustment_actions + cf_adjustment_legs) for scope.primaryVersion.
  *
  * ORIG has no adjustments (empty state). ADJ shows Tony's edits: one card per
- * ACTION (Adjust / Reclass / Reschedule), grouped by area, with its signed USD
- * legs, a per-area net, and a group total. A balanced action (legs sum to 0) is
- * a cash-neutral reclass/reschedule; otherwise the net is the cash change.
- *
- * Editing lives in the "Adjust" module — this surface is read-only. */
+ * ACTION (Adjust / Reclass / Reschedule), grouped by area, as a per-line ×
+ * per-month table with a per-line and per-area net. The note sits to the right
+ * of each adjustment and is editable in place (super-admin write, RLS-gated). */
 
 type Action = {
   id: string
@@ -44,10 +43,18 @@ const TYPE_LABEL: Record<Action['action_type'], string> = {
 }
 
 export default function AdjustmentsView({ scope }: { scope: Scope }) {
+  const role = useRole()
+  const canManage = canManageCashFlow(role)
+
   const [actions, setActions] = useState<Action[]>([])
   const [legs, setLegs] = useState<Leg[]>([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
+
+  // Editable notes — draft per action, saved on blur against the original.
+  const [noteDraft, setNoteDraft] = useState<Record<string, string>>({})
+  const original = useRef<Record<string, string>>({})
+  const [savedId, setSavedId] = useState<string | null>(null)
 
   const version = scope.primaryVersion
 
@@ -71,6 +78,9 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
       if (act.error) { setErr(act.error.message); setLoading(false); return }
       const acts = (act.data ?? []) as Action[]
       setActions(acts)
+      const nd: Record<string, string> = {}
+      for (const a of acts) nd[a.id] = a.note ?? ''
+      setNoteDraft(nd); original.current = { ...nd }
       if (acts.length === 0) { setLegs([]); setLoading(false); return }
       const lg = await supabase
         .from('cf_adjustment_legs')
@@ -84,7 +94,22 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
     return () => { alive = false }
   }, [version])
 
-  // line_code -> human description
+  const saveNote = async (id: string) => {
+    const val = noteDraft[id] ?? ''
+    if (val === (original.current[id] ?? '')) return
+    const { error } = await supabase
+      .from('cf_adjustment_actions')
+      .update({ note: val === '' ? null : val })
+      .eq('id', id)
+    if (!error) {
+      original.current[id] = val
+      setSavedId(id)
+      setTimeout(() => setSavedId(s => (s === id ? null : s)), 1600)
+    } else {
+      setErr(error.message)
+    }
+  }
+
   const lineDesc = useMemo(() => {
     const m = new Map<string, string>()
     for (const l of scope.lines) m.set(l.line_code, l.description)
@@ -100,7 +125,6 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
     return m
   }, [legs])
 
-  // Group actions by area, preserving the ledger's area sort.
   const byArea = useMemo(() => {
     const m = new Map<string, Action[]>()
     for (const a of actions) {
@@ -114,9 +138,11 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
     legs.filter(l => l.area === area).reduce((s, l) => s + Number(l.delta_usd || 0), 0)
   const groupNet = legs.reduce((s, l) => s + Number(l.delta_usd || 0), 0)
 
+  // Negatives in parentheses; positives keep a + to read as a delta.
   const signParts = (v: number) => {
     if (Math.abs(v) < 0.5) return { cls: 'zero', txt: '—' }
-    return { cls: v > 0 ? 'up' : 'down', txt: (v > 0 ? '+' : '−') + disp(Math.abs(v)) }
+    if (v < 0) return { cls: 'down', txt: `(${disp(Math.abs(v))})` }
+    return { cls: 'up', txt: `+${disp(v)}` }
   }
 
   const controls = (
@@ -139,10 +165,6 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
       <header className="adjv-head">
         <div className="adjv-head-t">
           <h1>Adjustments</h1>
-          <p className="adjv-sub">
-            What Treasury changed on <b>{version}</b> versus the faithful area files. Read-only —
-            editing lives in the Adjust module.
-          </p>
         </div>
         {!loading && actions.length > 0 && (
           <div className="adjv-grouptotal">
@@ -151,6 +173,7 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
             <span className="adjv-gt-s">{actions.length} adjustment{actions.length === 1 ? '' : 's'} · {byArea.length} area{byArea.length === 1 ? '' : 's'}</span>
           </div>
         )}
+        <button className="adjv-print" onClick={() => window.print()} title="Print / save as PDF">Print</button>
       </header>
 
       {err && <div className="adjv-err">Couldn’t load the adjustment ledger: {err}</div>}
@@ -187,13 +210,10 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
                 const isMove = a.action_type === 'reclass' || a.action_type === 'reschedule'
                 const np = signParts(net)
 
-                // Column set = the union of months across the action's legs.
                 const monthMap = new Map<string, { y: number; m: number }>()
                 for (const l of al) monthMap.set(`${l.year}-${l.month}`, { y: l.year, m: l.month })
                 const months = [...monthMap.values()].sort((x, y) => (x.y - y.y) || (x.m - y.m))
 
-                // Rows = one per (line, role). Reclass/reschedule surface a From/To
-                // tag; a plain Adjust has no tag. Each cell is that month's signed delta.
                 type Row = { line: string; role: Leg['role']; byMonth: Map<string, number>; net: number }
                 const rowMap = new Map<string, Row>()
                 for (const l of al) {
@@ -204,7 +224,6 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
                   r.net += Number(l.delta_usd || 0)
                   rowMap.set(key, r)
                 }
-                // From-rows first (the source), then To, then singles.
                 const roleRank = { from: 0, to: 1, single: 2 } as const
                 const rows = [...rowMap.values()].sort((x, y) => roleRank[x.role] - roleRank[y.role])
 
@@ -257,7 +276,20 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
                       </table>
                     </div>
 
-                    {a.note && <p className="adjv-note"><span className="adjv-note-lbl">Why</span>{a.note}</p>}
+                    <div className="adjv-noteedit">
+                      <div className="adjv-note-head">
+                        <span>Note</span>
+                        {savedId === a.id && <span className="adjv-note-saved">Saved</span>}
+                      </div>
+                      <textarea
+                        className="adjv-note-ta"
+                        value={noteDraft[a.id] ?? ''}
+                        placeholder={canManage ? 'Add a note…' : '—'}
+                        readOnly={!canManage}
+                        onChange={e => setNoteDraft(d => ({ ...d, [a.id]: e.target.value }))}
+                        onBlur={() => canManage && saveNote(a.id)}
+                      />
+                    </div>
                   </article>
                 )
               })}
