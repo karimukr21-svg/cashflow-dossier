@@ -44,8 +44,14 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [user])
+    // Depend on the stable user id, NOT the user object: Supabase fires a fresh
+    // session (new user object) on every token refresh — which happens on tab
+    // focus — and re-running this check would flip to 'checking' and unmount the
+    // whole module tree, resetting all in-page state.
+  }, [user?.id])
 
+  // Only show the loading screen on the FIRST access check. Once access has been
+  // resolved, a background re-check must not tear the mounted tree down.
   if (loading || (user && access.status === 'checking')) {
     return (
       <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: 'var(--mute)' }}>
