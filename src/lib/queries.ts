@@ -281,6 +281,21 @@ export async function fetchActuals(opts: {
     .map(r => ({ ...r, value: Number(r.value) }))
 }
 
+/** Debt stocks (accumulated loans + overdrafts) at a single (year, month), from
+ *  cf_actuals. Used to anchor a start-of-year debt position on the prior-year
+ *  DECEMBER period-END balance without pulling that month's flow lines into the
+ *  report window. Point-in-time; debt carries no adjustment deltas in any version
+ *  (verified), so the shared published actuals are authoritative here. */
+export async function fetchDebtStocks(year: number, month: number): Promise<(CfCell & { currency?: string; project_code?: string | null })[]> {
+  const { data, error } = await supabase
+    .from('cf_actuals')
+    .select('area, project_code, line_code, year, month, value, currency')
+    .in('line_code', ['accum_loans', 'accum_od'])
+    .eq('year', year).eq('month', month)
+  if (error) throw error
+  return (data || []).map(r => ({ ...r, value: Number(r.value) }))
+}
+
 /** Forecast cells in the period scope for a given version. Same cfAreas
  *  contract as fetchActuals. */
 export async function fetchForecasts(opts: {

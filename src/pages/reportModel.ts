@@ -4,6 +4,13 @@ import { flowSections } from '@/lib/cfTaxonomy'
 /* Shared model for the Cash Flow Report — used by both the screen (CashReport)
  * and the print builder (reportPrint), so grouping/aggregation is defined once. */
 
+/* Areas whose debt is excluded from the group debt rollup so it ties Tony's
+ * consolidated (CONS). His CONS omits CC (UE)'s overdraft (equity-accounted /
+ * presented separately) — verified as the SOLE line where our per-project rollup
+ * diverges from his: for every other area the two tie to the dollar. Dropping it
+ * makes the group loans + overdrafts total match Tony's consolidated figure. */
+const DEBT_ROLLUP_EXCLUDE_AREAS = new Set(['CC (UE)'])
+
 export type AreaAgg = {
   areaId: string; label: string; currency: string; fxOk: boolean; hasCf: boolean
   lineUsd: Map<string, number>          // FX-converted to USD (rate at as-of)
@@ -58,12 +65,13 @@ export function buildModel(
     if (cat === 'Opening Balance' && c.month === 1) agg.openCash += c.value * rate
     else if (cat === 'Ending Balance' && c.month === asOfMonth) agg.endCash += c.value * rate
     // Debt stocks: point-in-time balance at the month, never summed across months.
-    // Read the Jan (start-of-year) and as-of (current) stock; both fire even if
-    // asOfMonth === 1 (start === current, movement 0).
-    else if (cat === 'Accumulated Loans' || cat === 'Overdrafts') {
+    // Start-of-year = the prior-year DECEMBER period-END stock (balances are
+    // reported at period end, so Dec is the year's opening position); current =
+    // the as-of month. CC (UE)'s debt is excluded to tie Tony's consolidated.
+    else if ((cat === 'Accumulated Loans' || cat === 'Overdrafts') && !DEBT_ROLLUP_EXCLUDE_AREAS.has(c.area)) {
       const isLoan = cat === 'Accumulated Loans'
-      if (c.month === 1)         { if (isLoan) agg.loanStart += c.value * rate; else agg.odStart += c.value * rate }
-      if (c.month === asOfMonth) { if (isLoan) agg.loanEnd += c.value * rate;   else agg.odEnd += c.value * rate }
+      if (c.year === year - 1 && c.month === 12)    { if (isLoan) agg.loanStart += c.value * rate; else agg.odStart += c.value * rate }
+      if (c.year === year && c.month === asOfMonth) { if (isLoan) agg.loanEnd += c.value * rate;   else agg.odEnd += c.value * rate }
     }
   }
   for (const agg of byArea.values()) {

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTopbarExtras, useTopbarScope } from '@/lib/displayFmt'
 import {
-  fetchActuals, fetchForecasts, fetchPayablesTrajectory, fetchFxRate, fetchProjectCells,
+  fetchActuals, fetchForecasts, fetchDebtStocks, fetchPayablesTrajectory, fetchFxRate, fetchProjectCells,
   fetchAccountGroups, fetchGroupAccounts, subgroupMatchesArea,
   fetchPayablesMaps, fetchPayablesForBooks,
   type CfCell, type CfLine, type PayablesTrajRow, type GroupDef, type GroupAccount,
@@ -64,10 +64,11 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
     let cancel = false; setLoading(true)
     ;(async () => {
       try {
-        const [a, f, pt] = await Promise.all([
+        const [a, f, pt, dec] = await Promise.all([
           fetchActuals({ fromYear: year, fromMonth: 1, toYear: year, toMonth: asOfMonth }),
           fetchForecasts({ version: scope.primaryVersion, fromYear: year, fromMonth: 1, toYear: year, toMonth: asOfMonth }),
           fetchPayablesTrajectory(),
+          fetchDebtStocks(year - 1, 12),   // prior-year Dec period-end debt = the start-of-year debt anchor
         ])
         if (cancel) return
         // Merge/override at PROJECT grain: cf data is project-grain (many rows
@@ -79,7 +80,10 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
         const merged = new Map<string, CfCell & { currency?: string }>()
         for (const c of f) merged.set(key(c), c)
         for (const c of a) merged.set(key(c), c)
-        const mc = [...merged.values()]
+        // Dec-prior debt stocks feed only the debt card's start anchor (different
+        // year → no key collision with the Jan–asOf window; only balance lines,
+        // so they never enter the flow statement).
+        const mc = [...merged.values(), ...dec]
         setCells(mc); setPayTraj(pt)
         const curs = [...new Set(mc.map(c => c.currency).filter(Boolean))] as string[]
         const asOfDate = selVer?.as_of_date || `${year}-${String(asOfMonth).padStart(2, '0')}-01`
@@ -362,7 +366,6 @@ function DebtPositionCard({ loanStart, loanEnd, odStart, odEnd, startLabel, asOf
           <tr className="crp-natsub"><td>Total debt</td><td className="r">{fMm(totStart)}</td><td className="r">{fMm(totEnd)}</td><td className={`r ${dCls(totEnd - totStart)}`}>{fMd(totEnd - totStart)}</td></tr>
         </tbody>
       </table>
-      <div className="crp-note">Accumulated loans + overdrafts — point-in-time debt balances at start of year vs {asOfLabel} (read at the month, not summed). Δ negative = debt reduced. Netted-rollover areas (Qatar, KSA, Egypt) carry a stock-basis caveat.</div>
     </div>
   )
 }
@@ -397,10 +400,13 @@ function GroupView({ scope, matched, year, asOfLabel, startLabel, cashStartLabel
 
       <CashTimeline startCash={startCash} endCash={endCash} netMovement={netMovement} drivers={drivers} hasCash={hasCash} startLabel={cashStartLabel} asOfLabel={asOfLabel} />
 
-      {/* Justified 3-column grid: Operations · the four stacked sections · charts */}
+      {/* Justified 3-column grid: Operations · the four stacked sections · charts.
+          The Loans & Overdrafts debt position sits at the top of column 1, above
+          the Operations card. */}
       <div className="crp-groupcols">
         {arrangeByColumns(sections, STMT_COLUMNS).map((col, i) => (
           <div className={`crp-seccol${i === 1 ? ' crp-seccol--spaced' : ''}`} key={i}>
+            {i === 0 && hasDebt && <DebtPositionCard loanStart={loanStart} loanEnd={loanEnd} odStart={odStart} odEnd={odEnd} startLabel={startLabel} asOfLabel={asOfLabel} />}
             {col.map(sec => <StmtSectionCard key={sec.label} sec={sec} />)}
           </div>
         ))}
@@ -411,9 +417,6 @@ function GroupView({ scope, matched, year, asOfLabel, startLabel, cashStartLabel
             <div className="crp-card-h">How the cash moved <span>· sections → net movement</span></div>
             <Svg html={waterfallSvg(sections.map(s => ({ label: s.label, value: s.net })), netMovement, undefined, 1.35)} />
           </div>
-
-          {/* Loans & Overdrafts — debt position, start of year vs current */}
-          {hasDebt && <DebtPositionCard loanStart={loanStart} loanEnd={loanEnd} odStart={odStart} odEnd={odEnd} startLabel={cashStartLabel} asOfLabel={asOfLabel} />}
 
           {/* Trade payables — monthly trajectory */}
           <div className="crp-card">

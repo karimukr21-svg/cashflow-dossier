@@ -104,29 +104,27 @@ function groupSheet(o: GroupOpts): string {
     if (s.payments.length > 1) rows += `<tr class="natsub"><td>Total payments</td><td class="r ${cl(s.payTotal)}">${f.fM(s.payTotal)}</td></tr>`
     return `<div class="chartcard stmtcard"><div class="ch-h"><span class="sh-t">${s.label}</span><b class="sh-n ${cl(s.net)}">${f.fM(s.net)}</b></div><table class="t"><tbody>${rows}</tbody></table></div>`
   }
-  const stmtCols = arrangeByColumns(o.statement.sections, STMT_COLUMNS)
-    .map((col, i) => `<div class="seccol${i === 1 ? ' spaced' : ''}">${col.map(secCard).join('')}</div>`).join('')
-
-  // Loans & Overdrafts — debt position (point-in-time stocks, Jan vs as-of).
-  // Δ colour inverted (down = green), matching the screen's DebtPositionCard.
-  const debtStartLabel = o.cashStartLabel ?? o.startLabel
+  // Loans & Overdrafts — debt position (point-in-time stocks, prior-year Dec vs
+  // as-of). Δ colour inverted (down = green), matching the screen's card. Sits at
+  // the top of column 1, above the Operations card.
   const loanD = (o.loanEnd ?? 0) - (o.loanStart ?? 0), odD = (o.odEnd ?? 0) - (o.odStart ?? 0)
   const totDS = (o.loanStart ?? 0) + (o.odStart ?? 0), totDE = (o.loanEnd ?? 0) + (o.odEnd ?? 0)
   const hasDebt = Math.abs(o.loanStart ?? 0) + Math.abs(o.loanEnd ?? 0) + Math.abs(o.odStart ?? 0) + Math.abs(o.odEnd ?? 0) > 1
   const dcl = (v: number) => Math.abs(v) < 50000 ? '' : (v < 0 ? 'pos' : 'neg')
-  const debtCard = hasDebt ? `<div class="chartcard"><div class="ch-h">Loans &amp; overdrafts · ${debtStartLabel} → ${o.asOfLabel}</div>
-      <table class="t"><thead><tr><th></th><th class="r">${debtStartLabel}</th><th class="r">${o.asOfLabel}</th><th class="r">Δ</th></tr></thead>
+  const debtCard = hasDebt ? `<div class="chartcard"><div class="ch-h">Loans &amp; overdrafts · ${o.startLabel} → ${o.asOfLabel}</div>
+      <table class="t"><thead><tr><th></th><th class="r">${o.startLabel}</th><th class="r">${o.asOfLabel}</th><th class="r">Δ</th></tr></thead>
       <tbody>
         <tr><td class="item">Accumulated loans</td><td class="r">${f.fM(o.loanStart)}</td><td class="r">${f.fM(o.loanEnd)}</td><td class="r ${dcl(loanD)}">${f.fD(loanD)}</td></tr>
         <tr><td class="item">Overdrafts</td><td class="r">${f.fM(o.odStart)}</td><td class="r">${f.fM(o.odEnd)}</td><td class="r ${dcl(odD)}">${f.fD(odD)}</td></tr>
         <tr class="natsub"><td>Total debt</td><td class="r">${f.fM(totDS)}</td><td class="r">${f.fM(totDE)}</td><td class="r ${dcl(totDE - totDS)}">${f.fD(totDE - totDS)}</td></tr>
-      </tbody></table>
-      <div class="note">Accumulated loans + overdrafts — point-in-time debt balances (read at the month, not summed). Δ negative = debt reduced.</div></div>` : ''
+      </tbody></table></div>` : ''
+
+  const stmtCols = arrangeByColumns(o.statement.sections, STMT_COLUMNS)
+    .map((col, i) => `<div class="seccol${i === 1 ? ' spaced' : ''}">${(i === 0 ? debtCard : '') + col.map(secCard).join('')}</div>`).join('')
 
   const charts = `<div class="seccol">
     <div class="chartcard"><div class="ch-h">How the cash moved <span>· sections → net movement</span></div>
       ${waterfallSvg(o.statement.sections.map(s => ({ label: s.label, value: s.net })), nm, chartDisp, 1.35)}</div>
-    ${debtCard}
     <div class="chartcard"><div class="ch-h">Trade payables · monthly · ${o.startLabel} → ${o.asOfLabel} · ${o.disp.payUnit}</div>
       ${o.hasPay ? `${payablesTrendSvg(o.paySeries ?? [], chartDisp)}
         <div class="paysum"><span>${o.startLabel} <b class="${cl(o.payStart)}">${f.fM(o.payStart)}</b></span><span>${o.asOfLabel} <b class="${cl(o.payEnd)}">${f.fM(o.payEnd)}</b></span><span>Δ <b class="${cl(payDelta)}">${f.fD(payDelta)}</b></span></div>
