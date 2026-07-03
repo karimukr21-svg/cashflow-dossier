@@ -334,13 +334,6 @@ export default function Dossier() {
                   title="Change period">
             Period · {periodLabel}
           </button>
-          {showAreaFilterChip && (
-            <button
-              className={`areas-pill ${excludedAreas.size > 0 ? 'filtered' : ''}`}
-              onClick={() => setShowAreaFilter(true)}>
-              Areas · {selectedAreas.length} of {areas.length}
-            </button>
-          )}
           <div style={{ flex: 1 }} />
           <div className="ctrl"><label>Version</label></div>
           <div className="pill-row">
@@ -359,6 +352,19 @@ export default function Dossier() {
            so toggling views never shifts what stays. */}
         <div className="topbar-row topbar-row-display">
           <div style={{ flex: 1 }} />
+          {showAreaFilterChip && (
+            <>
+              <div className="ctrl"><label>Areas</label></div>
+              <button
+                className={`areas-dd ${excludedAreas.size > 0 ? 'filtered' : ''}`}
+                onClick={() => setShowAreaFilter(true)}
+                aria-haspopup="menu" aria-expanded={showAreaFilter}
+                title="Select which areas roll up into the consolidation">
+                {selectedAreas.length} of {areas.length}
+                <span className="areas-dd-caret">▾</span>
+              </button>
+            </>
+          )}
           {showGrain && (
             <>
               <div className="ctrl"><label>Grain</label></div>

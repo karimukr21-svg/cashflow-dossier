@@ -150,6 +150,28 @@ body, html, #root {
 }
 .areas-pill.filtered::before { background: #b8731a; }
 
+/* Areas dropdown trigger (Row 2, left of Grain — All Areas page). Opens the
+ * AreaFilterPopover checklist. Matches the display-row control weight. */
+.areas-dd {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface, #fff);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.areas-dd:hover { border-color: var(--crimson); color: var(--crimson); }
+.areas-dd.filtered { background: #fff7e6; border-color: #b8731a; color: #6e4612; }
+.areas-dd-caret { font-size: 9px; color: var(--mute); }
+.areas-dd:hover .areas-dd-caret { color: inherit; }
+
 /* AreaFilterPopover */
 .area-filter-popover {
   position: fixed;
