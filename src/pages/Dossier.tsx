@@ -89,6 +89,13 @@ const ALL_MONTHS = (() => {
   return arr
 })()
 
+/* A version_code is <CYCLE>-<TAG> (e.g. APR2026-ORIG). The CYCLE (year+month) and
+ * the TAG (ORIG/ADJ) are two separate axes in the top bar: pick a Cycle, then a
+ * Version within it. TAG_ORDER keeps ORIG before ADJ; unknown tags sort last. */
+const TAG_ORDER: Record<string, number> = { ORIG: 0, ADJ: 1 }
+const cycleKey = (v: CfVersion) => `${v.cycle_year}-${v.cycle_month}`
+const versionTag = (v: CfVersion) => { const i = v.version_code.indexOf('-'); return i >= 0 ? v.version_code.slice(i + 1) : v.version_code }
+
 export default function Dossier() {
   const { user, signOut } = useAuth()
   const role = useRole()
@@ -163,6 +170,30 @@ export default function Dossier() {
     }
     return `${monthName(fm)} ${fy} – ${monthName(tm)} ${ty}`
   }, [fy, fm, ty, tm])
+
+  // Cycle / Version axes for the top bar. A cycle (Apr 2026) groups its versions
+  // (ORIG, ADJ); the selected version implies the selected cycle.
+  const selectedVersion = versions.find(v => v.version_code === primaryVersion) ?? versions[0]
+  const selectedCycleKey = selectedVersion ? cycleKey(selectedVersion) : ''
+  const cycles = (() => {
+    const seen = new Set<string>(); const out: { key: string; label: string }[] = []
+    for (const v of versions) {
+      const k = cycleKey(v)
+      if (seen.has(k)) continue
+      seen.add(k); out.push({ key: k, label: `${monthName(v.cycle_month)} ${v.cycle_year}` })
+    }
+    return out
+  })()
+  const versionsInCycle = versions.filter(v => cycleKey(v) === selectedCycleKey)
+    .sort((a, b) => (TAG_ORDER[versionTag(a)] ?? 9) - (TAG_ORDER[versionTag(b)] ?? 9))
+  // Switching cycle keeps the same version tag when the target cycle has it
+  // (ORIG stays ORIG across cycles), else falls to that cycle's first version.
+  const selectCycle = (ck: string) => {
+    const inCycle = versions.filter(v => cycleKey(v) === ck)
+    const curTag = selectedVersion ? versionTag(selectedVersion) : ''
+    const target = inCycle.find(v => versionTag(v) === curTag) ?? inCycle[0]
+    if (target) setUrl({ v: target.version_code })
+  }
 
   const [showCustom, setShowCustom] = useState(false)
   const [showAreaFilter, setShowAreaFilter] = useState(false)
@@ -352,13 +383,23 @@ export default function Dossier() {
           )}
           <div className="topbar-scope" ref={setScopeNode} />
           <div style={{ flex: 1 }} />
-          <div className="ctrl"><label>Version</label></div>
+          <div className="ctrl"><label>Cycle</label></div>
           <div className="pill-row">
-            {versions.map(v => (
+            {cycles.map(c => (
+              <button key={c.key}
+                onClick={() => selectCycle(c.key)}
+                className={`pill-btn ${selectedCycleKey === c.key ? 'active' : ''}`}>
+                {c.label}
+              </button>
+            ))}
+          </div>
+          <div className="ctrl" style={{ marginLeft: 10 }}><label>Version</label></div>
+          <div className="pill-row">
+            {versionsInCycle.map(v => (
               <button key={v.version_code}
                 onClick={() => setUrl({ v: v.version_code })}
                 className={`pill-btn ${primaryVersion === v.version_code ? 'active' : ''}`}>
-                {v.version_code}
+                {versionTag(v)}
               </button>
             ))}
           </div>
