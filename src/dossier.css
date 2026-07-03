@@ -1806,13 +1806,31 @@ body, html, #root {
 .adjv-note-ta:focus { outline: none; border-color: var(--crimson); box-shadow: 0 0 0 2px rgba(225,0,32,.08); }
 .adjv-note-ta[readonly] { background: #f8f9fa; color: #64748b; cursor: default; }
 
-/* Print — drop the app chrome, flow the adjustments full-page. */
+/* Print-only elements — hidden on screen, shown when printing. */
+.adjv-printhead { display: none; }
+.adjv-note-print { display: none; }
+
+/* Print — drop the app chrome, flow the adjustments across pages. */
 @media print {
-  @page { margin: 12mm; }
-  .topbar, .leftnav, .ws-launcher, .ws-drawer, .ws-drawer-backdrop, .adjv-print { display: none !important; }
+  @page { margin: 14mm; }
+  /* The app shell fixes height to the viewport; release it so content paginates. */
+  html, body, #root { height: auto !important; overflow: visible !important; }
+  .topbar, .leftnav, .ws-launcher, .ws-drawer, .ws-drawer-backdrop, .adjv-print, .adjv-grouptotal { display: none !important; }
   .shell { display: block !important; height: auto !important; }
   .content { overflow: visible !important; padding: 0 !important; }
-  .adjv-area, .adjv-card { break-inside: avoid; }
-  .adjv-note-ta { min-height: 0; }
+
+  .adjv { gap: 12px; }
+  .adjv-printhead { display: block; font-size: 15px; font-weight: 800; color: var(--ink); border-bottom: 2.5px solid var(--crimson); padding-bottom: 6px; margin-bottom: 4px; }
+  .adjv-head { display: none; }
+
+  /* Each area starts fresh; keep a card whole, but let areas span pages. */
+  .adjv-area { break-inside: auto; }
+  .adjv-area-head { break-after: avoid; }
+  .adjv-card { display: block; break-inside: avoid; border-color: #d1d5db; }
+  .adjv-noteedit { display: none; }         /* the editor is screen-only */
+  .adjv-tablewrap { border-color: #d1d5db; }
+  .adjv-note-print { display: block; font-size: 11px; line-height: 1.5; color: #334155; margin-top: 8px; }
+  .adjv-note-print:empty { display: none; } /* blank notes drop out entirely */
+
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }

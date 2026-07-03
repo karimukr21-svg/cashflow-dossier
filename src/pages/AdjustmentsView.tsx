@@ -162,6 +162,8 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
     <div className="adjv">
       {slot && createPortal(controls, slot)}
 
+      <div className="adjv-printhead">Adjustments · {version}</div>
+
       <header className="adjv-head">
         <div className="adjv-head-t">
           <h1>Adjustments</h1>
@@ -290,6 +292,9 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
                         onBlur={() => canManage && saveNote(a.id)}
                       />
                     </div>
+
+                    {/* Print-only: the note as text below the table (blank notes drop out). */}
+                    <p className="adjv-note-print">{noteDraft[a.id] ?? ''}</p>
                   </article>
                 )
               })}
