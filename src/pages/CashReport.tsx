@@ -5,7 +5,9 @@ import {
   fetchActuals, fetchForecasts, fetchPayablesTrajectory, fetchFxRate, fetchProjectCells,
   fetchAccountGroups, fetchGroupAccounts, subgroupMatchesArea,
   type CfCell, type CfLine, type PayablesTrajRow, type GroupDef, type GroupAccount,
+  type CanonicalArea, type AreaGroup,
 } from '@/lib/queries'
+import AreaFilterPopover from '@/components/AreaFilterPopover'
 import { fmt, fmtDelta } from '@/lib/format'
 import { buildModel, buildStatement, buildStatementMatrix, payablesSeries, arrangeSectionColumns, arrangeByColumns, STMT_COLUMNS, type AreaAgg, type StmtSection, type MatrixSection, type PaySeriesPt } from './reportModel'
 import { buildReportHtml, buildProjectsPrintHtml } from './reportPrint'
@@ -102,6 +104,12 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
   // Areas actually in scope = all cash-flow areas minus the ones unticked in the
   // top-bar area filter. Drives Group / Area / Sections.
   const cfAreas = useMemo(() => cfAreasAll.filter(a => !excluded.has(a.areaId)), [cfAreasAll, excluded])
+  // The same cash-flow areas as canonical rows (area_id === AreaAgg.areaId), so
+  // the area filter can reuse the shared grouped popover (like All Areas).
+  const cfCanonical = useMemo(() => {
+    const ids = new Set(cfAreasAll.map(a => a.areaId))
+    return scope.areas.filter(a => ids.has(a.area_id))
+  }, [cfAreasAll, scope.areas])
 
   // Monthly trade-payables series (Dec → as-of) for the in-scope areas.
   // Only mapped areas carry payables, so unmapped areas contribute nothing;
@@ -160,7 +168,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
       {showAreaFilter && (
         <>
           <div className="ctrl"><label>Areas</label></div>
-          <AreaFilter areas={cfAreasAll} excluded={excluded} setExcluded={setExcluded} />
+          <AreaFilter areas={cfCanonical} excluded={excluded} setExcluded={setExcluded} />
         </>
       )}
       {canPrint && <button className="crp-print" style={{ marginLeft: 0 }} onClick={print}>Print</button>}
@@ -187,43 +195,32 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
   )
 }
 
-/* Top-bar area filter — a dropdown of tickboxes to include/exclude areas from
+/* Top-bar area filter — same control as the All Areas page: a .areas-dd trigger
+ * that opens the shared, grouped AreaFilterPopover to include/exclude areas from
  * the report scope (Group / Area / Sections). All ticked = whole group. */
+const CRP_AREA_GROUP_LABEL: Record<AreaGroup, string> = {
+  Operations: 'OPERATIONS', Subsidiaries: 'SUBSIDIARIES', Corporate: 'CORPORATE', Contingency: 'CONTINGENCY',
+}
 function AreaFilter({ areas, excluded, setExcluded }: {
-  areas: AreaAgg[]; excluded: Set<string>; setExcluded: (s: Set<string>) => void
+  areas: CanonicalArea[]; excluded: Set<string>; setExcluded: (s: Set<string>) => void
 }) {
   const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
-    document.addEventListener('mousedown', h)
-    return () => document.removeEventListener('mousedown', h)
-  }, [open])
-  const included = areas.length - areas.filter(a => excluded.has(a.areaId)).length
-  const toggle = (id: string) => { const n = new Set(excluded); n.has(id) ? n.delete(id) : n.add(id); setExcluded(n) }
+  const included = areas.length - areas.filter(a => excluded.has(a.area_id)).length
   return (
-    <div className="crp-areafilter" ref={ref}>
-      <button className={`areas-dd ${excluded.size > 0 ? 'filtered' : ''}`} onClick={() => setOpen(o => !o)}
+    <div className="crp-areafilter">
+      <button className={`areas-dd ${excluded.size > 0 ? 'filtered' : ''}`} onClick={() => setOpen(true)}
               aria-haspopup="menu" aria-expanded={open}
               title="Select which areas are included in the report">
         {included} of {areas.length} <span className="areas-dd-caret">▾</span>
       </button>
       {open && (
-        <div className="crp-af-panel">
-          <div className="crp-af-actions">
-            <button onClick={() => setExcluded(new Set())}>All</button>
-            <button onClick={() => setExcluded(new Set(areas.map(a => a.areaId)))}>None</button>
-          </div>
-          <div className="crp-af-list">
-            {areas.map(a => (
-              <label key={a.areaId} className="crp-af-item">
-                <input type="checkbox" checked={!excluded.has(a.areaId)} onChange={() => toggle(a.areaId)} />
-                <span>{a.label}</span>
-              </label>
-            ))}
-          </div>
-        </div>
+        <AreaFilterPopover
+          areas={areas}
+          excluded={excluded}
+          onChange={setExcluded}
+          onClose={() => setOpen(false)}
+          groupLabels={CRP_AREA_GROUP_LABEL}
+        />
       )}
     </div>
   )
