@@ -296,9 +296,32 @@ export async function fetchForecasts(opts: {
   if (opts.cfAreas && opts.cfAreas.length > 0) q = q.in('area', opts.cfAreas)
   const { data, error } = await q
   if (error) throw error
-  return (data || [])
+  const base = (data || [])
     .filter(r => inRange(r, opts.fromYear, opts.fromMonth, opts.toYear, opts.toMonth))
     .map(r => ({ ...r, value: Number(r.value) }))
+
+  // Adjustment layer: Tony's version-specific adjustments live in the ledger
+  // (public.cf_adjustment_legs, exposed as v_cf_adjustment_deltas) as USD deltas
+  // per area x line x month — including ELAPSED months that publish trimmed out of
+  // the forecast table. Append them as USD forecast-style cells so a version's
+  // totals reflect its adjustments on top of the shared actuals. ORIG has no legs.
+  let dq = supabase
+    .from('v_cf_adjustment_deltas')
+    .select('area, line_code, year, month, delta_usd')
+    .eq('base_version', opts.version)
+    .gte('year', opts.fromYear).lte('year', opts.toYear)
+  if (opts.cfAreas && opts.cfAreas.length > 0) dq = dq.in('area', opts.cfAreas)
+  const { data: deltas, error: derr } = await dq
+  if (derr) throw derr
+  const adj = (deltas || [])
+    .filter(r => inRange(r, opts.fromYear, opts.fromMonth, opts.toYear, opts.toMonth))
+    .map(r => ({
+      area: r.area, project_code: '_AREA', line_code: r.line_code,
+      year: r.year, month: r.month, value: Number(r.delta_usd),
+      version: opts.version, currency: 'USD',
+    }))
+
+  return [...base, ...adj]
 }
 
 /** Project-grain cash-flow cells for a version + period window. Scoped to ONE
