@@ -1813,8 +1813,14 @@ body, html, #root {
 /* Print — drop the app chrome, flow the adjustments across pages. */
 @media print {
   @page { margin: 14mm; }
-  /* The app shell fixes height to the viewport; release it so content paginates. */
+  /* Every ancestor pins height to the viewport with overflow:hidden — release
+   * the whole chain (html → workspace-root → workspace-body → shell → content)
+   * so the adjustments paginate instead of clipping to one page. */
   html, body, #root { height: auto !important; overflow: visible !important; }
+  .workspace-root { display: block !important; height: auto !important; overflow: visible !important; }
+  .workspace-body { position: static !important; min-height: 0 !important; overflow: visible !important; }
+  .workspace-body .shell { height: auto !important; }
+  .workspace-bar { display: none !important; }
   .topbar, .leftnav, .ws-launcher, .ws-drawer, .ws-drawer-backdrop, .adjv-print, .adjv-grouptotal { display: none !important; }
   .shell { display: block !important; height: auto !important; }
   .content { overflow: visible !important; padding: 0 !important; }
