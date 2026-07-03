@@ -177,15 +177,9 @@ function projectSheet(p: ProjectPrint, disp: PrintDisp): string {
     { label: 'Net financing', value: f.fM(secNet('Bank Financing')), cls: cl(secNet('Bank Financing')) },
   ])
   const pv = p.payables
-  const payRows = pv ? (() => {
-    const cell = (v: number | null) => `<td class="r ${cl(v)}">${v != null ? f.fM(v) : '—'}</td>`
-    return `<tr class="sec"><td colspan="${p.months.length + 2}">Trade payables — balance (CCC share)${pv.start != null ? ` · from Dec ${f.fM(pv.start)}` : ''}</td></tr>`
-      + `<tr class="subtot"><td>Payables balance</td>${p.months.map((_, i) => cell(pv.monthly[i])).join('')}<td class="r sepl ${cl(pv.change)}">${pv.change != null ? f.fM(pv.change) : '—'}</td></tr>`
-  })() : ''
-  const table = `<table class="t"><thead><tr><th>Line item</th>${p.months.map(m => `<th class="r">${MONTHS[m - 1]}</th>`).join('')}<th class="r sepl">YTD${pv ? ' / Δ' : ''}</th></tr></thead>
+  const table = `<table class="t"><thead><tr><th>Line item</th>${p.months.map(m => `<th class="r">${MONTHS[m - 1]}</th>`).join('')}<th class="r sepl">YTD</th></tr></thead>
     <tbody>${p.matrix.sections.map(s => matrixRows(s, p.months, f)).join('')}
       <tr class="total"><td>Net cash movement</td>${p.months.map((_, i) => `<td class="r ${cl(p.matrix.netMovement[i])}">${f.fM(p.matrix.netMovement[i])}</td>`).join('')}<td class="r sepl ${cl(p.matrix.netTotal)}">${f.fM(p.matrix.netTotal)}</td></tr>
-      ${payRows}
     </tbody></table>`
   const chart = `<div class="chartcard"><div class="ch-h">Net cash movement <span>· by month</span></div>${netTrendSvg(p.months.map(m => MONTHS[m - 1]), p.matrix.netMovement, chartDisp)}</div>`
   const payChart = pv && pv.monthly.some(v => v != null)
