@@ -278,6 +278,12 @@ WITHIN_AREA_CODES = {'wg_recpt_within_area', 'wg_pay_within_area'}
 # are dropped via DROP_WITHIN_AREA).
 FORCE_INCLUDE_SHEETS = {
     'UAE_Apr_2026_CashFlow.xlsx': {'AREA'},
+    # Mozambique's 'Area' sheet carries the area-level overhead (operation ~-45k/mo)
+    # AND the external within-group transfers (outside-area, ~+265k Jan-Apr) that the
+    # 'new Consolidated' includes but the project sheets don't. Additive (new
+    # Consolidated = Σ projects + Area, verified: op -274,357 + -45,100 = -319,457 ≈
+    # -319,513; WG 129,272 + 265,000 ≈ 393,000). Summing it makes the flows tie.
+    'MOZAMBIQUE_Apr_2026_CashFlow.xlsx': {'Area '},  # exact sheet name (trailing space)
 }
 
 # Explicit summed-set override: when present, REPLACES pick_usd_sheets — the run sums
