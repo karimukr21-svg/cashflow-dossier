@@ -305,6 +305,13 @@ export async function fetchForecasts(opts: {
   // per area x line x month — including ELAPSED months that publish trimmed out of
   // the forecast table. Append them as USD forecast-style cells so a version's
   // totals reflect its adjustments on top of the shared actuals. ORIG has no legs.
+  // project_code MUST be a sentinel ('_ADJ') that never matches a real actual key:
+  // deltas are ADDITIVE. CashReport merges actuals OVER forecasts by
+  // area|project_code|line|year|month, so tagging deltas '_AREA' made them collide
+  // with the _AREA-grain actuals of Tony-only areas — a cash-neutral reclass then
+  // lost one leg while its balancing leg survived, injecting a phantom net (the
+  // EPSO within->outside reclass leaked +2.2M into group Within-Group). '_ADJ'
+  // never collides, so every leg adds and the report ties v_cf_adjusted_full.
   let dq = supabase
     .from('v_cf_adjustment_deltas')
     .select('area, line_code, year, month, delta_usd')
@@ -316,7 +323,7 @@ export async function fetchForecasts(opts: {
   const adj = (deltas || [])
     .filter(r => inRange(r, opts.fromYear, opts.fromMonth, opts.toYear, opts.toMonth))
     .map(r => ({
-      area: r.area, project_code: '_AREA', line_code: r.line_code,
+      area: r.area, project_code: '_ADJ', line_code: r.line_code,
       year: r.year, month: r.month, value: Number(r.delta_usd),
       version: opts.version, currency: 'USD',
     }))
