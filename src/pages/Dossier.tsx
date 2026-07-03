@@ -12,6 +12,7 @@ import Narrative from './Narrative'
 import CashReport from './CashReport'
 import DebtPosition from './DebtPosition'
 import AllAreas from './AllAreas'
+import AdjustmentsView from './AdjustmentsView'
 import CustomPeriodPopover from '@/components/CustomPeriodPopover'
 import AreaFilterPopover from '@/components/AreaFilterPopover'
 import { TopbarExtrasCtx } from '@/lib/displayFmt'
@@ -31,7 +32,7 @@ function parseOrd(raw: string | null): GrainOrd {
 }
 
 type View =
-  | { kind: 'summary'; lens: 'report' | 'narrative' | 'loans' | 'allareas' }
+  | { kind: 'summary'; lens: 'report' | 'narrative' | 'loans' | 'allareas' | 'adjustments' }
   | { kind: 'area'; area: string }
   | { kind: 'manage' }
 
@@ -40,7 +41,7 @@ function parseView(sp: URLSearchParams): View {
   const sub = sp.get('sub') || ''
   if (view === 'manage') return { kind: 'manage' }
   if (view === 'area' && sp.get('area')) return { kind: 'area', area: sp.get('area')! }
-  const lens = (['report', 'narrative', 'loans', 'allareas'].includes(sub) ? sub : 'report') as any
+  const lens = (['report', 'narrative', 'loans', 'allareas', 'adjustments'].includes(sub) ? sub : 'report') as any
   return { kind: 'summary', lens }
 }
 
@@ -228,6 +229,7 @@ export default function Dossier() {
     { group: 'REPORT', label: 'Cash Flow Report',      view: { kind: 'summary', lens: 'report' } },
     { group: 'SUMMARY', label: 'Cash Flow Story',       view: { kind: 'summary', lens: 'narrative' } },
     { group: 'SUMMARY', label: 'Debt Position',        view: { kind: 'summary', lens: 'loans' } },
+    { group: 'SUMMARY', label: 'Adjustments',          view: { kind: 'summary', lens: 'adjustments' } },
     { group: 'EXPLORE', label: 'All Areas',            view: { kind: 'summary', lens: 'allareas' } },
     ...areas.map(a => ({
       group: AREA_GROUP_LABEL[a.group_name],
@@ -237,7 +239,8 @@ export default function Dossier() {
     })),
   ]
   const navGroupOrder: string[] = [
-    ...(canManage ? ['MANAGE'] : []),
+    // Management & editing moved to its own "Adjust" module (src/modules/manage);
+    // this reports/viewing module no longer carries a Manage nav group.
     'REPORT', 'SUMMARY', 'EXPLORE',
     ...areaNavGroups.map(g => g.label),
   ]
@@ -298,6 +301,7 @@ export default function Dossier() {
       if (view.lens === 'report')     return <CashReport scope={scope} onSelectArea={(areaId) => goto({ kind: 'area', area: areaId })} />
       if (view.lens === 'narrative')  return <Narrative scope={scope} />
       if (view.lens === 'loans')      return <DebtPosition scope={scope} />
+      if (view.lens === 'adjustments') return <AdjustmentsView scope={scope} />
       if (view.lens === 'allareas')   return <AllAreas scope={scope} onSelectArea={(areaId) => goto({ kind: 'area', area: areaId })} />
     }
     if (view.kind === 'area') return <AreaDrill area={view.area} scope={scope} />
@@ -441,7 +445,7 @@ export default function Dossier() {
           {navGroupOrder.map(group => {
             const items = navItems.filter(n => n.group === group)
             const hasActive = items.some(n => isActive(n.view))
-            const alwaysOpen = group === 'SUMMARY' || group === 'BANK POSITION' || group === 'MANAGE'
+            const alwaysOpen = group === 'SUMMARY' || group === 'BANK POSITION'
             const collapsed = !alwaysOpen && !hasActive && navCollapsed.has(group)
             return (
               <div key={group}>

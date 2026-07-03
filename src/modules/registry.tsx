@@ -83,13 +83,13 @@ function ManageIcon() {
 export const MODULES: WorkspaceModule[] = [
   {
     key: 'cash-flow',
-    label: 'Cash Flow',   // reports / viewing (editing lives in "Manage & Adjust")
+    label: 'Cash Flow',   // reports / viewing (editing lives in the "Adjust" module)
     icon: <CashFlowIcon />,
     route: '/',
   },
   {
     key: 'cash-flow-manage',
-    label: 'Manage & Adjust',
+    label: 'Adjust',
     icon: <ManageIcon />,
     route: '/manage',
     requiredRole: 'manage', // import/stage/push, versions, adjustments — admin|treasury only
