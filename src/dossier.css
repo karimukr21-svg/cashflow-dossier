@@ -1573,6 +1573,13 @@ body, html, #root {
 .crp-kpi-s { font-size: 9.5px; color: var(--mute); margin-top: 1px; }
 .crp-rcol { display: flex; flex-direction: column; gap: 14px; }
 .crp-svg { margin-top: 4px; max-width: 760px; }
+/* Project detail: net cash movement + trade-payables charts, side by side */
+.crp-chartpair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; margin: 10px 0; }
+@media (max-width: 900px) { .crp-chartpair { grid-template-columns: 1fr; } }
+.crp-chartcell { min-width: 0; }
+.crp-chart-cap { font-size: 11px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
+.crp-chart-cap span { font-weight: 400; color: var(--mute); }
+.crp-chartcell svg { display: block; width: 100%; }
 
 /* cash-position walk: starting cash → net movement → ending cash */
 .crp-cashwalk { display: flex; align-items: stretch; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--surface, #fff); }

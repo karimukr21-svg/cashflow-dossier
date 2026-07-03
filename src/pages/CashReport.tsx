@@ -668,6 +668,12 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
     w.document.open(); w.document.write(buildProjectsPrintHtml(list)); w.document.close()
   }
 
+  // Trade-payables balance series for the selected project (screen charts).
+  const payPts = paySeries.map(p => ({ label: MONTHS[(p.period % 100) - 1] ?? '', value: p.usd }))
+  const payFirst = payPts[0]?.value ?? 0
+  const payLast = payPts[payPts.length - 1]?.value ?? 0
+  const payDelta = payLast - payFirst
+
   return (
     <div className="crp-page">
       <div className="crp-head">
@@ -735,7 +741,28 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
                   { label: 'Net from operations', value: fMm(secNet('Operations')), cls: cls(secNet('Operations')) },
                   { label: 'Net financing', value: fMm(secNet('Bank Financing')), cls: cls(secNet('Bank Financing')) },
                 ]} />
-                <div className="crp-svg" style={{ margin: '10px 0' }}><Svg html={netTrendSvg(months.map(m => MONTHS[m - 1]), matrix.netMovement)} /></div>
+                {/* Net cash movement + trade-payables balance, side by side. */}
+                <div className="crp-chartpair">
+                  <div className="crp-chartcell">
+                    <div className="crp-chart-cap">Net cash movement <span>· by month</span></div>
+                    <Svg html={netTrendSvg(months.map(m => MONTHS[m - 1]), matrix.netMovement)} />
+                  </div>
+                  <div className="crp-chartcell">
+                    <div className="crp-chart-cap">Trade payables <span>· balance{payBooks ? ` · ${payBooks} book${payBooks === 1 ? '' : 's'}` : ''}</span></div>
+                    {payBooks === 0
+                      ? <div className="crp-note crp-note--empty">Not mapped to a book yet — payables sit in the area bucket. Assign in Manage → Payables map.</div>
+                      : payPts.length === 0
+                      ? <div className="crp-note crp-note--empty">No payables balance for the mapped book(s).</div>
+                      : <Svg html={payablesTrendSvg(payPts)} />}
+                  </div>
+                </div>
+                {payBooks > 0 && payPts.length > 0 && (
+                  <KpiBand cards={[
+                    { label: `Payables · ${asOfLabel}`, value: fMm(payLast), cls: cls(payLast) },
+                    { label: 'At start (Dec)', value: fMm(payFirst), cls: cls(payFirst) },
+                    { label: 'Change over period', value: fMm(payDelta), cls: cls(payDelta) },
+                  ]} />
+                )}
                 <table className="crp-table crp-table--matrix">
                   <thead><tr>
                     <th>Line item</th>
@@ -751,35 +778,6 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
                     </tr>
                   </tbody>
                 </table>
-
-                {/* Trade payables — balance and its month-by-month move over the
-                    same window, from the trial balance (CCC share, mapped books). */}
-                {(() => {
-                  const pts = paySeries.map(p => ({
-                    label: MONTHS[(p.period % 100) - 1] ?? '', value: p.usd,
-                  }))
-                  const first = pts[0]?.value ?? 0, last = pts[pts.length - 1]?.value ?? 0
-                  const delta = last - first
-                  return (
-                    <div className="crp-paysec">
-                      <div className="crp-card-h">Trade payables <span>· CCC share{payBooks ? ` · ${payBooks} book${payBooks === 1 ? '' : 's'}` : ''}</span></div>
-                      {payBooks === 0 ? (
-                        <div className="crp-note crp-note--empty">Not mapped to a trial-balance book yet — this project's payables sit in its area's “Area &amp; other projects”. Assign a book in Manage → Payables map.</div>
-                      ) : pts.length === 0 ? (
-                        <div className="crp-note crp-note--empty">No payables balance for the mapped book(s) in this window.</div>
-                      ) : (
-                        <>
-                          <KpiBand cards={[
-                            { label: `Payables · ${asOfLabel}`, value: fMm(last), cls: cls(last) },
-                            { label: 'At start (Dec)', value: fMm(first), cls: cls(first) },
-                            { label: 'Change over period', value: fMm(delta), cls: cls(delta) },
-                          ]} />
-                          <div className="crp-svg" style={{ margin: '10px 0' }}><Svg html={payablesTrendSvg(pts)} /></div>
-                        </>
-                      )}
-                    </div>
-                  )
-                })()}
               </>}
         </div>
       </div>

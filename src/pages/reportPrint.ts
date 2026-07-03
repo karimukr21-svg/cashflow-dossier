@@ -188,8 +188,11 @@ function projectSheet(p: ProjectPrint, disp: PrintDisp): string {
       ${payRows}
     </tbody></table>`
   const chart = `<div class="chartcard"><div class="ch-h">Net cash movement <span>· by month</span></div>${netTrendSvg(p.months.map(m => MONTHS[m - 1]), p.matrix.netMovement, chartDisp)}</div>`
+  const payChart = pv && pv.monthly.some(v => v != null)
+    ? `<div class="chartcard"><div class="ch-h">Trade payables <span>· balance</span></div>${payablesTrendSvg(p.months.map((m, i) => ({ label: MONTHS[m - 1], value: pv.monthly[i] ?? 0 })), chartDisp)}</div>`
+    : ''
   return sheet(head(`Cash Flow Report — ${p.project}`, `${p.areaLabel} · monthly actuals Jan–${p.asOfLabel} · ${disp.lineUnit}`)
-    + band + `<div class="cols"><div>${table}</div><div>${chart}</div></div>`)
+    + band + `<div class="cols"><div>${table}</div><div>${chart}${payChart}</div></div>`)
 }
 
 type SectionsOpts = {
