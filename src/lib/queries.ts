@@ -357,6 +357,56 @@ export async function fetchProjectCells(opts: {
     .map(r => ({ ...r, value: Number(r.value) }))
 }
 
+/* ── Project-level trade payables (from the trial balance) ──────────────────
+ * The Payables map (entity_alias source_system='trial_balance') pins each TB
+ * book to a canonical project; a cf project resolves to a canonical via its
+ * treasury_cashflow alias. v_cf_payables_book_month already sums CCC's share
+ * across accounts + consolidations per book per month. These helpers let the
+ * Project view show a project's payables balance and its month-by-month move. */
+
+export type PayablesMaps = {
+  cfCodeToCanon: Map<string, string>   // cf project_code (UPPER) -> canonical_id
+  canonToBooks: Map<string, string[]>  // canonical_id -> trial-balance book_codes
+}
+
+export async function fetchPayablesMaps(): Promise<PayablesMaps> {
+  const [tc, tb] = await Promise.all([
+    supabase.from('entity_alias').select('local_key, canonical_id').eq('source_system', 'treasury_cashflow'),
+    supabase.from('entity_alias').select('local_key, canonical_id').eq('source_system', 'trial_balance'),
+  ])
+  if (tc.error) throw tc.error
+  if (tb.error) throw tb.error
+  const cfCodeToCanon = new Map<string, string>()
+  for (const r of (tc.data ?? []) as { local_key: string; canonical_id: string }[]) {
+    const code = r.local_key.replace(/^proj:/, '').trim().toUpperCase()
+    if (code) cfCodeToCanon.set(code, r.canonical_id)
+  }
+  const canonToBooks = new Map<string, string[]>()
+  for (const r of (tb.data ?? []) as { local_key: string; canonical_id: string }[]) {
+    const arr = canonToBooks.get(r.canonical_id) ?? []
+    arr.push(r.local_key); canonToBooks.set(r.canonical_id, arr)
+  }
+  return { cfCodeToCanon, canonToBooks }
+}
+
+/** Monthly CCC-share trade payables for a set of TB books, summed per period. */
+export async function fetchPayablesForBooks(
+  books: string[], fromPeriod: number, toPeriod: number,
+): Promise<{ period: number; usd: number }[]> {
+  if (!books.length) return []
+  const { data, error } = await supabase
+    .from('v_cf_payables_book_month')
+    .select('period, ccc_share_usd')
+    .in('book_code', books)
+    .gte('period', fromPeriod).lte('period', toPeriod)
+  if (error) throw error
+  const m = new Map<number, number>()
+  for (const r of (data ?? []) as { period: number; ccc_share_usd: number }[]) {
+    m.set(r.period, (m.get(r.period) ?? 0) + Number(r.ccc_share_usd || 0))
+  }
+  return [...m.entries()].sort((a, b) => a[0] - b[0]).map(([period, usd]) => ({ period, usd }))
+}
+
 /* ── Account-group definitions (for the Report → Definitions view) ──────────
  * What liability account-groups exist and exactly which accounts feed each —
  * so inclusions can be reviewed (e.g. with Amr). Groups are defined/edited in

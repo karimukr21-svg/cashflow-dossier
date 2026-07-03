@@ -4,8 +4,9 @@ import { useTopbarExtras, useTopbarScope } from '@/lib/displayFmt'
 import {
   fetchActuals, fetchForecasts, fetchPayablesTrajectory, fetchFxRate, fetchProjectCells,
   fetchAccountGroups, fetchGroupAccounts, subgroupMatchesArea,
+  fetchPayablesMaps, fetchPayablesForBooks,
   type CfCell, type CfLine, type PayablesTrajRow, type GroupDef, type GroupAccount,
-  type CanonicalArea, type AreaGroup,
+  type CanonicalArea, type AreaGroup, type PayablesMaps,
 } from '@/lib/queries'
 import AreaFilterPopover from '@/components/AreaFilterPopover'
 import { fmt, fmtDelta } from '@/lib/format'
@@ -524,6 +525,13 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
     return () => { cancel = true }
   }, [areaId, allMode, scope.primaryVersion, year, asOfMonth])
 
+  // Trade-payables crosswalk (book -> project via canonical) + the selected
+  // project's monthly payables balance (CCC share), from the trial balance.
+  const [payMaps, setPayMaps] = useState<PayablesMaps | null>(null)
+  useEffect(() => { fetchPayablesMaps().then(setPayMaps).catch(() => setPayMaps(null)) }, [])
+  const [paySeries, setPaySeries] = useState<{ period: number; usd: number }[]>([])
+  const [payBooks, setPayBooks] = useState(0)
+
   const months = useMemo(() => Array.from({ length: asOfMonth }, (_, i) => i + 1), [asOfMonth])
   const flowCodes = useMemo(() => new Set(scope.lines.filter(l => l.nature !== 'Balance').map(l => l.line_code)), [scope.lines])
   const rateOf = (cur?: string) => (cur || 'USD') === 'USD' ? 1 : (fxMap.get(cur || '') ?? null)
@@ -551,6 +559,21 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
   const sel = project || ranking[0]?.key || ''
   const selArea = sel ? sel.slice(0, sel.indexOf(SEP)) : ''
   const selCode = sel ? sel.slice(sel.indexOf(SEP) + 1) : ''
+
+  // Resolve the selected cf project -> canonical -> its TB books, then fetch the
+  // monthly payables balance (Dec prior year through as-of).
+  useEffect(() => {
+    if (!payMaps || !selCode) { setPaySeries([]); setPayBooks(0); return }
+    const cid = payMaps.cfCodeToCanon.get(selCode.toUpperCase())
+    const books = cid ? (payMaps.canonToBooks.get(cid) ?? []) : []
+    setPayBooks(books.length)
+    if (!books.length) { setPaySeries([]); return }
+    let cancel = false
+    fetchPayablesForBooks(books, (year - 1) * 100 + 12, year * 100 + asOfMonth)
+      .then(s => { if (!cancel) setPaySeries(s) })
+      .catch(() => { if (!cancel) setPaySeries([]) })
+    return () => { cancel = true }
+  }, [payMaps, selCode, year, asOfMonth])
 
   const matrixFor = (key: string) => {
     const area = key.slice(0, key.indexOf(SEP)), code = key.slice(key.indexOf(SEP) + 1)
@@ -672,6 +695,35 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
                     </tr>
                   </tbody>
                 </table>
+
+                {/* Trade payables — balance and its month-by-month move over the
+                    same window, from the trial balance (CCC share, mapped books). */}
+                {(() => {
+                  const pts = paySeries.map(p => ({
+                    label: MONTHS[(p.period % 100) - 1] ?? '', value: p.usd,
+                  }))
+                  const first = pts[0]?.value ?? 0, last = pts[pts.length - 1]?.value ?? 0
+                  const delta = last - first
+                  return (
+                    <div className="crp-paysec">
+                      <div className="crp-card-h">Trade payables <span>· CCC share{payBooks ? ` · ${payBooks} book${payBooks === 1 ? '' : 's'}` : ''}</span></div>
+                      {payBooks === 0 ? (
+                        <div className="crp-note crp-note--empty">Not mapped to a trial-balance book yet — this project's payables sit in its area's “Area &amp; other projects”. Assign a book in Manage → Payables map.</div>
+                      ) : pts.length === 0 ? (
+                        <div className="crp-note crp-note--empty">No payables balance for the mapped book(s) in this window.</div>
+                      ) : (
+                        <>
+                          <KpiBand cards={[
+                            { label: `Payables · ${asOfLabel}`, value: fMm(last), cls: cls(last) },
+                            { label: 'At start (Dec)', value: fMm(first), cls: cls(first) },
+                            { label: 'Change over period', value: fMm(delta), cls: cls(delta) },
+                          ]} />
+                          <div className="crp-svg" style={{ margin: '10px 0' }}><Svg html={payablesTrendSvg(pts)} /></div>
+                        </>
+                      )}
+                    </div>
+                  )
+                })()}
               </>}
         </div>
       </div>

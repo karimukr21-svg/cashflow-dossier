@@ -135,50 +135,42 @@ export default function PayablesMap({ canManage }: { canManage: boolean }) {
             <div className="pm-area-h">
               <h4>{area}</h4>
               <span className="pm-area-c">{mapped}/{bks.length} pinned</span>
-              <span className="pm-area-b">Area bucket · {bucket.length} books · {fmtM(bucketUsd)}m</span>
+              <span className="pm-area-b">Area bucket · {bucket.length} · {fmtM(bucketUsd)}m</span>
             </div>
-            <div className="pm-rows">
+            <div className="pm-grid">
               {rows.map(b => {
                 const cid = alias.get(b.book_code)
                 const proj = cid ? projById.get(cid) : null
                 const sg = !cid ? sugg.get(b.book_code) : undefined
                 const sgProj = sg ? projById.get(sg) : null
                 return (
-                  <div className={`pm-row ${cid ? 'is-pinned' : ''}`} key={b.book_code}>
-                    <div className="pm-bk">
+                  <div className={`pm-card ${cid ? 'is-pinned' : sgProj ? 'is-sugg' : ''}`} key={b.book_code}>
+                    <div className="pm-card-top">
                       <span className="pm-code">{b.book_code}</span>
-                      <span className="pm-co">{b.companyname}</span>
+                      <span className="pm-num">{fmtM(b.ccc_share_usd)}</span>
                     </div>
-                    <div className="pm-assign">
+                    <div className="pm-co" title={b.companyname ?? ''}>{b.companyname}</div>
+                    <div className="pm-card-foot">
                       {proj ? (
-                        <span className="pm-proj" title={proj.name}>{proj.name}</span>
+                        <>
+                          <span className="pm-proj" title={proj.name}>{proj.name}</span>
+                          {canManage && <button className="pm-x" disabled={saving===b.book_code} onClick={() => assign(b, null)} title="Move to area bucket">→ area</button>}
+                        </>
                       ) : sgProj ? (
-                        <span className="pm-sugg">Suggested: <b title={sgProj.name}>{sgProj.name}</b>
-                          {canManage && <button className="pm-accept" disabled={saving===b.book_code} onClick={() => assign(b, sg!)}>Accept</button>}
-                        </span>
+                        <>
+                          <span className="pm-sugg" title={sgProj.name}><em>suggested</em> {sgProj.name}</span>
+                          {canManage && <span className="pm-foot-act">
+                            <button className="pm-accept" disabled={saving===b.book_code} onClick={() => assign(b, sg!)}>Accept</button>
+                            <button className="pm-assignbtn" onClick={() => { setPicker(b.book_code); setQ('') }}>Change</button>
+                          </span>}
+                        </>
                       ) : (
-                        <span className="pm-bucket">Area bucket</span>
+                        <>
+                          <span className="pm-bucket">Area bucket</span>
+                          {canManage && <button className="pm-assignbtn" onClick={() => { setPicker(b.book_code); setQ('') }}>Assign…</button>}
+                        </>
                       )}
                     </div>
-                    <div className="pm-num">{fmtM(b.ccc_share_usd)}</div>
-                    <div className="pm-act">
-                      {canManage && (cid
-                        ? <button className="pm-x" disabled={saving===b.book_code} onClick={() => assign(b, null)} title="Move to area bucket">→ area</button>
-                        : <button className="pm-assignbtn" onClick={() => { setPicker(picker===b.book_code?null:b.book_code); setQ('') }}>Assign…</button>)}
-                    </div>
-                    {picker === b.book_code && (
-                      <div className="pm-picker">
-                        <input autoFocus className="pm-search" placeholder="Search projects…" value={q} onChange={e => setQ(e.target.value)} />
-                        <div className="pm-list">
-                          {matches.map(p => (
-                            <button key={p.id} className="pm-opt" onClick={() => assign(b, p.id)}>
-                              <span>{p.name}</span>{p.area && <em>{p.area}</em>}
-                            </button>
-                          ))}
-                          {!matches.length && <div className="pm-noopt">No project matches “{q}”.</div>}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )
               })}
@@ -186,6 +178,31 @@ export default function PayablesMap({ canManage }: { canManage: boolean }) {
           </section>
         )
       })}
+
+      {picker && (() => {
+        const b = books.find(x => x.book_code === picker)
+        if (!b) return null
+        return (
+          <div className="pm-modal-bg" onClick={() => { setPicker(null); setQ('') }}>
+            <div className="pm-modal" onClick={e => e.stopPropagation()}>
+              <div className="pm-modal-h">
+                <div><b>{b.book_code}</b> · {fmtM(b.ccc_share_usd)}m</div>
+                <div className="pm-modal-co">{b.companyname}</div>
+                <button className="pm-modal-x" onClick={() => { setPicker(null); setQ('') }}>×</button>
+              </div>
+              <input autoFocus className="pm-search" placeholder="Search projects…" value={q} onChange={e => setQ(e.target.value)} />
+              <div className="pm-list">
+                {matches.map(p => (
+                  <button key={p.id} className="pm-opt" onClick={() => assign(b, p.id)}>
+                    <span>{p.name}</span>{p.area && <em>{p.area}</em>}
+                  </button>
+                ))}
+                {!matches.length && <div className="pm-noopt">No project matches “{q}”.</div>}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
