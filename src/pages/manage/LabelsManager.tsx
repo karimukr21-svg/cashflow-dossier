@@ -212,12 +212,6 @@ export default function LabelsManager({ canManage }: { canManage: boolean }) {
 
   return (
     <div className="cfm-labels">
-      <p className="cfm-lbl-intro">
-        Every canonical line, the section it sits in, and the local labels the parser
-        recognises for it. Edit a line's main label or move it to another section, add or
-        remove its labels, or create a new line to group labels under. Changes apply the
-        next time an area is re-staged.
-      </p>
       {err && <div className="cfm-lbl-err">{err}</div>}
       {flash && <div className="cfm-lbl-flash"><span className="cfm-lbl-flash-tick">✓</span>{flash}</div>}
 
