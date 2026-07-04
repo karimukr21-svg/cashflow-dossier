@@ -32,21 +32,6 @@ export interface Alias {
   local_name: string
 }
 
-/** One local name in a source system, with the kind of canonical node it maps to. */
-export interface LocalItem {
-  local_key: string
-  local_name: string
-  kind: EntityType
-  context?: string // e.g. the area a project sits under, for disambiguation
-}
-
-export interface SourceSystem {
-  key: string
-  label: string
-  /** Loads the universe of local names this system uses. */
-  loadLocals: () => Promise<LocalItem[]>
-}
-
 export const OWNER_DEPTS = ['group_accounts', 'treasury', 'corporate_planning', 'legal']
 
 /* ── Canonical tree ─────────────────────────────────────────────── */
@@ -69,47 +54,41 @@ export async function loadAliases(): Promise<Alias[]> {
   return (data ?? []) as Alias[]
 }
 
-/* ── Source systems (the mapping picker) ────────────────────────── *
- * Treasury Cash Flow is the one live source today (the faked "mapped vs new"
- * badges resolve against this). More windows plug in as they get built. */
+/* ── Source data (the mapping workbench reads these) ─────────────── *
+ * Treasury Cash Flow projects + Midas trial-balance books both crosswalk to
+ * the canonical tree through entity_alias:
+ *   source_system='treasury_cashflow', local_key 'area:<name>' | 'proj:<code>'
+ *   source_system='trial_balance',     local_key <book_code>            */
 
-export const SOURCE_SYSTEMS: SourceSystem[] = [
-  {
-    key: 'treasury_cashflow',
-    label: 'Treasury Cash Flow',
-    loadLocals: async () => {
-      const { data, error } = await supabase
-        .from('cf_projects')
-        .select('project_code, area, display_name, is_area_item')
-      if (error) throw error
-      const rows = (data ?? []) as {
-        project_code: string
-        area: string | null
-        display_name: string | null
-        is_area_item: boolean
-      }[]
-      const items: LocalItem[] = []
-      // distinct areas
-      const seenAreas = new Set<string>()
-      for (const r of rows) {
-        if (r.area && !seenAreas.has(r.area)) {
-          seenAreas.add(r.area)
-          items.push({ local_key: `area:${r.area}`, local_name: r.area, kind: 'area' })
-        }
-      }
-      // projects
-      for (const r of rows) {
-        items.push({
-          local_key: `proj:${r.project_code}`,
-          local_name: r.display_name || r.project_code,
-          kind: 'project',
-          context: r.area ?? undefined,
-        })
-      }
-      return items
-    },
-  },
-]
+export interface CfProjectRow {
+  project_code: string
+  area: string | null
+  display_name: string | null
+  is_area_item: boolean
+}
+
+export async function loadCfProjects(): Promise<CfProjectRow[]> {
+  const { data, error } = await supabase
+    .from('cf_projects')
+    .select('project_code, area, display_name, is_area_item')
+  if (error) throw error
+  return (data ?? []) as CfProjectRow[]
+}
+
+export interface PayablesBook {
+  book_code: string
+  area: string | null
+  companyname: string | null
+  ccc_share_usd: number
+}
+
+export async function loadPayablesBooks(): Promise<PayablesBook[]> {
+  const { data, error } = await supabase
+    .from('v_cf_payables_book')
+    .select('book_code, area, companyname, ccc_share_usd')
+  if (error) throw error
+  return (data ?? []) as PayablesBook[]
+}
 
 /* ── Mutations ──────────────────────────────────────────────────── */
 
