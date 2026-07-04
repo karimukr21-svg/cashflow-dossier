@@ -237,6 +237,7 @@
 .cfm-cfg-tie { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 6px; }
 .cfm-cfg-tie.is-ok { color: #15803d; background: #f0fdf4; }
 .cfm-cfg-tie.is-off { color: #b45309; background: #fffbeb; }
+.cfm-cfg-tie.is-neutral { color: #6b7280; background: #f1f5f9; }
 .cfm-cfg-modes { display: inline-flex; gap: 2px; background: #f1f5f9; padding: 2px; border-radius: 8px; }
 .cfm-cfg-mode { border: none; background: transparent; padding: 4px 10px; border-radius: 6px; cursor: pointer;
   font-size: 11.5px; font-weight: 600; color: #6b7280; }
@@ -245,6 +246,8 @@
 .cfm-cfg-table td.is-var { background: #fff7ed; color: #b45309; font-weight: 600; }
 .cfm-cfg-table td.is-var.neg { color: #b91c1c; }
 .cfm-cfg-table td.cfm-cfg-total.is-var { background: #ffedd5; }
+/* published-compare: cell with nothing live yet (new/forecast month) */
+.cfm-cfg-table td.is-empty { color: #cbd5e1; }
 
 
 .cfm-cfg-note { font-size: 11px; color: #9ca3af; margin: 0 0 8px; line-height: 1.45; }

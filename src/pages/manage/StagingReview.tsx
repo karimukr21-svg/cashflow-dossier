@@ -28,8 +28,10 @@ type ActualsDiffYear = {
   stored: Record<string, Record<string, number> | null>
 }
 type ActualsDiffData = {
-  area: string; currency: string
-  n_changed: number; has_stored: boolean
+  area: string; currency: string; cycle_year?: number
+  n_changed: number; has_stored: boolean; basis_mismatch?: boolean
+  opening_delta?: number | null; opening_ym?: string | null
+  opening_staged?: number | null; opening_stored?: number | null
   years: number[]
   by_year: Record<string, ActualsDiffYear>
 }
@@ -116,7 +118,7 @@ export default function StagingReview(
       {/* The area cash-flow statement, reconstructed from the staged run —
           months as columns, sections as rows, bracketed by the rollup's own
           opening/ending balance. Recomputes when the included-sheet set changes. */}
-      <CashflowGrid runId={runId} currency={cur} nonce={gridNonce} />
+      <CashflowGrid runId={runId} currency={cur} nonce={gridNonce} published={actualsDiff} />
 
       {/* Sheets — move each between Included and Ignored to fix what's summed. */}
       <SheetsPanel sheets={sheets} included={included}
@@ -126,9 +128,6 @@ export default function StagingReview(
           ignoring a sheet drops its unmatched lines too. */}
       <UnmatchedLabels unmatchedBySheet={run?.recon_summary?.unmatched_by_sheet}
                        included={included} lines={lines} canManage={canManage} />
-
-      {/* Actuals integrity — would the push restate frozen history? */}
-      <ActualsDiff data={actualsDiff} cur={cur} />
     </div>
   )
 }
@@ -154,12 +153,14 @@ type GridData = {
 
 const MON = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-function CashflowGrid({ runId, currency, nonce }: { runId: string; currency: string; nonce?: number }) {
+type CompareMode = 'values' | 'file' | 'published'
+function CashflowGrid({ runId, currency, nonce, published }:
+  { runId: string; currency: string; nonce?: number; published?: ActualsDiffData | null }) {
   const [data, setData] = useState<GridData | null>(null)
   // Year + compare mode persist per run, so leaving the tab and coming back keeps
-  // the chosen year and Values/Compare-to-file view instead of resetting.
+  // the chosen year and the chosen compare view instead of resetting.
   const [year, setYear] = usePersistedState<number | null>(`cfm.grid.year.${runId}`, null)
-  const [compare, setCompare] = usePersistedState<boolean>(`cfm.grid.compare.${runId}`, false)
+  const [mode, setMode] = usePersistedState<CompareMode>(`cfm.grid.mode.${runId}`, 'values')
   const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
@@ -286,18 +287,64 @@ function CashflowGrid({ runId, currency, nonce }: { runId: string; currency: str
     { key: 'accum_loans', label: 'Accumulated loans', get: accumL, file: (ym) => fileAt('accum_loans', ym), type: 'stock' },
     { key: 'accum_od', label: 'Overdraft balance', get: accumO, file: (ym) => fileAt('accum_od', ym), type: 'stock' },
   ]
-  // The value shown in a cell: the figure itself, or (compare mode) its variance vs the file.
-  const cellVal = (r: Row, ym: string) => compare ? r.get(ym) - r.file(ym) : r.get(ym)
   const MAT = 0.5   // variances below this (rounding) read as a tie
-  // Total column: flows/nets sum across the year; balances/stocks show the closing value.
-  const rowTotal = (r: Row) => {
-    if (r.type === 'flow' || r.type === 'net') return ymKeys.reduce((s, ym) => s + cellVal(r, ym), 0)
-    return ymKeys.length ? cellVal(r, ymKeys[ymKeys.length - 1]) : 0
+
+  // Compare-to-published: what's ALREADY LIVE in cash flow (cf_actuals), from the
+  // actuals-diff RPC, for the chosen year. Each section/balance is keyed the same as
+  // the grid rows. A cell with no stored value = nothing published for that month
+  // (a new/forecast month) → shown blank, not as a variance.
+  const pubStored = published?.by_year?.[String(year)]?.stored ?? null
+  const pubKey = (key: string, ym: string): number | null => {
+    const m = pubStored?.[key]; if (!m) return null
+    const v = m[ym]; return v == null ? null : Number(v)
+  }
+  // Published figure for a grid row (net rows sum their components; stocks/accum
+  // aren't published at line grain yet → null = blank).
+  const publishedVal = (r: Row, ym: string): number | null => {
+    switch (r.key) {
+      case 'oper_net': { const a = pubKey('oper_rec', ym), b = pubKey('oper_pay', ym)
+        return a == null && b == null ? null : (a ?? 0) + (b ?? 0) }
+      case 'net_move': { const ks = ['oper_rec','oper_pay','interest','nonop','wg','bank']
+        const vs = ks.map(k => pubKey(k, ym))
+        return vs.every(v => v == null) ? null : vs.reduce((s: number, v) => s + (v ?? 0), 0) }
+      case 'accum_loans': case 'accum_od': return null
+      default: return pubKey(r.key, ym)
+    }
   }
 
-  // Headline check: does our derived ending tie to the file's stated ending?
+  // The value shown in a cell. Values = the figure; File = variance vs the workbook;
+  // Published = would-be minus what's live (null where nothing is published yet).
+  const cellVal = (r: Row, ym: string): number | null => {
+    if (mode === 'file') return r.get(ym) - r.file(ym)
+    if (mode === 'published') { const p = publishedVal(r, ym); return p == null ? null : r.get(ym) - p }
+    return r.get(ym)
+  }
+  // Total column: flows/nets sum across the year; balances/stocks show the closing value.
+  const rowTotal = (r: Row): number | null => {
+    if (r.type === 'flow' || r.type === 'net') {
+      let any = false, s = 0
+      for (const ym of ymKeys) { const v = cellVal(r, ym); if (v != null) { any = true; s += v } }
+      return any ? s : null
+    }
+    return ymKeys.length ? cellVal(r, ymKeys[ymKeys.length - 1]) : null
+  }
+
+  // Badge 1 — does our derived ending tie to the file's stated ending?
   const endClose = ymKeys.length ? ending(ymKeys[ymKeys.length - 1]) - fEnding(ymKeys[ymKeys.length - 1]) : 0
   const endTies = Math.abs(endClose) <= MAT
+
+  // Badge 2 — does this file match what's already live in cash flow (the restatement
+  // check)? Leads with the opening, the immutable year-anchor Treasury eyeballs.
+  const pubHasStored = !!published?.has_stored
+  const pubMismatch = !!published?.basis_mismatch
+  const pubN = published?.n_changed ?? 0
+  const openDelta = published?.opening_delta ?? null
+  const pubBadge: { cls: string; text: string } =
+    !published || !pubHasStored ? { cls: 'is-neutral', text: 'No published history' }
+    : pubMismatch ? { cls: 'is-off', text: 'Currency differs — can’t check' }
+    : pubN === 0 ? { cls: 'is-ok', text: '✓ Matches published' }
+    : { cls: 'is-off', text: openDelta != null && Math.abs(openDelta) > MAT
+          ? `Restates ${pubN} — opening ${fmtAcct(openDelta)}` : `Restates ${pubN} locked` }
 
   return (
     <div className="cfm-cfg">
@@ -311,18 +358,24 @@ function CashflowGrid({ runId, currency, nonce }: { runId: string; currency: str
           <span className={`cfm-cfg-tie ${endTies ? 'is-ok' : 'is-off'}`}>
             {endTies ? '✓ Ending ties the file' : `Ending Δ ${fmtAcct(endClose)} vs file`}
           </span>
+          <span className={`cfm-cfg-tie ${pubBadge.cls}`} title="Does this file change months already locked as actuals?">
+            {pubBadge.text}
+          </span>
           <div className="cfm-cfg-modes">
-            <button className={`cfm-cfg-mode ${!compare ? 'is-on' : ''}`} onClick={() => setCompare(false)}>Values</button>
-            <button className={`cfm-cfg-mode ${compare ? 'is-on' : ''}`} onClick={() => setCompare(true)}>Compare to file</button>
+            <button className={`cfm-cfg-mode ${mode === 'values' ? 'is-on' : ''}`} onClick={() => setMode('values')}>Values</button>
+            <button className={`cfm-cfg-mode ${mode === 'file' ? 'is-on' : ''}`} onClick={() => setMode('file')}>Compare to file</button>
+            <button className={`cfm-cfg-mode ${mode === 'published' ? 'is-on' : ''}`} onClick={() => setMode('published')}>Compare to published</button>
           </div>
           <span className="cfm-cfg-cur">{data.area} · {cur}</span>
         </div>
       </div>
 
       <div className="cfm-cfg-note">
-        {compare
+        {mode === 'file'
           ? 'Each cell is our figure minus the file’s own stated figure — highlighted where they differ. Scan for the highlighted section + month to trace where an ending variance comes from (drilling to the exact project is a later step).'
-          : 'All balances are running balances — only the first value of each comes from the file, then rolled forward by movements. Switch to Compare to file to check every line against the original Excel.'}
+          : mode === 'published'
+          ? 'Each cell is what you’re about to publish minus what’s already live in cash flow — highlighted where a locked month would change. The Opening balance is the start point: a change there means the year’s opening cash would move. Blank cells have nothing published yet (a new or forecast month).'
+          : 'All balances are running balances — only the first value of each comes from the file, then rolled forward by movements. Switch to Compare to file to check the original Excel, or Compare to published to check what’s already live.'}
       </div>
 
       <div className="cfm-cfg-scroll">
@@ -340,23 +393,29 @@ function CashflowGrid({ runId, currency, nonce }: { runId: string; currency: str
             </tr>
           </thead>
           <tbody>
-            {rows.map(r => (
+            {rows.map(r => {
+              const isCompare = mode !== 'values'
+              return (
               <tr key={r.key} className={`cfm-cfg-row is-${r.type}`}>
                 <td className="cfm-cfg-rowhead">{r.label}</td>
                 {months.map(m => {
                   const v = cellVal(r, m.ym)
+                  // published mode: no stored value for this cell → nothing to compare
+                  if (v == null) return <td key={m.ym} className={`num is-empty ${m.kind === 'forecast' ? 'is-fc' : ''} ${m.ym === firstFcYm ? 'is-cut' : ''}`}>·</td>
                   const tie = Math.abs(v) <= MAT
-                  const isVar = compare && !tie
+                  const isVar = isCompare && !tie
                   return (
                     <td key={m.ym} className={`num ${v < 0 ? 'neg' : ''} ${m.kind === 'forecast' ? 'is-fc' : ''} ${m.ym === firstFcYm ? 'is-cut' : ''} ${isVar ? 'is-var' : ''}`}>
-                      {(compare ? tie : v === 0) ? '·' : fmtAcct(v)}
+                      {(isCompare ? tie : v === 0) ? '·' : fmtAcct(v)}
                     </td>
                   )
                 })}
-                {(() => { const t = rowTotal(r); const isVar = compare && Math.abs(t) > MAT
-                  return <td className={`num cfm-cfg-total ${t < 0 ? 'neg' : ''} ${isVar ? 'is-var' : ''}`}>{(compare && Math.abs(t) <= MAT) ? '·' : fmtAcct(t)}</td> })()}
+                {(() => { const t = rowTotal(r)
+                  if (t == null) return <td className="num cfm-cfg-total is-empty">·</td>
+                  const isVar = isCompare && Math.abs(t) > MAT
+                  return <td className={`num cfm-cfg-total ${t < 0 ? 'neg' : ''} ${isVar ? 'is-var' : ''}`}>{(isCompare && Math.abs(t) <= MAT) ? '·' : fmtAcct(t)}</td> })()}
               </tr>
-            ))}
+            )})}
           </tbody>
         </table>
       </div>
@@ -431,123 +490,6 @@ function SheetsPanel({ sheets, included, compareTarget, onToggle }: {
           </div>
         </div>
       </div>
-    </div>
-  )
-}
-
-/* Actuals integrity — what a push would restate, as a grid mirroring the cash-flow
-   statement above: months as columns, sections as rows, comparing the stored actual
-   against this file's would-be figure. Cells a push would restate (a stored actual
-   already exists and differs) are highlighted. Only renders when there are stored
-   actuals to compare against. */
-type AdRow = { key: string; label: string; comp?: string[]; type: 'flow' | 'net' }
-const AD_ROWS: AdRow[] = [
-  { key: 'oper_rec', label: 'Receipts — operations', type: 'flow' },
-  { key: 'oper_pay', label: 'Payments — operations', type: 'flow' },
-  { key: 'oper_net', label: 'Net — operations', comp: ['oper_rec', 'oper_pay'], type: 'net' },
-  { key: 'interest', label: 'Interest', type: 'flow' },
-  { key: 'nonop', label: 'Non-operational', type: 'flow' },
-  { key: 'wg', label: 'Within group', type: 'flow' },
-  { key: 'bank', label: 'Bank financing', type: 'flow' },
-  { key: 'net_move', label: 'Net movement', comp: ['oper_rec', 'oper_pay', 'interest', 'nonop', 'wg', 'bank'], type: 'net' },
-]
-
-function ActualsDiff({ data, cur }: { data: ActualsDiffData | null; cur: string }) {
-  const [open, setOpen] = useState(false)
-  const [year, setYear] = useState<number | null>(null)
-  const [mode, setMode] = useState<'delta' | 'staged' | 'stored'>('delta')
-
-  useEffect(() => {
-    if (!data?.years?.length) return
-    setYear(prev => (prev != null && data.years.includes(prev)) ? prev : data.years[data.years.length - 1])
-  }, [data])
-
-  if (!data || !data.has_stored) return null
-  const MAT = 0.5
-  const yd = year != null ? data.by_year[String(year)] : null
-  const months = yd?.months || []
-  const ymKeys = months.map(m => m.ym)
-  const at = (m: Record<string, number> | null | undefined, ym: string) => Number(m?.[ym] ?? 0)
-  const has = (set: Record<string, Record<string, number> | null>, key: string, ym: string) =>
-    set?.[key]?.[ym] != null
-  // section value for a row (sum its components for derived rows)
-  const valOf = (set: Record<string, Record<string, number> | null>, r: AdRow, ym: string) =>
-    (r.comp ?? [r.key]).reduce((s, k) => s + at(set?.[k], ym), 0)
-  // a cell "would restate" if a stored actual exists for it and it differs materially
-  const isRestate = (r: AdRow, ym: string) => {
-    if (!yd) return false
-    const keys = r.comp ?? [r.key]
-    const storedExists = keys.some(k => has(yd.stored, k, ym))
-    return storedExists && Math.abs(valOf(yd.staged, r, ym) - valOf(yd.stored, r, ym)) > MAT
-  }
-  const cellVal = (r: AdRow, ym: string) => {
-    if (!yd) return 0
-    const sg = valOf(yd.staged, r, ym), st = valOf(yd.stored, r, ym)
-    return mode === 'staged' ? sg : mode === 'stored' ? st : sg - st
-  }
-  const rowTotal = (r: AdRow) => ymKeys.reduce((s, ym) => s + cellVal(r, ym), 0)
-
-  return (
-    <div className="cfm-sr-actuals">
-      <button className="cfm-sr-toggle is-warn" onClick={() => setOpen(o => !o)}>
-        <span className="cfm-sr-caret">{open ? '▾' : '▸'}</span>
-        Actuals that would change ({fmt(data.n_changed)})
-      </button>
-      {open && yd && (
-        <div className="cfm-cfg cfm-cfg-actuals">
-          <div className="cfm-cfg-head">
-            <div className="cfm-cfg-years">
-              {data.years.map(y => (
-                <button key={y} className={`cfm-cfg-year ${y === year ? 'is-on' : ''}`} onClick={() => setYear(y)}>{y}</button>
-              ))}
-            </div>
-            <div className="cfm-cfg-head-right">
-              <div className="cfm-cfg-modes">
-                <button className={`cfm-cfg-mode ${mode === 'delta' ? 'is-on' : ''}`} onClick={() => setMode('delta')}>Δ restate</button>
-                <button className={`cfm-cfg-mode ${mode === 'staged' ? 'is-on' : ''}`} onClick={() => setMode('staged')}>This file</button>
-                <button className={`cfm-cfg-mode ${mode === 'stored' ? 'is-on' : ''}`} onClick={() => setMode('stored')}>Stored</button>
-              </div>
-              <span className="cfm-cfg-cur">{data.area} · {cur}</span>
-            </div>
-          </div>
-          <div className="cfm-cfg-note">
-            A push promotes elapsed periods to actuals. Highlighted cells already hold a
-            different stored actual and would be <b>restated</b>. {mode === 'delta'
-              ? 'Showing this file minus the stored actual.'
-              : mode === 'staged' ? "Showing this file's figures." : 'Showing the stored actuals.'}
-            {data.n_changed > 8 ? ' Most cells differing usually means a currency/basis mismatch with the stored actuals, not real restatements.' : ''}
-          </div>
-          <div className="cfm-cfg-scroll">
-            <table className="cfm-cfg-table">
-              <thead>
-                <tr>
-                  <th className="cfm-cfg-rowhead">Section</th>
-                  {months.map(m => <th key={m.ym} className="num">{MON[m.m]}</th>)}
-                  <th className="num cfm-cfg-total">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {AD_ROWS.map(r => (
-                  <tr key={r.key} className={`cfm-cfg-row is-${r.type}`}>
-                    <td className="cfm-cfg-rowhead">{r.label}</td>
-                    {months.map(m => {
-                      const v = cellVal(r, m.ym)
-                      const restate = isRestate(r, m.ym)
-                      return (
-                        <td key={m.ym} className={`num ${v < 0 ? 'neg' : ''} ${restate ? 'is-var' : ''}`}>
-                          {v === 0 && !restate ? '·' : fmtAcct(v)}
-                        </td>
-                      )
-                    })}
-                    {(() => { const t = rowTotal(r)
-                      return <td className={`num cfm-cfg-total ${t < 0 ? 'neg' : ''}`}>{t === 0 ? '·' : fmtAcct(t)}</td> })()}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
