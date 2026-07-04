@@ -880,3 +880,7 @@
 .ent-srcchip.cf { color: #0f766e; border-color: #bfe6dc; background: #f4fbf9; }
 .ent-srcchip.cf.multi { color: #b45309; border-color: rgba(180, 83, 9, .3); background: #fdf6ec; }
 .ent-srcchip.bk { color: #475569; background: #f6f7f9; }
+
+/* bucket option at the top of the GA picker modal */
+.pm-opt-bucket { border-bottom: 1px solid var(--border, #e5e7eb); }
+.pm-opt-bucket > span { color: #b45309; font-weight: 700; }

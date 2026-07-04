@@ -389,6 +389,8 @@ export default function ProjectMapCards({
                       onPick={id => mapArea(area, id)}
                       trigger="Map area to GA…"
                       primary
+                      title={<>Map area <b>{area}</b> to Group Accounts</>}
+                      hint="Pick the canonical area this Treasury area is"
                     />
                   ) : (
                     <span className="ent-notmapped">Area not mapped</span>
@@ -430,6 +432,8 @@ export default function ProjectMapCards({
                               onPick={id => mapProject(p, id)}
                               trigger="Map to…"
                               primary
+                              title={<>Map <b>{p.name}</b> to Group Accounts</>}
+                              hint={`${p.area} · pick the project, or the area itself as a bucket`}
                             />
                           ) : (
                             <span className="ent-notmapped">Not mapped</span>
@@ -449,6 +453,8 @@ export default function ProjectMapCards({
                                   onPick={id => mapProject(p, id)}
                                   trigger={ga.status === 'bucket' ? 'Set project' : 'Change'}
                                   primary={ga.status === 'bucket'}
+                                  title={<>Map <b>{p.name}</b> to Group Accounts</>}
+                                  hint={`${p.area} · currently ${ga.target?.name}${ga.status === 'bucket' ? ' (area bucket) — pick the specific project' : ''}`}
                                 />
                                 <button className="ent-unmap" disabled={saving} onClick={() => unmapProject(p)}>
                                   Unmap
@@ -514,6 +520,8 @@ export default function ProjectMapCards({
                                 bucketArea={areaTarget ? { id: areaTarget.id, name: areaTarget.name } : undefined}
                                 onPick={id => mapProject(p, id)}
                                 trigger="Map to…"
+                                title={<>Map <b>{p.name}</b> to Group Accounts</>}
+                                hint={`${p.area} · an area item usually maps to the area itself (bucket option)`}
                               />
                             ) : (
                               <span className="ent-notmapped">Not mapped</span>
@@ -623,9 +631,10 @@ function UnassignedBrowser({ unassigned, unassignedUsd }: { unassigned: Payables
   )
 }
 
-/* ── type-ahead picker for a canonical node ─────────────────────────
- * kind='area': real areas only. kind='project': project nodes, scoped to the
- * item's area by default, with the area itself offered as the bucket option. */
+/* ── canonical-node picker — a MODAL (an anchored popup gets clipped by the
+ * scrolling pane). kind='area': real areas only. kind='project': project
+ * nodes, scoped to the item's area by default, with the area itself offered
+ * as the bucket option. */
 export function CanonicalPicker({
   kind,
   areaCandidates,
@@ -635,6 +644,8 @@ export function CanonicalPicker({
   onPick,
   trigger,
   primary,
+  title,
+  hint,
 }: {
   kind: 'area' | 'project'
   areaCandidates: CanonicalNode[]
@@ -644,12 +655,12 @@ export function CanonicalPicker({
   onPick: (id: string) => void
   trigger: string
   primary?: boolean
+  title: ReactNode
+  hint?: string
 }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const [allAreas, setAllAreas] = useState(false)
-  const boxRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
 
   const scopedAreaName =
     defaultAreaId && kind === 'project'
@@ -657,17 +668,15 @@ export function CanonicalPicker({
       : undefined
   const scoped = !!defaultAreaId && kind === 'project' && !allAreas && !q.trim()
 
-  useEffect(() => {
-    if (open) inputRef.current?.focus()
-  }, [open])
-  useEffect(() => {
-    if (!open) return
-    function onDoc(e: MouseEvent) {
-      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
-  }, [open])
+  function close() {
+    setOpen(false)
+    setQ('')
+    setAllAreas(false)
+  }
+  function pick(id: string) {
+    onPick(id)
+    close()
+  }
 
   const matches = useMemo(() => {
     const ql = q.trim().toLowerCase()
@@ -685,60 +694,59 @@ export function CanonicalPicker({
   }, [q, kind, areaCandidates, projectCandidates, scoped, defaultAreaId])
 
   return (
-    <div className="ent-picker" ref={boxRef}>
-      <button type="button" className={`ent-picker-trigger ${primary ? 'primary' : ''}`} onClick={() => setOpen(v => !v)}>
+    <>
+      <button type="button" className={`ent-picker-trigger ${primary ? 'primary' : ''}`} onClick={() => setOpen(true)}>
         {trigger}
       </button>
       {open && (
-        <div className="ent-picker-pop">
-          <input
-            ref={inputRef}
-            className="ent-picker-input"
-            placeholder={`Search ${kind === 'area' ? 'areas' : 'projects'}…`}
-            value={q}
-            onChange={e => setQ(e.target.value)}
-          />
-          {scopedAreaName && !q.trim() && (
-            <div className="ent-picker-scope">
-              {scoped ? (
-                <>
-                  Showing <strong>{scopedAreaName}</strong> projects ·{' '}
-                  <button type="button" onClick={() => setAllAreas(true)}>show all</button>
-                </>
-              ) : (
-                <>
-                  Showing all areas ·{' '}
-                  <button type="button" onClick={() => setAllAreas(false)}>back to {scopedAreaName}</button>
-                </>
-              )}
+        <div className="pm-modal-bg" onClick={close}>
+          <div className="pm-modal" onClick={e => e.stopPropagation()}>
+            <div className="pm-modal-h">
+              <div>{title}</div>
+              {hint && <div className="pm-modal-co">{hint}</div>}
+              <button className="pm-modal-x" onClick={close}>×</button>
             </div>
-          )}
-          <div className="ent-picker-list">
-            {bucketArea && kind === 'project' && (
-              <button
-                type="button"
-                className="ent-picker-item ent-picker-bucket"
-                onClick={() => { onPick(bucketArea.id); setOpen(false); setQ('') }}
-              >
-                <span className="ent-picker-label">{bucketArea.name}</span>
-                <span className="ent-picker-sub">whole area (bucket)</span>
-              </button>
+            <input
+              autoFocus
+              className="pm-search"
+              placeholder={`Search ${kind === 'area' ? 'areas' : 'projects'}…`}
+              value={q}
+              onChange={e => setQ(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Escape') close() }}
+            />
+            {scopedAreaName && !q.trim() && (
+              <div className="ent-picker-scope">
+                {scoped ? (
+                  <>
+                    Showing <strong>{scopedAreaName}</strong> projects ·{' '}
+                    <button type="button" onClick={() => setAllAreas(true)}>show all</button>
+                  </>
+                ) : (
+                  <>
+                    Showing all areas ·{' '}
+                    <button type="button" onClick={() => setAllAreas(false)}>back to {scopedAreaName}</button>
+                  </>
+                )}
+              </div>
             )}
-            {matches.map(m => (
-              <button
-                key={m.id}
-                type="button"
-                className="ent-picker-item"
-                onClick={() => { onPick(m.id); setOpen(false); setQ('') }}
-              >
-                <span className="ent-picker-label">{m.label}</span>
-                <span className="ent-picker-sub">{m.sub}</span>
-              </button>
-            ))}
-            {matches.length === 0 && <div className="ent-picker-empty">No match</div>}
+            <div className="pm-list">
+              {bucketArea && kind === 'project' && (
+                <button type="button" className="pm-opt pm-opt-bucket" onClick={() => pick(bucketArea.id)}>
+                  <span>{bucketArea.name}</span>
+                  <em>whole area (bucket)</em>
+                </button>
+              )}
+              {matches.map(m => (
+                <button key={m.id} type="button" className="pm-opt" onClick={() => pick(m.id)}>
+                  <span>{m.label}</span>
+                  <em>{m.sub}</em>
+                </button>
+              ))}
+              {matches.length === 0 && <div className="pm-noopt">No match for “{q}”.</div>}
+            </div>
           </div>
         </div>
       )}
-    </div>
+    </>
   )
 }
