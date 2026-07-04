@@ -32,8 +32,25 @@ type Action = {
 type Leg = { action_id: string; area: string; line_code: string; year: number; month: number; delta_usd: number; role: 'single' | 'from' | 'to' }
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const MONTH_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const monLabel = (m: number, y: number) => `${MON[m - 1] || '?'} ’${String(y).slice(2)}`
 const TYPE_LABEL: Record<Action['action_type'], string> = { adjust: 'Adjust', reclass: 'Reclass', reschedule: 'Reschedule', import: 'Import' }
+
+type VRow = CfVersion & { label?: string | null; is_current?: boolean; is_active?: boolean }
+/** The Original version is the faithful extraction — it never gets adjusted. */
+const isOrig = (v?: VRow) => !!v && ((v.label ?? '') === 'Original' || v.version_code.endsWith('-ORIG'))
+const cycleKeyOf = (v: VRow) => `${v.cycle_year}-${v.cycle_month}`
+const cycleRank = (v: VRow) => v.cycle_year * 100 + v.cycle_month
+const cycleLabel = (v: VRow) => `${MONTH_FULL[v.cycle_month - 1] ?? v.cycle_month} ${v.cycle_year}`
+/** Preferred version inside a cycle: the adjustments version with the ledger,
+ *  else any non-Original, else the Original (read-only). */
+function defaultVersionIn(cycle: VRow[], withActions: Set<string>): string {
+  return (
+    cycle.find(v => !isOrig(v) && withActions.has(v.version_code))?.version_code ??
+    cycle.find(v => !isOrig(v))?.version_code ??
+    cycle[0]?.version_code ?? ''
+  )
+}
 
 type Denom = 'm' | 'k' | 'u'
 const DENOMS: Record<Denom, { div: number; dec: number; btn: string; unit: string }> = {
@@ -57,9 +74,12 @@ async function fetchPaged<T>(build: (from: number, to: number) => PromiseLike<{ 
 }
 
 export default function AdjustmentsPanel({ canManage }: { canManage: boolean }) {
-  const [versions, setVersions] = useState<(CfVersion & { label?: string | null })[]>([])
+  const [versions, setVersions] = useState<VRow[]>([])
   const [lines, setLines] = useState<CfLine[]>([])
   const [version, setVersion] = useState<string>('')
+  const [actionVersions, setActionVersions] = useState<Set<string>>(new Set())
+  const [yearSel, setYearSel] = useState<number | null>(null)
+  const [newVer, setNewVer] = useState(false)
   const [areas, setAreas] = useState<string[]>([])
   const [area, setArea] = useState<string>('')
   const [cells, setCells] = useState<Cell[]>([])
@@ -91,19 +111,18 @@ export default function AdjustmentsPanel({ canManage }: { canManage: boolean }) 
       try {
         const [vs, ls, auth] = await Promise.all([fetchVersions(), fetchLines(), supabase.auth.getUser()])
         if (!alive) return
-        setVersions(vs)
+        const rows = (vs as VRow[]).filter(v => v.is_active !== false)
+        setVersions(rows)
         setLines(ls.filter(l => l.is_active))
         setActorEmail(auth.data.user?.email ?? '')
-        // default to the version that carries ledger actions, else newest ADJ, else newest
+        // default: the newest cycle's adjustments version (the one with the ledger)
         const { data: withActs } = await supabase
-          .from('cf_adjustment_actions').select('base_version').eq('is_active', true).limit(200)
+          .from('cf_adjustment_actions').select('base_version').eq('is_active', true).limit(500)
         if (!alive) return
         const actVers = new Set(((withActs ?? []) as { base_version: string }[]).map(r => r.base_version))
-        const def =
-          vs.find(v => actVers.has(v.version_code))?.version_code ??
-          vs.find(v => v.version_code.includes('ADJ'))?.version_code ??
-          vs[0]?.version_code ?? ''
-        setVersion(def)
+        setActionVersions(actVers)
+        const newestCycle = rows.length ? rows.filter(v => cycleRank(v) === cycleRank(rows[0])) : []
+        setVersion(defaultVersionIn(newestCycle, actVers))
       } catch (e) {
         if (alive) setErr((e as Error).message)
       } finally {
@@ -141,7 +160,9 @@ export default function AdjustmentsPanel({ canManage }: { canManage: boolean }) 
     setLegs(lg)
     setArea(prev => (prev && aset.includes(prev) ? prev : aset[0] ?? ''))
 
-    // carry-forward source: the most recent OTHER version with active actions
+    // carry-forward source: the most recent version with active actions from an
+    // EARLIER or same cycle (never a later one — adjustments flow forward), with
+    // same-cycle sibling scenarios ranking above the prior cycle
     const { data: others, error: oErr } = await supabase
       .from('cf_adjustment_actions')
       .select('id, base_version, area, action_type, intent, input_amount, note, actor, source_batch, created_at, is_active')
@@ -150,8 +171,15 @@ export default function AdjustmentsPanel({ canManage }: { canManage: boolean }) 
       .order('created_at', { ascending: false })
       .limit(200)
     if (oErr) throw new Error(oErr.message)
-    const oActs = (others ?? []) as Action[]
-    const src = oActs[0]?.base_version ?? ''
+    const byCode = new Map(versions.map(x => [x.version_code, x]))
+    const curRank = byCode.has(v) ? cycleRank(byCode.get(v)!) : 999999
+    const oActs = ((others ?? []) as Action[]).filter(a => {
+      const av = byCode.get(a.base_version)
+      return av && cycleRank(av) <= curRank
+    })
+    const src = oActs
+      .slice()
+      .sort((a, b) => cycleRank(byCode.get(b.base_version)!) - cycleRank(byCode.get(a.base_version)!))[0]?.base_version ?? ''
     const srcActs = oActs.filter(a => a.base_version === src)
     setPriorVersion(src)
     setPriorActions(srcActs)
@@ -214,16 +242,27 @@ export default function AdjustmentsPanel({ canManage }: { canManage: boolean }) 
     return [...s.values()].sort((a, b) => a.y - b.y || a.m - b.m)
   }, [cells])
 
+  // year toggle — default to the cycle year; history years stay reachable
+  const years = useMemo(() => [...new Set(months.map(mm => mm.y))].sort(), [months])
+  const year = yearSel && years.includes(yearSel)
+    ? yearSel
+    : ver && years.includes(ver.cycle_year) ? ver.cycle_year : years[years.length - 1]
+  const monthsShown = useMemo(() => months.filter(mm => mm.y === year), [months, year])
+
   const cellMap = useMemo(() => {
     const m = new Map<string, Cell>()
     for (const c of cells) m.set(`${c.line_code}|${c.year}-${c.month}`, c)
     return m
   }, [cells])
 
-  // rows: active lines with any value or delta in this area, in chart order, grouped by category
+  // rows: active lines with any value in the selected year (adjusted lines
+  // always show, whichever year their legs sit in), in chart order, by category
   const gridRows = useMemo(() => {
     const used = new Set<string>()
-    for (const c of cells) if (Math.abs(c.value_usd) > 0.5 || Math.abs(c.delta_usd) > 0.5 || Math.abs(c.base_usd) > 0.5) used.add(c.line_code)
+    for (const c of cells) {
+      if (c.year === year && (Math.abs(c.value_usd) > 0.5 || Math.abs(c.base_usd) > 0.5)) used.add(c.line_code)
+      if (Math.abs(c.delta_usd) > 0.5) used.add(c.line_code)
+    }
     const rows = lines.filter(l => used.has(l.line_code))
     const out: { cat: string; lines: CfLine[] }[] = []
     for (const l of rows) {
@@ -232,7 +271,7 @@ export default function AdjustmentsPanel({ canManage }: { canManage: boolean }) 
       else out.push({ cat: l.category, lines: [l] })
     }
     return out
-  }, [cells, lines])
+  }, [cells, lines, year])
 
   const areaNetDelta = useMemo(
     () => cells.filter(c => lineByCode.get(c.line_code)?.nature !== 'Balance')
@@ -341,19 +380,50 @@ export default function AdjustmentsPanel({ canManage }: { canManage: boolean }) 
   /* ── render ──────────────────────────────────────────────────────── */
   if (loading) return <div className="cfm-body"><div className="adj-empty-pad">Loading…</div></div>
 
+  const origSelected = isOrig(ver)
+  const canEdit = canManage && !origSelected
   const netP = Math.abs(areaNetDelta) < 0.5 ? null : areaNetDelta > 0
-  const showCarry = !!priorVersion && priorVersion !== version && priorActions.some(a => !carriedIds.has(a.id))
+  const showCarry = !origSelected && !!priorVersion && priorVersion !== version && priorActions.some(a => !carriedIds.has(a.id))
+
+  // cycles (April 2026, May 2026, …) and the versions inside the selected one
+  const cycleSeen = new Map<string, VRow>()
+  for (const v of versions) if (!cycleSeen.has(cycleKeyOf(v))) cycleSeen.set(cycleKeyOf(v), v)
+  const cycles = [...cycleSeen.values()]
+  const cycleVersions = ver ? versions.filter(v => cycleKeyOf(v) === cycleKeyOf(ver)) : []
 
   return (
     <div className="cfm-body adje">
       <div className="adje-toolbar">
         <label className="adje-ctl">
-          <span>Version</span>
-          <select value={version} onChange={e => setVersion(e.target.value)}>
-            {versions.map(v => (
-              <option key={v.version_code} value={v.version_code}>{v.version_code}</option>
+          <span>Cycle</span>
+          <select
+            value={ver ? cycleKeyOf(ver) : ''}
+            onChange={e => {
+              const inCycle = versions.filter(v => cycleKeyOf(v) === e.target.value)
+              setVersion(defaultVersionIn(inCycle, actionVersions))
+            }}
+          >
+            {cycles.map(c => (
+              <option key={cycleKeyOf(c)} value={cycleKeyOf(c)}>{cycleLabel(c)}</option>
             ))}
           </select>
+        </label>
+        <label className="adje-ctl">
+          <span>Version</span>
+          <span className="adje-verrow">
+            <select value={version} onChange={e => setVersion(e.target.value)}>
+              {cycleVersions.map(v => (
+                <option key={v.version_code} value={v.version_code}>
+                  {(v.label ? `${v.label} — ` : '') + v.version_code + (isOrig(v) ? ' (read-only)' : '')}
+                </option>
+              ))}
+            </select>
+            {canManage && (
+              <button className="adje-newver" title="Create a new adjustments version in this cycle (a scenario that lives side by side)" onClick={() => setNewVer(true)}>
+                + New
+              </button>
+            )}
+          </span>
         </label>
         <label className="adje-ctl">
           <span>Area</span>
@@ -361,11 +431,24 @@ export default function AdjustmentsPanel({ canManage }: { canManage: boolean }) 
             {areas.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
         </label>
-        <div className="adje-denoms">
-          {(['m', 'k', 'u'] as Denom[]).map(k => (
-            <button key={k} className={`adje-denom ${denom === k ? 'is-active' : ''}`} onClick={() => setDenom(k)}>{DENOMS[k].btn}</button>
-          ))}
-        </div>
+        {years.length > 1 && (
+          <label className="adje-ctl">
+            <span>Year</span>
+            <div className="adje-denoms">
+              {years.map(y => (
+                <button key={y} className={`adje-denom ${year === y ? 'is-active' : ''}`} onClick={() => setYearSel(y)}>{y}</button>
+              ))}
+            </div>
+          </label>
+        )}
+        <label className="adje-ctl">
+          <span>Units</span>
+          <div className="adje-denoms">
+            {(['m', 'k', 'u'] as Denom[]).map(k => (
+              <button key={k} className={`adje-denom ${denom === k ? 'is-active' : ''}`} onClick={() => setDenom(k)}>{DENOMS[k].btn}</button>
+            ))}
+          </div>
+        </label>
         <span className="adje-spacer" />
         <div className="adje-net" title="Sum of this area's active adjustment legs on flow lines">
           <span>Net adjustment · {area || '—'}</span>
@@ -375,9 +458,10 @@ export default function AdjustmentsPanel({ canManage }: { canManage: boolean }) 
         </div>
       </div>
 
-      {version.includes('ORIG') && (
+      {origSelected && (
         <div className="adje-hint">
-          <b>{version}</b> is the faithful extraction of the area files — adjustments conventionally live on the ADJ version.
+          <b>{version}</b> is the Original — the faithful extraction of the area files. It never gets adjusted;
+          pick the cycle's adjustments version, or create a new one with “+ New”.
         </div>
       )}
       {!canManage && <div className="adje-hint">Read-only — editing needs the Treasury role.</div>}
@@ -426,29 +510,28 @@ export default function AdjustmentsPanel({ canManage }: { canManage: boolean }) 
             <thead>
               <tr>
                 <th className="adje-th-line">Line · {d.unit}</th>
-                {months.map(mm => (
+                {monthsShown.map(mm => (
                   <th key={`${mm.y}-${mm.m}`} className={`adje-num ${isElapsed(mm.y, mm.m) ? 'is-actual' : ''}`}>
                     {monLabel(mm.m, mm.y)}
                     {isElapsed(mm.y, mm.m) && <span className="adje-a" title="Elapsed — actuals">A</span>}
                   </th>
                 ))}
-                <th className="adje-num adje-th-fy">FY {ver?.cycle_year ?? ''}</th>
+                <th className="adje-num adje-th-fy">FY {year ?? ''}</th>
               </tr>
             </thead>
             <tbody>
               {gridRows.map(g => (
                 [
-                  <tr key={`h-${g.cat}`} className="adje-cat"><td colSpan={months.length + 2}>{g.cat}</td></tr>,
+                  <tr key={`h-${g.cat}`} className="adje-cat"><td colSpan={monthsShown.length + 2}>{g.cat}</td></tr>,
                   ...g.lines.map(l => {
                     const fy = l.nature === 'Balance'
                       ? null
-                      : months.filter(mm => mm.y === ver?.cycle_year)
-                          .reduce((s, mm) => s + Number(cellMap.get(`${l.line_code}|${mm.y}-${mm.m}`)?.value_usd || 0), 0)
+                      : monthsShown.reduce((s, mm) => s + Number(cellMap.get(`${l.line_code}|${mm.y}-${mm.m}`)?.value_usd || 0), 0)
                     const rowTouched = months.some(mm => Math.abs(Number(cellMap.get(`${l.line_code}|${mm.y}-${mm.m}`)?.delta_usd || 0)) > 0.5)
                     return (
                       <tr key={l.line_code}>
                         <td className={`adje-td-line ${rowTouched ? 'is-touched' : ''}`} title={l.line_code}>{l.description}</td>
-                        {months.map(mm => {
+                        {monthsShown.map(mm => {
                           const c = cellMap.get(`${l.line_code}|${mm.y}-${mm.m}`)
                           const v = Number(c?.value_usd || 0)
                           const dl = Number(c?.delta_usd || 0)
@@ -456,11 +539,11 @@ export default function AdjustmentsPanel({ canManage }: { canManage: boolean }) 
                           return (
                             <td
                               key={`${mm.y}-${mm.m}`}
-                              className={`adje-num adje-cell ${touched ? 'is-touched' : ''} ${canManage ? 'is-editable' : ''}`}
+                              className={`adje-num adje-cell ${touched ? 'is-touched' : ''} ${canEdit ? 'is-editable' : ''}`}
                               title={touched
                                 ? `Base ${fmt(Number(c?.base_usd || 0))} → adjusted ${fmt(v)} (Δ ${dl > 0 ? '+' : '−'}${fmt(Math.abs(dl))})`
                                 : undefined}
-                              onClick={canManage ? () => setEditor({ line: l, year: mm.y, month: mm.m }) : undefined}
+                              onClick={canEdit ? () => setEditor({ line: l, year: mm.y, month: mm.m }) : undefined}
                             >
                               {Math.abs(v) < 0.5 ? <span className="adje-zero">·</span> : fmt(v)}
                             </td>
@@ -489,7 +572,9 @@ export default function AdjustmentsPanel({ canManage }: { canManage: boolean }) 
         </div>
         {logActions.length === 0 && (
           <div className="adje-log-none">
-            None yet{logAllAreas ? '' : ` for ${area}`} — click any cell in the grid to make the first one.
+            {origSelected
+              ? 'The Original never carries adjustments.'
+              : `None yet${logAllAreas ? '' : ` for ${area}`} — click any cell in the grid to make the first one.`}
           </div>
         )}
         {logActions.map(a => {
@@ -538,6 +623,134 @@ export default function AdjustmentsPanel({ canManage }: { canManage: boolean }) 
           onSave={writeAction}
         />
       )}
+
+      {newVer && ver && (
+        <NewVersionModal
+          source={ver}
+          sourceActions={activeActions}
+          legsByAction={legsByAction}
+          actorEmail={actorEmail}
+          onClose={() => setNewVer(false)}
+          onCreated={async (code) => {
+            setNewVer(false)
+            const vs = (await fetchVersions()) as VRow[]
+            setVersions(vs.filter(v => v.is_active !== false))
+            setVersion(code)
+          }}
+          onErr={m => setErr(m)}
+        />
+      )}
+    </div>
+  )
+}
+
+/* ── create a scenario version in the cycle ──────────────────────────
+ * Duplicates the current version's forecasts (cf_duplicate_version RPC) so
+ * scenarios live side by side; optionally re-applies its adjustments (tagged
+ * carry:<id> so the repeat-once guard holds). The Original never changes. */
+function NewVersionModal({
+  source, sourceActions, legsByAction, actorEmail, onClose, onCreated, onErr,
+}: {
+  source: VRow
+  sourceActions: Action[]
+  legsByAction: Map<string, Leg[]>
+  actorEmail: string
+  onClose: () => void
+  onCreated: (code: string) => Promise<void> | void
+  onErr: (msg: string) => void
+}) {
+  const [label, setLabel] = useState('')
+  const [copyAdj, setCopyAdj] = useState(sourceActions.length > 0)
+  const [busy, setBusy] = useState(false)
+
+  async function create() {
+    const lbl = label.trim()
+    if (!lbl || busy) return
+    setBusy(true)
+    try {
+      const { data, error } = await supabase.rpc('cf_duplicate_version', {
+        p_source_version: source.version_code,
+        p_label: lbl,
+        p_actor: actorEmail || null,
+      })
+      if (error) throw new Error(error.message)
+      const newCode = (data as { new_version?: string })?.new_version
+      if (!newCode) throw new Error('Duplicate RPC returned no version code')
+      if (copyAdj) {
+        for (const a of sourceActions) {
+          const als = legsByAction.get(a.id) ?? []
+          if (!als.length) continue
+          const { data: na, error: ae } = await supabase
+            .from('cf_adjustment_actions')
+            .insert({
+              base_version: newCode,
+              area: a.area,
+              action_type: a.action_type,
+              intent: a.intent,
+              input_amount: a.input_amount,
+              note: a.note,
+              actor: actorEmail || null,
+              source_batch: `carry:${a.id}`,
+              is_active: true,
+            })
+            .select('id')
+            .single()
+          if (ae) throw new Error(ae.message)
+          const { error: le } = await supabase
+            .from('cf_adjustment_legs')
+            .insert(als.map(l => ({
+              action_id: (na as { id: string }).id,
+              area: l.area, line_code: l.line_code, year: l.year, month: l.month,
+              delta_usd: l.delta_usd, role: l.role,
+            })))
+          if (le) throw new Error(le.message)
+        }
+      }
+      await onCreated(newCode)
+    } catch (e) {
+      onErr((e as Error).message)
+      onClose()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="pm-modal-bg" onClick={onClose}>
+      <div className="pm-modal adje-modal" onClick={e => e.stopPropagation()}>
+        <div className="pm-modal-h">
+          <div>New adjustments version in <b>{cycleLabel(source)}</b></div>
+          <div className="pm-modal-co">
+            Copies <b>{source.version_code}</b> into a new version that lives side by side —
+            e.g. one scenario with a 10M loan and one without. The Original is never touched.
+          </div>
+          <button className="pm-modal-x" onClick={onClose}>×</button>
+        </div>
+        <div className="adje-form">
+          <label className="adje-field">
+            <span>Name the scenario</span>
+            <input
+              autoFocus
+              placeholder="e.g. With 10M loan"
+              value={label}
+              onChange={e => setLabel(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') void create(); if (e.key === 'Escape') onClose() }}
+            />
+          </label>
+          {sourceActions.length > 0 && (
+            <label className="adje-copyadj">
+              <input type="checkbox" checked={copyAdj} onChange={e => setCopyAdj(e.target.checked)} />
+              Also apply its {sourceActions.length} adjustment{sourceActions.length === 1 ? '' : 's'} to the new version
+            </label>
+          )}
+          <div className="adje-actions">
+            <button className="adje-save" disabled={!label.trim() || busy} onClick={() => void create()}>
+              {busy ? 'Creating…' : 'Create version'}
+            </button>
+            <button className="adje-cancel" onClick={onClose}>Cancel</button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
