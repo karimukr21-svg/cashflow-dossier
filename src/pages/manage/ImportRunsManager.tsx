@@ -322,6 +322,22 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
               <div className="cfm-run-row" onClick={() => toggle(run)}>
                 <span className="cfm-run-caret">{isOpen ? '▾' : '▸'}</span>
                 <span className="cfm-run-area">{run.area}</span>
+                {run.recon_status && run.recon_status !== 'unknown' && (
+                  <span
+                    className={`cfm-run-verdict cfm-run-verdict-${run.recon_status === 'tie' ? 'ok' : run.recon_status === 'break' ? 'off' : 'neutral'}`}
+                    title={
+                      run.recon_status === 'tie' ? 'Reconciles to the area total'
+                      : run.recon_status === 'break' ? `${run.recon_n_breaks || 0} line(s) don’t reconcile to the area total`
+                      : VERDICT_LABEL[run.recon_status] || run.recon_status
+                    }
+                  >
+                    {run.recon_status === 'tie'
+                      ? '✓ Ties'
+                      : run.recon_status === 'break'
+                        ? `✕ Breaks${run.recon_n_breaks ? ` ${run.recon_n_breaks}` : ''}`
+                        : VERDICT_LABEL[run.recon_status] || run.recon_status}
+                  </span>
+                )}
                 {run.status !== 'open' && (
                   <span className={`cfm-status cfm-status-${run.status}`}>{STATUS_LABEL[run.status] || run.status}</span>
                 )}
