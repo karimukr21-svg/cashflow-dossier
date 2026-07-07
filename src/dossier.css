@@ -1673,6 +1673,20 @@ body, html, #root {
 .crp-table--pos .crp-total td { border-top: 0; }
 .crp-sep-l { border-left: 1px solid var(--border); }
 
+/* Projects-as-Area table: area sub-header rows + clickable project rows + a
+   checkbox column for print selection. Same base as .crp-table--area. */
+.crp-table--projarea { font-size: 12px; }
+.crp-table--projarea .crp-ck { width: 24px; text-align: center; padding: 4px 2px; }
+.crp-table--projarea .crp-ck input { cursor: pointer; }
+.crp-projgrp td { background: #f4f6f9; border-top: 1.5px solid var(--ink); font-weight: 800; padding-top: 6px; padding-bottom: 5px; }
+.crp-projgrp-name { text-transform: uppercase; letter-spacing: .3px; font-size: 11px; color: var(--ink); }
+.crp-projtr:hover td { background: rgba(225,0,32,0.035); }
+.crp-projtr.active td { background: rgba(225,0,32,0.07); }
+.crp-projtd { cursor: pointer; font-weight: 600; }
+.crp-projtd:hover { color: var(--crimson); }
+.crp-cell-click { cursor: pointer; }
+.crp-projdetail { margin-top: 14px; }
+
 .crp-projpick { display: flex; gap: 10px; flex-wrap: wrap; }
 .crp-projtop { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .crp-pick { display: flex; align-items: center; gap: 6px; }
