@@ -347,15 +347,23 @@ def _jv_reclass_rows(rows, resolver, share_spec):
       non-op receipts      -> share×non-op_rcpt − (1−share)×Σ(within-group receipts)
       non-op payments      -> share×non-op_pay  − (1−share)×Σ(within-group payments)
       everything else      -> ×share
-    Share may be flat or period-stepped; the within-group total is per (year, month)."""
-    wg_r = defaultdict(float); wg_p = defaultdict(float)
+    Share may be flat or period-stepped; the within-group total is per (year, month).
+
+    A JV leaf can carry within-group in a month WITHOUT a matching non-op line. The
+    reclass still owes the −(1−share)×within-group term for that month, so we CREATE the
+    non-op row when one doesn't exist — otherwise the term has no row to land on and is
+    silently dropped, and Σ-leaves understates non-op vs the file's rollup by exactly the
+    dropped amount."""
+    wg_r = defaultdict(float); wg_p = defaultdict(float); kind_by_ym = {}
     for r in rows:
+        k = (r['year'], r['month'])
+        kind_by_ym.setdefault(k, r.get('kind'))
         if resolver.cat_by_code.get(r['line_code']) == 'Within Group':
-            k = (r['year'], r['month'])
             if resolver.nat_by_code.get(r['line_code']) == 'Receipts':
                 wg_r[k] += r['value']
             else:
                 wg_p[k] += r['value']
+    seen_nr = set(); seen_np = set()
     out = []
     for r in rows:
         s = _resolve_share(share_spec, r['year'], r['month'])
@@ -364,12 +372,26 @@ def _jv_reclass_rows(rows, resolver, share_spec):
         if cat == 'Within Group':
             nv = r['value']                                   # 100%
         elif r['line_code'] == 'nonop_recpt':
-            nv = s * r['value'] - (1 - s) * wg_r[k]
+            nv = s * r['value'] - (1 - s) * wg_r[k]; seen_nr.add(k)
         elif r['line_code'] == 'nonop_pay':
-            nv = s * r['value'] - (1 - s) * wg_p[k]
+            nv = s * r['value'] - (1 - s) * wg_p[k]; seen_np.add(k)
         else:
             nv = s * r['value']
         rr = dict(r); rr['value'] = round(nv, 4); out.append(rr)
+    # months with within-group but no non-op line: mint the reclass row so the term survives
+    tmpl = rows[0] if rows else None
+    if tmpl is not None:
+        for k in sorted(set(wg_r) | set(wg_p)):
+            y, m = k
+            s = _resolve_share(share_spec, y, m)
+            def _mk(lc, v):
+                nr = dict(tmpl); nr['line_code'] = lc; nr['year'] = y; nr['month'] = m
+                nr['value'] = round(v, 4); nr['kind'] = kind_by_ym.get(k, tmpl.get('kind'))
+                return nr
+            if k not in seen_nr and abs((1 - s) * wg_r[k]) > 1e-6:
+                out.append(_mk('nonop_recpt', -(1 - s) * wg_r[k]))
+            if k not in seen_np and abs((1 - s) * wg_p[k]) > 1e-6:
+                out.append(_mk('nonop_pay', -(1 - s) * wg_p[k]))
     return out
 
 
