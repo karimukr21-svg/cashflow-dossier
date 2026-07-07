@@ -555,9 +555,11 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
   scope: Scope; fxMap: Map<string, number | null>; areaOptions: { areaId: string; label: string }[]
   year: number; asOfMonth: number; asOfLabel: string; startLabel: string
 }) {
-  const ALL = '__ALL__', SEP = ''
+  const ALL = '__ALL__', SEP = '', MINIMAL = 100_000   // "minimal mover" = |CFO| under 0.1m
   const [areaId, setAreaId] = useState<string>(ALL)
   const [moverFilter, setMoverFilter] = useState<'both' | 'pos' | 'neg'>('both')
+  const [selected, setSelected] = useState<Set<string>>(new Set())   // ticked rows
+  const [ignored, setIgnored] = useState<Set<string>>(new Set())     // hidden from table/chart/totals/print
   const [cells, setCells] = useState<(CfCell & { project_code: string | null; currency?: string })[]>([])
   const [loading, setLoading] = useState(false)
   const [payMaps, setPayMaps] = useState<PayablesMaps | null>(null)
@@ -609,10 +611,12 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
     moverFilter === 'pos' ? rows.filter(r => r.netOps > 0)
     : moverFilter === 'neg' ? rows.filter(r => r.netOps < 0)
     : rows, [rows, moverFilter])
+  // Visible set = filtered rows minus the ones the user has ignored.
+  const kept = useMemo(() => shown.filter(r => !ignored.has(r.key)), [shown, ignored])
 
   const groups = useMemo(() => {
     const m = new Map<string, MoverRow[]>()
-    for (const r of shown) { const arr = m.get(r.area) ?? []; arr.push(r); m.set(r.area, arr) }
+    for (const r of kept) { const arr = m.get(r.area) ?? []; arr.push(r); m.set(r.area, arr) }
     return [...m.entries()].map(([area, items]) => {
       let ps = 0, pe = 0, hasPay = false
       for (const r of items) if (r.payStart != null || r.payEnd != null) { ps += r.payStart ?? 0; pe += r.payEnd ?? 0; hasPay = true }
@@ -623,16 +627,50 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
         items: [...items].sort((a, b) => b.netOps - a.netOps),
       }
     }).sort((a, b) => Math.abs(b.netOps) - Math.abs(a.netOps))
-  }, [shown])
+  }, [kept])
 
   const grand = useMemo(() => {
     let netOps = 0, ps = 0, pe = 0, hasPay = false
-    for (const r of shown) { netOps += r.netOps; if (r.payStart != null || r.payEnd != null) { ps += r.payStart ?? 0; pe += r.payEnd ?? 0; hasPay = true } }
+    for (const r of kept) { netOps += r.netOps; if (r.payStart != null || r.payEnd != null) { ps += r.payStart ?? 0; pe += r.payEnd ?? 0; hasPay = true } }
     return { netOps, payStart: hasPay ? ps : null, payEnd: hasPay ? pe : null }
-  }, [shown])
+  }, [kept])
+
+  const toggle = (key: string) => setSelected(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
+  const ignoreSelected = () => { setIgnored(prev => new Set([...prev, ...selected])); setSelected(new Set()) }
+  const ignoreMinimal = () => setIgnored(prev => new Set([...prev, ...kept.filter(r => Math.abs(r.netOps) < MINIMAL).map(r => r.key)]))
+  const resetIgnored = () => { setIgnored(new Set()); setSelected(new Set()) }
+  const nMinimal = kept.filter(r => Math.abs(r.netOps) < MINIMAL).length
 
   const areaLabel = areaId === ALL ? 'All areas' : areaLabelOf(areaId)
   const payD = (s: number | null, e: number | null) => (s != null && e != null) ? e - s : null
+
+  const printMovers = () => {
+    const w = window.open('', '_blank'); if (!w) return
+    const esc = (s: string) => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string))
+    const cell = (v: number | null) => `<td class="r ${cls(v)}">${fMm(v)}</td>`
+    const dcell = (v: number | null) => `<td class="r ${cls(v)}">${fMd(v)}</td>`
+    const body = groups.map(g => `
+      <tr class="grp"><td>${esc(g.label)} <span class="k">· ${g.items.length}</span></td>${cell(g.netOps)}${cell(g.payStart)}${cell(g.payEnd)}${dcell(payD(g.payStart, g.payEnd))}</tr>
+      ${g.items.map(r => `<tr><td class="p">${esc(r.code)}</td>${cell(r.netOps)}${cell(r.payStart)}${cell(r.payEnd)}${dcell(payD(r.payStart, r.payEnd))}</tr>`).join('')}`).join('')
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Cash Flow — Projects by area</title><style>
+      @page { size: A4 landscape; margin: 12mm; }
+      * { box-sizing: border-box; } body { font-family: -apple-system, Segoe UI, Helvetica, Arial, sans-serif; color: #141414; margin: 0; }
+      header { display: flex; align-items: center; gap: 14px; border-bottom: 2px solid #E10020; padding-bottom: 8px; margin-bottom: 12px; }
+      header img { height: 34px; } header h1 { font-size: 16px; margin: 0; font-weight: 700; } .sub { font-size: 10px; color: #64748b; }
+      .brand { margin-left: auto; font-size: 11px; font-weight: 700; color: #E10020; text-transform: uppercase; letter-spacing: .5px; }
+      table { width: 100%; border-collapse: collapse; font-size: 10.5px; } th { text-align: left; font-size: 8px; text-transform: uppercase; letter-spacing: .4px; color: #64748b; border-bottom: 1px solid #cbd5e1; padding: 3px 8px; }
+      th.r, td.r { text-align: right; font-variant-numeric: tabular-nums; } td { padding: 2.5px 8px; }
+      tr.grp td { background: #f1f4f8; font-weight: 800; text-transform: uppercase; font-size: 9.5px; border-top: 1.2px solid #141414; } td.p { padding-left: 16px; }
+      tr.tot td { font-weight: 800; border-top: 2px solid #141414; } .neg { color: #E10020; } .pos { color: #057a55; } .k { color: #94a3b8; font-weight: 400; }
+      .chart { margin-top: 14px; page-break-inside: avoid; }
+    </style></head><body>
+      <header><img src="${location.origin}/ccc-logo.png" alt="CCC"/><div><h1>Cash Flow Report — Projects by area</h1><div class="sub">${esc(areaLabel)} · net cash from operations · Jan–${asOfLabel} · USD millions · ${kept.length} projects${moverFilter !== 'both' ? ` (${moverFilter === 'pos' ? 'positive' : 'negative'})` : ''}</div></div><div class="brand">Treasury</div></header>
+      <table><thead><tr><th>Project</th><th class="r">Net cash from ops</th><th class="r">Payables ${startLabel}</th><th class="r">Payables ${asOfLabel}</th><th class="r">Δ</th></tr></thead>
+      <tbody>${body}<tr class="tot"><td>All shown (${kept.length})</td>${cell(grand.netOps)}${cell(grand.payStart)}${cell(grand.payEnd)}${dcell(payD(grand.payStart, grand.payEnd))}</tr></tbody></table>
+      <div class="chart">${areaBarsSvg(kept.map(r => ({ label: r.code, value: r.netOps })), undefined, { zoom: 1.05, maxRows: 24 })}</div>
+      <script>window.onload=function(){window.print()}</script></body></html>`
+    w.document.write(html); w.document.close()
+  }
 
   return (
     <div className="crp-page">
@@ -640,7 +678,7 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
         <img className="crp-logo" src="/ccc-logo.png" alt="CCC" />
         <div className="crp-head-t">
           <h1>Cash Flow Report — Projects by area</h1>
-          <div className="crp-sub">{areaLabel} · net cash from operations · Jan–{asOfLabel} · USD millions · {shown.length}{moverFilter !== 'both' ? ` ${moverFilter === 'pos' ? 'positive' : 'negative'}` : ''} project{shown.length === 1 ? '' : 's'}</div>
+          <div className="crp-sub">{areaLabel} · net cash from operations · Jan–{asOfLabel} · USD millions · {kept.length}{moverFilter !== 'both' ? ` ${moverFilter === 'pos' ? 'positive' : 'negative'}` : ''} project{kept.length === 1 ? '' : 's'}{ignored.size > 0 ? ` · ${ignored.size} ignored` : ''}</div>
         </div>
         <div className="crp-brand">Treasury</div>
       </div>
@@ -660,15 +698,24 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
             ))}
           </div>
         )}
+        {(kept.length > 0 || ignored.size > 0) && (
+          <div className="crp-pick">
+            <button className="crp-pickbtn" disabled={selected.size === 0} onClick={ignoreSelected}>Ignore selected ({selected.size})</button>
+            <button className="crp-pickbtn" disabled={nMinimal === 0} onClick={ignoreMinimal} title="Hide projects that barely move — |net cash from ops| under 0.1m">Ignore minimal ({nMinimal})</button>
+            {ignored.size > 0 && <button className="crp-pickbtn" onClick={resetIgnored}>Reset ({ignored.size} ignored)</button>}
+          </div>
+        )}
+        <button className="crp-print" disabled={kept.length === 0} onClick={printMovers}>Print</button>
       </div>
 
       <div className="crp-grid">
         <div className="crp-card">
           <div className="crp-card-h">Projects <span>· net cash from operations &amp; trade payables, by area{moverFilter === 'pos' ? ' · positive' : moverFilter === 'neg' ? ' · negative' : ''}</span></div>
           {loading ? <div className="crp-note crp-note--empty">Loading…</div>
-            : shown.length === 0 ? <div className="crp-note crp-note--empty">{rows.length === 0 ? 'No project-grain cash flow for this scope.' : `No ${moverFilter === 'pos' ? 'positive' : 'negative'} projects in this scope.`}</div>
+            : kept.length === 0 ? <div className="crp-note crp-note--empty">{rows.length === 0 ? 'No project-grain cash flow for this scope.' : shown.length === 0 ? `No ${moverFilter === 'pos' ? 'positive' : 'negative'} projects in this scope.` : 'All projects are ignored — use Reset to show them.'}</div>
             : <table className="crp-table crp-table--area crp-table--projarea">
               <thead><tr>
+                <th className="crp-ck"></th>
                 <th>Project</th>
                 <th className="r">Net cash from ops</th>
                 <th className="r crp-sep-l">Payables {startLabel}</th>
@@ -678,6 +725,7 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
               <tbody>
                 {groups.flatMap(g => [
                   <tr className="crp-projgrp" key={g.area}>
+                    <td className="crp-ck"></td>
                     <td className="crp-projgrp-name">{g.label} <span className="crp-key">· {g.items.length}</span></td>
                     <td className={`r ${cls(g.netOps)}`}>{fMm(g.netOps)}</td>
                     <td className={`r crp-sep-l ${cls(g.payStart)}`}>{fMm(g.payStart)}</td>
@@ -685,7 +733,8 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
                     <td className={`r ${cls(payD(g.payStart, g.payEnd))}`}>{fMd(payD(g.payStart, g.payEnd))}</td>
                   </tr>,
                   ...g.items.map(r => (
-                    <tr className="crp-projtr" key={r.key}>
+                    <tr className={`crp-projtr ${selected.has(r.key) ? 'sel' : ''}`} key={r.key}>
+                      <td className="crp-ck"><input type="checkbox" checked={selected.has(r.key)} onChange={() => toggle(r.key)} title="Select to ignore" /></td>
                       <td className="crp-projtd">{r.code}</td>
                       <td className={`r ${cls(r.netOps)}`}>{fMm(r.netOps)}</td>
                       <td className={`r crp-sep-l ${cls(r.payStart)}`}>{fMm(r.payStart)}</td>
@@ -695,7 +744,8 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
                   )),
                 ])}
                 <tr className="crp-total">
-                  <td>All shown ({shown.length})</td>
+                  <td className="crp-ck"></td>
+                  <td>All shown ({kept.length})</td>
                   <td className={`r ${cls(grand.netOps)}`}>{fMm(grand.netOps)}</td>
                   <td className={`r crp-sep-l ${cls(grand.payStart)}`}>{fMm(grand.payStart)}</td>
                   <td className={`r ${cls(grand.payEnd)}`}>{fMm(grand.payEnd)}</td>
@@ -708,7 +758,7 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
 
         <div className="crp-card">
           <div className="crp-card-h">Net cash from operations <span>· top project movers</span></div>
-          <Svg html={areaBarsSvg(shown.map(r => ({ label: r.code, value: r.netOps })), undefined, { maxRows: 16 })} />
+          <Svg html={areaBarsSvg(kept.map(r => ({ label: r.code, value: r.netOps })), undefined, { maxRows: 16 })} />
           <div className="crp-note">Green = cash generated, crimson = consumed (USD, Jan–{asOfLabel}). Top 16 projects by size; the rest rolled into “Other”.</div>
         </div>
       </div>

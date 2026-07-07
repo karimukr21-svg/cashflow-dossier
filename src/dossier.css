@@ -1675,9 +1675,12 @@ body, html, #root {
 
 /* Movers table — the Area table with one row per project, grouped by area. */
 .crp-table--projarea { font-size: 12px; }
+.crp-table--projarea .crp-ck { width: 24px; text-align: center; padding: 3px 2px; }
+.crp-table--projarea .crp-ck input { cursor: pointer; }
 .crp-projgrp td { background: #f4f6f9; border-top: 1.5px solid var(--ink); font-weight: 800; padding-top: 6px; padding-bottom: 5px; }
 .crp-projgrp-name { text-transform: uppercase; letter-spacing: .3px; font-size: 11px; color: var(--ink); }
 .crp-projtr:hover td { background: rgba(225,0,32,0.035); }
+.crp-projtr.sel td { background: rgba(225,0,32,0.06); }
 .crp-projtd { font-weight: 600; }
 
 .crp-projpick { display: flex; gap: 10px; flex-wrap: wrap; }
