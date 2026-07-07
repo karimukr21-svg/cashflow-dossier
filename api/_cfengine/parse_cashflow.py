@@ -292,6 +292,14 @@ def detect_header(rows, as_of):
             return {'mode': 'datetime', 'header_row': ri, 'label_col': lc,
                     'section_col': max(0, lc - 1), 'periods': periods}
     # --- year-grouped axis ---
+    # A file can carry more than one header row bearing year-block tokens: the real
+    # year-header row ('ACT 2024 | Actual | Plan 2026') AND a stray 'Actual' marker
+    # sub-row that only tags which elapsed months are actual and carries NO year
+    # anchors (seen on Egypt's May file). Taking the first such row lets the bare
+    # marker row mis-thread the whole axis (2025 walks into 2027 and gets dropped).
+    # So gather every candidate header row and prefer the one with the most EXPLICIT
+    # year tokens; ties fall back to the earliest row (the original behaviour).
+    candidates = []
     for ri, row in enumerate(rows[:10]):
         blocks = [(ci, yb) for ci, v in enumerate(row)
                   for yb in [yearblock_tokens(v)] if yb]
@@ -302,12 +310,15 @@ def detect_header(rows, as_of):
             months = [(ci, *month_year(v)) for ci, v in enumerate(rows[mr])
                       if month_num(v) is not None]   # [(col, month, explicit_year|None)]
             if len(months) >= 3:
-                lc = find_label_col(row)
-                if find_label_col(rows[mr]) is not None and not is_date(rows[mr][lc] if lc < len(rows[mr]) else None):
-                    pass
-                periods = _year_grouped_periods(blocks, months, as_of)
-                return {'mode': 'year-grouped', 'header_row': mr, 'label_col': lc,
-                        'section_col': max(0, lc - 1), 'periods': periods}
+                explicit = sum(len(yb['years']) for _, yb in blocks)
+                candidates.append((explicit, ri, row, blocks, mr, months))
+                break
+    if candidates:
+        explicit, ri, row, blocks, mr, months = max(candidates, key=lambda c: (c[0], -c[1]))
+        lc = find_label_col(row)
+        periods = _year_grouped_periods(blocks, months, as_of)
+        return {'mode': 'year-grouped', 'header_row': mr, 'label_col': lc,
+                'section_col': max(0, lc - 1), 'periods': periods}
     # --- bare month-name axis (single year, inferred) ---
     for ri, row in enumerate(rows[:10]):
         months = [(ci, *month_year(v)) for ci, v in enumerate(row)

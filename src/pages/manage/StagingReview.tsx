@@ -247,8 +247,13 @@ function CashflowGrid({ runId, currency, nonce, published }:
       }
     }
   }
-  const opening = (ym: string) => derivedOpen[ym] ?? 0
-  const ending = (ym: string) => derivedEnd[ym] ?? 0
+  // Prefer the file's OWN stated opening/ending balance where the rollup carries one for
+  // that month (authoritative + period-stable) — same policy as the debt stocks below.
+  // Fall back to the derived walk only where the file has no stated balance. This stops
+  // the displayed balance drifting from the file when the summed flows don't reconcile to
+  // the stated balance (consolidation plugs / JV shares).
+  const opening = (ym: string) => (yd.opening?.[ym] != null ? at(yd.opening, ym) : (derivedOpen[ym] ?? 0))
+  const ending = (ym: string) => (yd.ending?.[ym] != null ? at(yd.ending, ym) : (derivedEnd[ym] ?? 0))
 
   // The file's OWN stated figures (the rollup), for the variance comparison.
   const fsec = yd.file_sections || {}

@@ -1,18 +1,16 @@
-/* Derived balances — semantic chain for cash position.
+/* Balances for cash position — STATED where the source has them, derived across gaps.
  *
- *   opening[ym]  = (ym === first ? anchor : closing[prevYM])
- *   closing[ym]  = opening[ym] + sum(Receipts + Payments)[ym]
+ *   opening[ym]  = stated Opening Balance at ym, else (ym === first ? anchor : closing[prevYM])
+ *   closing[ym]  = stated Ending Balance at ym,  else opening[ym] + sum(Receipts + Payments)[ym]
  *
- * Anchor = sum of Opening Balance category line values at the first month
- * in scope (typically a single row from Tony's source).
- *
- * Loans / Overdrafts are NOT part of this chain — they're separate balance
- * tracks. Use the stored values for those rows.
- *
- * Why derived: storing closing balances per period invites internal
- * inconsistency (closing[Apr] != opening[May] in the source, etc.).
- * Deriving guarantees the chain holds and surfaces movement attribution
- * cleanly.
+ * Why prefer stated: a pure flow-chain (anchor at the first month in scope + roll flows
+ * forward) has two failure modes the source doesn't — (1) it DRIFTS from the file when the
+ * flows don't perfectly reconcile to the stated balances (consolidation plugs, JV shares),
+ * and (2) it MOVES with the selected period, because the anchor is whatever month is first
+ * in view. Reading the source's stated Opening/Ending Balance line at each month fixes both:
+ * a stated month is period-independent and ties the file. We re-anchor at every stated month
+ * and only chain flows across months that have no stated balance (so areas whose source
+ * carries no balance rows still work). Loans/Overdrafts are separate tracks (stored directly).
  */
 
 import type { CfCell, CfLine } from './queries'
@@ -33,38 +31,41 @@ export function computeDerivedBalances(opts: {
   const lineByCode = new Map<string, CfLine>()
   for (const l of lines) lineByCode.set(l.line_code, l)
 
-  /* Anchor: sum of Opening Balance lines at the first scoped month. */
   const fromYM = fromYear * 100 + fromMonth
   const toYM = toYear * 100 + toMonth
-  let anchor = 0
-  for (const c of cells) {
-    const ym = c.year * 100 + c.month
-    if (ym !== fromYM) continue
-    const line = lineByCode.get(c.line_code)
-    if (!line || line.category !== 'Opening Balance') continue
-    anchor += c.value
-  }
 
-  /* Movement per ym: receipts + payments (signed values from source). */
+  /* Collect per-ym: the source's STATED opening/ending balance lines, and the flow
+   * movement (receipts + payments). Stated balances are preferred; flows fill gaps. */
+  const statedOpenByYM = new Map<number, number>()
+  const statedCloseByYM = new Map<number, number>()
   const movementByYM = new Map<number, number>()
   for (const c of cells) {
     const ym = c.year * 100 + c.month
     if (ym < fromYM || ym > toYM) continue
     const line = lineByCode.get(c.line_code)
-    if (!line || (line.nature !== 'Receipts' && line.nature !== 'Payments')) continue
-    movementByYM.set(ym, (movementByYM.get(ym) || 0) + c.value)
+    if (!line) continue
+    if (line.category === 'Opening Balance')
+      statedOpenByYM.set(ym, (statedOpenByYM.get(ym) || 0) + c.value)
+    else if (line.category === 'Ending Balance')
+      statedCloseByYM.set(ym, (statedCloseByYM.get(ym) || 0) + c.value)
+    else if (line.nature === 'Receipts' || line.nature === 'Payments')
+      movementByYM.set(ym, (movementByYM.get(ym) || 0) + c.value)
   }
 
-  /* Chain forward */
+  /* Chain forward, re-anchoring on any stated balance so displayed values tie the file
+   * and don't drift with the selected period. */
+  const anchor = statedOpenByYM.get(fromYM) ?? 0
   const openingByYM = new Map<number, number>()
   const closingByYM = new Map<number, number>()
   let prevClosing = anchor
   let y = fromYear, m = fromMonth
   while (y < toYear || (y === toYear && m <= toMonth)) {
     const ym = y * 100 + m
-    const opening = (ym === fromYM) ? anchor : prevClosing
+    const opening = statedOpenByYM.has(ym) ? statedOpenByYM.get(ym)!
+                  : (ym === fromYM ? anchor : prevClosing)
     const movement = movementByYM.get(ym) || 0
-    const closing = opening + movement
+    const closing = statedCloseByYM.has(ym) ? statedCloseByYM.get(ym)!
+                  : opening + movement
     openingByYM.set(ym, opening)
     closingByYM.set(ym, closing)
     prevClosing = closing
