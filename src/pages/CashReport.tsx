@@ -270,9 +270,9 @@ function sectionCards(matched: AreaAgg[], lines: CfLine[]): SectionCard[] {
 }
 
 /* KPI tile band — the headline numbers, shared across the three pages. */
-function KpiBand({ cards }: { cards: { label: string; value: string; cls?: string; sub?: string }[] }) {
+function KpiBand({ cards, compact }: { cards: { label: string; value: string; cls?: string; sub?: string }[]; compact?: boolean }) {
   return (
-    <div className="crp-kpis">
+    <div className={`crp-kpis${compact ? ' crp-kpis--compact' : ''}`}>
       {cards.map((c, i) => (
         <div className="crp-kpi" key={i}>
           <div className="crp-kpi-l">{c.label}</div>
@@ -555,6 +555,7 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [anchor, setAnchor] = useState<number | null>(null)   // last-clicked row for shift-range
   const [loading, setLoading] = useState(false)
+  const [moverFilter, setMoverFilter] = useState<'both' | 'pos' | 'neg'>('both')   // movers list: both / positive / negative
 
   useEffect(() => {
     if (!scope.primaryVersion || (!allMode && !areaId)) { setCells([]); return }
@@ -595,9 +596,16 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
       .sort((p, q) => Math.abs(q.net) - Math.abs(p.net))
   }, [cells, flowCodes, fxMap])
 
-  const maxAbs = Math.max(1, ...ranking.map(r => Math.abs(r.net)))
+  // Movers filter — `ranking` is sorted by |net| desc (biggest movers first), so
+  // filtering by sign keeps that order: top gainers, or top drainers. Drives the
+  // list, the top-N picks, and which project the detail panel defaults to.
+  const shown = useMemo(() =>
+    moverFilter === 'pos' ? ranking.filter(r => r.net > 0)
+    : moverFilter === 'neg' ? ranking.filter(r => r.net < 0)
+    : ranking, [ranking, moverFilter])
+  const maxAbs = Math.max(1, ...shown.map(r => Math.abs(r.net)))
   const bigCut = maxAbs * 0.12
-  const sel = project || ranking[0]?.key || ''
+  const sel = project || shown[0]?.key || ''
   const selArea = sel ? sel.slice(0, sel.indexOf(SEP)) : ''
   const selCode = sel ? sel.slice(sel.indexOf(SEP) + 1) : ''
 
@@ -636,12 +644,12 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
 
   const toggle = (key: string) => setSelected(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
   // Quick-pick the top-N ranked projects (big movers first) so you don't tick each box.
-  const pickTop = (n: number) => { setSelected(new Set(ranking.slice(0, n).map(r => r.key))); setAnchor(null) }
+  const pickTop = (n: number) => { setSelected(new Set(shown.slice(0, n).map(r => r.key))); setAnchor(null) }
   // Shift-click a checkbox to select the whole range from the last clicked row.
   const rangeSelect = (idx: number) => setSelected(prev => {
     if (anchor == null) return prev
     const n = new Set(prev), [a, b] = anchor < idx ? [anchor, idx] : [idx, anchor]
-    for (let i = a; i <= b; i++) n.add(ranking[i].key)
+    for (let i = a; i <= b; i++) n.add(shown[i].key)
     return n
   })
   const printProjects = async (keys: string[]) => {
@@ -680,7 +688,7 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
         <img className="crp-logo" src="/ccc-logo.png" alt="CCC" />
         <div className="crp-head-t">
           <h1>Cash Flow Report — Projects</h1>
-          <div className="crp-sub">{areaLabel} · monthly actuals Jan–{asOfLabel} · USD millions · {ranking.length} projects</div>
+          <div className="crp-sub">{areaLabel} · monthly actuals Jan–{asOfLabel} · USD millions · {shown.length}{moverFilter !== 'both' ? ` ${moverFilter === 'pos' ? 'positive' : 'negative'}` : ''} project{shown.length === 1 ? '' : 's'}</div>
         </div>
         <div className="crp-brand">Treasury</div>
       </div>
@@ -691,12 +699,22 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
           {areaOptions.map(a => <option key={a.areaId} value={a.areaId}>{a.label}</option>)}
         </select>
         {ranking.length > 0 && (
+          <div className="crp-movers" role="group" aria-label="Show which cash movers">
+            <span className="crp-pick-l">Movers</span>
+            {([['both', 'Both'], ['pos', 'Positive'], ['neg', 'Negative']] as const).map(([k, l]) => (
+              <button key={k} className={`crp-moverbtn ${moverFilter === k ? 'active' : ''}`}
+                title={k === 'pos' ? 'Biggest cash generators' : k === 'neg' ? 'Biggest cash consumers' : 'Biggest movers, either direction'}
+                onClick={() => { setMoverFilter(k); setProject('') }}>{l}</button>
+            ))}
+          </div>
+        )}
+        {shown.length > 0 && (
           <div className="crp-pick">
             <span className="crp-pick-l">Select</span>
-            {[5, 10, 20].filter(n => n < ranking.length).map(n => (
+            {[5, 10, 20].filter(n => n < shown.length).map(n => (
               <button key={n} className="crp-pickbtn" onClick={() => pickTop(n)}>Top {n}</button>
             ))}
-            <button className="crp-pickbtn" onClick={() => pickTop(ranking.length)}>All</button>
+            <button className="crp-pickbtn" onClick={() => pickTop(shown.length)}>All</button>
             <button className="crp-pickbtn" disabled={selected.size === 0} onClick={() => { setSelected(new Set()); setAnchor(null) }}>None</button>
           </div>
         )}
@@ -707,9 +725,9 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
       <div className="crp-grid crp-grid--proj">
         {/* Ranked project list — big movers on top, tick to print */}
         <div className="crp-card">
-          <div className="crp-card-h">Projects <span>· by cash movement</span></div>
+          <div className="crp-card-h">Projects <span>· by cash movement{moverFilter === 'pos' ? ' · generators' : moverFilter === 'neg' ? ' · consumers' : ''}</span></div>
           <div className="crp-projlist">
-            {ranking.map((r, idx) => {
+            {shown.map((r, idx) => {
               const big = Math.abs(r.net) >= bigCut
               return (
                 <div key={r.key} className={`crp-projrow ${r.key === sel ? 'active' : ''}`}>
@@ -724,7 +742,7 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
                 </div>
               )
             })}
-            {ranking.length === 0 ? <div className="crp-note crp-note--empty">No project-grain cash flow for this scope.</div> : null}
+            {shown.length === 0 ? <div className="crp-note crp-note--empty">{ranking.length === 0 ? 'No project-grain cash flow for this scope.' : `No ${moverFilter === 'pos' ? 'positive' : 'negative'} movers in this scope.`}</div> : null}
           </div>
           <div className="crp-note"><span className="crp-bigdot" /> Big movers (largest cash movement) — the ones worth printing. Use <b>Top 5/10/20</b> above, or tick projects (shift-click for a range), then “Print selected”. Bars USD, net of the elapsed months.</div>
         </div>
@@ -736,19 +754,27 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
             : !fxOk ? <div className="crp-note crp-note--empty">No FX rate for {currency} — cannot show this project in USD.</div>
             : <>
                 <div className="crp-card-h">{selCode} <span>· {areaLabelOf(selArea)} · USD millions{currency !== 'USD' ? ` (from ${currency})` : ''}</span></div>
-                <KpiBand cards={[
-                  { label: 'Net cash movement · YTD', value: fMm(matrix.netTotal), cls: cls(matrix.netTotal) },
-                  { label: 'Net from operations', value: fMm(secNet('Operations')), cls: cls(secNet('Operations')) },
-                  { label: 'Net financing', value: fMm(secNet('Bank Financing')), cls: cls(secNet('Bank Financing')) },
-                ]} />
-                {/* Net cash movement + trade-payables balance, side by side. */}
+                {/* Each chart carries its own stat cards directly above it, so the
+                    figures read against the chart they describe (not floating). */}
                 <div className="crp-chartpair">
                   <div className="crp-chartcell">
                     <div className="crp-chart-cap">Net cash movement <span>· by month</span></div>
+                    <KpiBand compact cards={[
+                      { label: 'Net cash movement · YTD', value: fMm(matrix.netTotal), cls: cls(matrix.netTotal) },
+                      { label: 'Net from operations', value: fMm(secNet('Operations')), cls: cls(secNet('Operations')) },
+                      { label: 'Net financing', value: fMm(secNet('Bank Financing')), cls: cls(secNet('Bank Financing')) },
+                    ]} />
                     <Svg html={netTrendSvg(months.map(m => MONTHS[m - 1]), matrix.netMovement)} />
                   </div>
                   <div className="crp-chartcell">
                     <div className="crp-chart-cap">Trade payables <span>· balance{payBooks ? ` · ${payBooks} book${payBooks === 1 ? '' : 's'}` : ''}</span></div>
+                    {payBooks > 0 && payPts.length > 0 && (
+                      <KpiBand compact cards={[
+                        { label: `Payables · ${asOfLabel}`, value: fMm(payLast), cls: cls(payLast) },
+                        { label: 'At start (Dec)', value: fMm(payFirst), cls: cls(payFirst) },
+                        { label: 'Change over period', value: fMm(payDelta), cls: cls(payDelta) },
+                      ]} />
+                    )}
                     {payBooks === 0
                       ? <div className="crp-note crp-note--empty">Not mapped to a book yet — payables sit in the area bucket. Assign in Manage → Payables map.</div>
                       : payPts.length === 0
@@ -756,13 +782,6 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
                       : <Svg html={payablesTrendSvg(payPts)} />}
                   </div>
                 </div>
-                {payBooks > 0 && payPts.length > 0 && (
-                  <KpiBand cards={[
-                    { label: `Payables · ${asOfLabel}`, value: fMm(payLast), cls: cls(payLast) },
-                    { label: 'At start (Dec)', value: fMm(payFirst), cls: cls(payFirst) },
-                    { label: 'Change over period', value: fMm(payDelta), cls: cls(payDelta) },
-                  ]} />
-                )}
                 <table className="crp-table crp-table--matrix">
                   <thead><tr>
                     <th>Line item</th>

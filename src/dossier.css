@@ -1571,6 +1571,12 @@ body, html, #root {
 .crp-kpi-v { font-size: 25px; font-weight: 800; margin-top: 2px; color: var(--ink); }
 .crp-kpi-v.neg { color: var(--crimson); } .crp-kpi-v.pos { color: var(--good); }
 .crp-kpi-s { font-size: 9.5px; color: var(--mute); margin-top: 1px; }
+/* Compact KPI cards — used when the stat cards sit inside a chart cell, directly
+   above the chart they describe. Smaller so three fit a half-width column. */
+.crp-kpis--compact { gap: 8px; margin-bottom: 9px; }
+.crp-kpis--compact .crp-kpi { flex: 1 1 82px; min-width: 82px; padding: 6px 10px; border-radius: 8px; }
+.crp-kpis--compact .crp-kpi-l { font-size: 7.5px; }
+.crp-kpis--compact .crp-kpi-v { font-size: 18px; }
 .crp-rcol { display: flex; flex-direction: column; gap: 14px; }
 .crp-svg { margin-top: 4px; max-width: 760px; }
 /* Project detail: net cash movement + trade-payables charts, side by side */
@@ -1670,6 +1676,14 @@ body, html, #root {
 .crp-projpick { display: flex; gap: 10px; flex-wrap: wrap; }
 .crp-projtop { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .crp-pick { display: flex; align-items: center; gap: 6px; }
+/* Movers filter — segmented Both / Positive / Negative on the Projects page. */
+.crp-movers { display: inline-flex; align-items: center; gap: 6px; }
+.crp-movers > .crp-moverbtn:first-of-type { border-top-left-radius: 7px; border-bottom-left-radius: 7px; }
+.crp-movers > .crp-moverbtn:last-of-type { border-top-right-radius: 7px; border-bottom-right-radius: 7px; }
+.crp-moverbtn { border: 1px solid var(--border); border-left-width: 0; background: var(--surface, #fff); color: var(--mute); font-size: 12px; font-weight: 600; padding: 5px 12px; cursor: pointer; }
+.crp-moverbtn:first-of-type { border-left-width: 1px; }
+.crp-moverbtn:hover { color: var(--crimson); }
+.crp-moverbtn.active { background: var(--crimson); border-color: var(--crimson); color: #fff; }
 .crp-pick-l { font-size: 10px; letter-spacing: .4px; text-transform: uppercase; color: var(--mute); font-weight: 700; margin-right: 2px; }
 .crp-pickbtn { border: 1px solid var(--border); background: var(--surface, #fff); color: var(--ink); font-size: 12px; font-weight: 600; padding: 5px 11px; border-radius: 7px; cursor: pointer; }
 .crp-pickbtn:hover { border-color: var(--crimson); color: var(--crimson); }
