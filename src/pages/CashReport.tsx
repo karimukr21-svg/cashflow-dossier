@@ -134,11 +134,15 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
     { key: 'group', label: 'Group' }, { key: 'area', label: 'Area' }, { key: 'sections', label: 'Sections' },
     { key: 'project', label: 'Project' }, { key: 'movers', label: 'Movers' },
   ]
-  const canPrint = level === 'group' || level === 'area' || level === 'sections'
+  const canPrint = level === 'group' || level === 'area' || level === 'sections' || level === 'movers'
   const slot = useTopbarExtras()
   const scopeSlot = useTopbarScope()
+  // The Movers view owns its own print (it holds the grouped/ignored data); it
+  // registers the fn here so the shared top-bar Print button can fire it.
+  const moversPrint = useRef<(() => void) | null>(null)
 
   const print = () => {
+    if (level === 'movers') { moversPrint.current?.(); return }
     const w = window.open('', '_blank'); if (!w) return
     let html = ''
     if (level === 'area') {
@@ -197,7 +201,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
         : level === 'area' ? <AreaView matched={cfAreas} year={year} asOfLabel={asOfLabel} startLabel={startLabel} onOpenProjects={(id) => { setProjArea(id); setLevel('project') }} />
         : level === 'sections' ? <SectionsView scope={scope} matched={cfAreas} asOfLabel={asOfLabel} />
         : level === 'project' ? <ProjectView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} projArea={projArea} setProjArea={setProjArea} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} />
-        : level === 'movers' ? <MoversView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} startLabel={startLabel} />
+        : level === 'movers' ? <MoversView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} startLabel={startLabel} registerPrint={fn => { moversPrint.current = fn }} />
         : null}
     </div>
   )
@@ -551,9 +555,10 @@ function AreaView({ matched, year, asOfLabel, startLabel, onOpenProjects }: {
  * the CCC-share trade payables of each project's mapped TB books (blank where a
  * project is not yet mapped — same as the Area page). */
 type MoverRow = { key: string; area: string; code: string; netOps: number; payStart: number | null; payEnd: number | null }
-function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, startLabel }: {
+function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, startLabel, registerPrint }: {
   scope: Scope; fxMap: Map<string, number | null>; areaOptions: { areaId: string; label: string }[]
   year: number; asOfMonth: number; asOfLabel: string; startLabel: string
+  registerPrint: (fn: (() => void) | null) => void
 }) {
   const ALL = '__ALL__', SEP = '', MINIMAL = 100_000   // "minimal mover" = |CFO| under 0.1m
   const [areaId, setAreaId] = useState<string>(ALL)
@@ -671,6 +676,8 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
       <script>window.onload=function(){window.print()}</script></body></html>`
     w.document.write(html); w.document.close()
   }
+  // Keep the top-bar Print button wired to the current print closure.
+  useEffect(() => { registerPrint(kept.length ? printMovers : null); return () => registerPrint(null) })
 
   return (
     <div className="crp-page">
@@ -705,7 +712,6 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
             {ignored.size > 0 && <button className="crp-pickbtn" onClick={resetIgnored}>Reset ({ignored.size} ignored)</button>}
           </div>
         )}
-        <button className="crp-print" disabled={kept.length === 0} onClick={printMovers}>Print</button>
       </div>
 
       <div className="crp-grid">
