@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useTopbarExtras, useTopbarScope } from '@/lib/displayFmt'
 import {
   fetchActuals, fetchForecasts, fetchDebtStocks, fetchPayablesTrajectory, fetchFxRate, fetchProjectCells,
-  fetchPayablesMaps, fetchPayablesForBooks,
+  fetchPayablesMaps, fetchPayablesForBooks, fetchPayablesBookBalances,
   type CfCell, type CfLine, type PayablesTrajRow,
   type CanonicalArea, type AreaGroup, type PayablesMaps,
 } from '@/lib/queries'
@@ -27,8 +27,8 @@ import type { Scope } from './Dossier'
  * Payables = the editable trade_payables account-group (see the Definitions
  * pass). Coverage of matched vs unmapped areas is its own pass. */
 
-type Level = 'group' | 'area' | 'sections' | 'project'
-const LEVELS: Level[] = ['group', 'area', 'sections', 'project']
+type Level = 'group' | 'area' | 'sections' | 'project' | 'movers'
+const LEVELS: Level[] = ['group', 'area', 'sections', 'project', 'movers']
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 const fMm = (v: number | null | undefined) => v == null ? '—' : fmt(v / 1e6, { decimals: 1 })
@@ -132,7 +132,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
 
   const tabs: { key: Level; label: string }[] = [
     { key: 'group', label: 'Group' }, { key: 'area', label: 'Area' }, { key: 'sections', label: 'Sections' },
-    { key: 'project', label: 'Project' },
+    { key: 'project', label: 'Project' }, { key: 'movers', label: 'Movers' },
   ]
   const canPrint = level === 'group' || level === 'area' || level === 'sections'
   const slot = useTopbarExtras()
@@ -197,6 +197,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
         : level === 'area' ? <AreaView matched={cfAreas} year={year} asOfLabel={asOfLabel} startLabel={startLabel} onOpenProjects={(id) => { setProjArea(id); setLevel('project') }} />
         : level === 'sections' ? <SectionsView scope={scope} matched={cfAreas} asOfLabel={asOfLabel} />
         : level === 'project' ? <ProjectView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} projArea={projArea} setProjArea={setProjArea} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} />
+        : level === 'movers' ? <MoversView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} startLabel={startLabel} />
         : null}
     </div>
   )
@@ -542,6 +543,179 @@ function AreaView({ matched, year, asOfLabel, startLabel, onOpenProjects }: {
   )
 }
 
+/* ── Movers view — the Area table, but one row per PROJECT ───────────────────
+ * Mirrors the Area page: net cash from operations (Operation + Claims, USD) +
+ * trade-payables position at two periods + Δ, per project, GROUPED BY AREA with
+ * an area subtotal and a grand total. Sortable by cash from ops (Both / Positive
+ * / Negative), which surfaces the biggest movers in each direction. Payables are
+ * the CCC-share trade payables of each project's mapped TB books (blank where a
+ * project is not yet mapped — same as the Area page). */
+type MoverRow = { key: string; area: string; code: string; netOps: number; payStart: number | null; payEnd: number | null }
+function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, startLabel }: {
+  scope: Scope; fxMap: Map<string, number | null>; areaOptions: { areaId: string; label: string }[]
+  year: number; asOfMonth: number; asOfLabel: string; startLabel: string
+}) {
+  const ALL = '__ALL__', SEP = ''
+  const [areaId, setAreaId] = useState<string>(ALL)
+  const [moverFilter, setMoverFilter] = useState<'both' | 'pos' | 'neg'>('both')
+  const [cells, setCells] = useState<(CfCell & { project_code: string | null; currency?: string })[]>([])
+  const [loading, setLoading] = useState(false)
+  const [payMaps, setPayMaps] = useState<PayablesMaps | null>(null)
+  const [bookBal, setBookBal] = useState<Map<string, Map<number, number>>>(new Map())
+  const decP = (year - 1) * 100 + 12, asOfP = year * 100 + asOfMonth
+
+  useEffect(() => { fetchPayablesMaps().then(setPayMaps).catch(() => setPayMaps(null)) }, [])
+  useEffect(() => { fetchPayablesBookBalances([decP, asOfP]).then(setBookBal).catch(() => setBookBal(new Map())) }, [decP, asOfP])
+  useEffect(() => {
+    if (!scope.primaryVersion) { setCells([]); return }
+    let cancel = false; setLoading(true)
+    fetchProjectCells({ version: scope.primaryVersion, cfArea: areaId === ALL ? undefined : areaId, fromYear: year, fromMonth: 1, toYear: year, toMonth: asOfMonth })
+      .then(rows => { if (!cancel) setCells(rows) })
+      .catch(() => { if (!cancel) setCells([]) })
+      .finally(() => { if (!cancel) setLoading(false) })
+    return () => { cancel = true }
+  }, [areaId, scope.primaryVersion, year, asOfMonth])
+
+  const opCodes = useMemo(() => new Set(scope.lines.filter(l => l.category === 'Operation' || l.category === 'Claims').map(l => l.line_code)), [scope.lines])
+  const rateOf = (cur?: string) => (cur || 'USD') === 'USD' ? 1 : (fxMap.get(cur || '') ?? null)
+  const areaLabelOf = (a: string) => areaOptions.find(o => o.areaId === a)?.label || a
+
+  // Per-project net cash from operations (USD).
+  const projOps = useMemo(() => {
+    const agg = new Map<string, { area: string; code: string; netOps: number }>()
+    for (const c of cells) {
+      const code = c.project_code; if (!code) continue
+      if (!opCodes.has(c.line_code)) continue
+      const r = rateOf(c.currency); if (r == null) continue
+      const key = c.area + SEP + code
+      let a = agg.get(key); if (!a) { a = { area: c.area, code, netOps: 0 }; agg.set(key, a) }
+      a.netOps += c.value * r
+    }
+    return agg
+  }, [cells, opCodes, fxMap])
+
+  // Attach each project's trade-payables at the two periods (via its books).
+  const rows = useMemo<MoverRow[]>(() => {
+    return [...projOps.entries()].map(([key, x]) => {
+      const cid = payMaps?.cfCodeToCanon.get(x.code.toUpperCase())
+      const books = cid ? (payMaps?.canonToBooks.get(cid) ?? []) : []
+      let ps = 0, pe = 0, has = false
+      for (const b of books) { const bm = bookBal.get(b); if (bm) { ps += bm.get(decP) ?? 0; pe += bm.get(asOfP) ?? 0; has = true } }
+      return { key, area: x.area, code: x.code, netOps: x.netOps, payStart: has ? ps : null, payEnd: has ? pe : null }
+    }).sort((a, b) => Math.abs(b.netOps) - Math.abs(a.netOps))
+  }, [projOps, payMaps, bookBal, decP, asOfP])
+
+  const shown = useMemo(() =>
+    moverFilter === 'pos' ? rows.filter(r => r.netOps > 0)
+    : moverFilter === 'neg' ? rows.filter(r => r.netOps < 0)
+    : rows, [rows, moverFilter])
+
+  const groups = useMemo(() => {
+    const m = new Map<string, MoverRow[]>()
+    for (const r of shown) { const arr = m.get(r.area) ?? []; arr.push(r); m.set(r.area, arr) }
+    return [...m.entries()].map(([area, items]) => {
+      let ps = 0, pe = 0, hasPay = false
+      for (const r of items) if (r.payStart != null || r.payEnd != null) { ps += r.payStart ?? 0; pe += r.payEnd ?? 0; hasPay = true }
+      return {
+        area, label: areaLabelOf(area),
+        netOps: items.reduce((t, r) => t + r.netOps, 0),
+        payStart: hasPay ? ps : null, payEnd: hasPay ? pe : null,
+        items: [...items].sort((a, b) => b.netOps - a.netOps),
+      }
+    }).sort((a, b) => Math.abs(b.netOps) - Math.abs(a.netOps))
+  }, [shown])
+
+  const grand = useMemo(() => {
+    let netOps = 0, ps = 0, pe = 0, hasPay = false
+    for (const r of shown) { netOps += r.netOps; if (r.payStart != null || r.payEnd != null) { ps += r.payStart ?? 0; pe += r.payEnd ?? 0; hasPay = true } }
+    return { netOps, payStart: hasPay ? ps : null, payEnd: hasPay ? pe : null }
+  }, [shown])
+
+  const areaLabel = areaId === ALL ? 'All areas' : areaLabelOf(areaId)
+  const payD = (s: number | null, e: number | null) => (s != null && e != null) ? e - s : null
+
+  return (
+    <div className="crp-page">
+      <div className="crp-head">
+        <img className="crp-logo" src="/ccc-logo.png" alt="CCC" />
+        <div className="crp-head-t">
+          <h1>Cash Flow Report — Projects by area</h1>
+          <div className="crp-sub">{areaLabel} · net cash from operations · Jan–{asOfLabel} · USD millions · {shown.length}{moverFilter !== 'both' ? ` ${moverFilter === 'pos' ? 'positive' : 'negative'}` : ''} project{shown.length === 1 ? '' : 's'}</div>
+        </div>
+        <div className="crp-brand">Treasury</div>
+      </div>
+
+      <div className="crp-projtop no-print">
+        <select className="crp-select" value={areaId} onChange={e => setAreaId(e.target.value)}>
+          <option value={ALL}>All areas</option>
+          {areaOptions.map(a => <option key={a.areaId} value={a.areaId}>{a.label}</option>)}
+        </select>
+        {rows.length > 0 && (
+          <div className="crp-movers" role="group" aria-label="Show which cash movers">
+            <span className="crp-pick-l">Movers</span>
+            {([['both', 'Both'], ['pos', 'Positive'], ['neg', 'Negative']] as const).map(([k, l]) => (
+              <button key={k} className={`crp-moverbtn ${moverFilter === k ? 'active' : ''}`}
+                title={k === 'pos' ? 'Biggest cash generators' : k === 'neg' ? 'Biggest cash consumers' : 'Biggest movers, either direction'}
+                onClick={() => setMoverFilter(k)}>{l}</button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="crp-grid">
+        <div className="crp-card">
+          <div className="crp-card-h">Projects <span>· net cash from operations &amp; trade payables, by area{moverFilter === 'pos' ? ' · positive' : moverFilter === 'neg' ? ' · negative' : ''}</span></div>
+          {loading ? <div className="crp-note crp-note--empty">Loading…</div>
+            : shown.length === 0 ? <div className="crp-note crp-note--empty">{rows.length === 0 ? 'No project-grain cash flow for this scope.' : `No ${moverFilter === 'pos' ? 'positive' : 'negative'} projects in this scope.`}</div>
+            : <table className="crp-table crp-table--area crp-table--projarea">
+              <thead><tr>
+                <th>Project</th>
+                <th className="r">Net cash from ops</th>
+                <th className="r crp-sep-l">Payables {startLabel}</th>
+                <th className="r">Payables {asOfLabel}</th>
+                <th className="r">Δ</th>
+              </tr></thead>
+              <tbody>
+                {groups.flatMap(g => [
+                  <tr className="crp-projgrp" key={g.area}>
+                    <td className="crp-projgrp-name">{g.label} <span className="crp-key">· {g.items.length}</span></td>
+                    <td className={`r ${cls(g.netOps)}`}>{fMm(g.netOps)}</td>
+                    <td className={`r crp-sep-l ${cls(g.payStart)}`}>{fMm(g.payStart)}</td>
+                    <td className={`r ${cls(g.payEnd)}`}>{fMm(g.payEnd)}</td>
+                    <td className={`r ${cls(payD(g.payStart, g.payEnd))}`}>{fMd(payD(g.payStart, g.payEnd))}</td>
+                  </tr>,
+                  ...g.items.map(r => (
+                    <tr className="crp-projtr" key={r.key}>
+                      <td className="crp-projtd">{r.code}</td>
+                      <td className={`r ${cls(r.netOps)}`}>{fMm(r.netOps)}</td>
+                      <td className={`r crp-sep-l ${cls(r.payStart)}`}>{fMm(r.payStart)}</td>
+                      <td className={`r ${cls(r.payEnd)}`}>{fMm(r.payEnd)}</td>
+                      <td className={`r ${cls(payD(r.payStart, r.payEnd))}`}>{fMd(payD(r.payStart, r.payEnd))}</td>
+                    </tr>
+                  )),
+                ])}
+                <tr className="crp-total">
+                  <td>All shown ({shown.length})</td>
+                  <td className={`r ${cls(grand.netOps)}`}>{fMm(grand.netOps)}</td>
+                  <td className={`r crp-sep-l ${cls(grand.payStart)}`}>{fMm(grand.payStart)}</td>
+                  <td className={`r ${cls(grand.payEnd)}`}>{fMm(grand.payEnd)}</td>
+                  <td className={`r ${cls(payD(grand.payStart, grand.payEnd))}`}>{fMd(payD(grand.payStart, grand.payEnd))}</td>
+                </tr>
+              </tbody>
+            </table>}
+          <div className="crp-note">Net cash from operations (receipts − payments, USD, Jan–{asOfLabel}) — same basis as the Area page. Grouped by area with an area subtotal; use <b>Movers</b> to isolate positive or negative and sort by size. Payables = the project's CCC-share trade payables from its mapped Midas books ({startLabel} → {asOfLabel}); blank = not yet mapped to a book. Δ positive = paid down.</div>
+        </div>
+
+        <div className="crp-card">
+          <div className="crp-card-h">Net cash from operations <span>· top project movers</span></div>
+          <Svg html={areaBarsSvg(shown.map(r => ({ label: r.code, value: r.netOps })), undefined, { maxRows: 16 })} />
+          <div className="crp-note">Green = cash generated, crimson = consumed (USD, Jan–{asOfLabel}). Top 16 projects by size; the rest rolled into “Other”.</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ── Project view — line items × actual months (USD) ────────────────────────── */
 function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, asOfMonth, asOfLabel }: {
   scope: Scope; fxMap: Map<string, number | null>; areaOptions: { areaId: string; label: string }[]
@@ -576,62 +750,36 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
 
   const months = useMemo(() => Array.from({ length: asOfMonth }, (_, i) => i + 1), [asOfMonth])
   const flowCodes = useMemo(() => new Set(scope.lines.filter(l => l.nature !== 'Balance').map(l => l.line_code)), [scope.lines])
-  // Operations lines = the "net cash from operations" (CFO) basis — the same
-  // Operation + Claims categories buildModel uses for the Area page's netOps, so
-  // this project table is directly comparable to it (and to Tony's CFO file).
-  const opCodes = useMemo(() => new Set(scope.lines.filter(l => l.category === 'Operation' || l.category === 'Claims').map(l => l.line_code)), [scope.lines])
   const rateOf = (cur?: string) => (cur || 'USD') === 'USD' ? 1 : (fxMap.get(cur || '') ?? null)
   const areaLabelOf = (a: string) => areaOptions.find(o => o.areaId === a)?.label || a
 
-  // Per-project aggregates (USD): net cash from operations (CFO — the ranked +
-  // grouped metric, matching the Area page + Tony) and total net cash movement
-  // (drives the detail-panel default). Keyed by area+code so All-areas mode ranks
-  // every project across areas together.
+  // Rank projects by |net cash movement| (flow lines, USD) → big movers on top.
+  // Keyed by area+code so All-areas mode ranks every project across areas together.
   const ranking = useMemo(() => {
-    const agg = new Map<string, { area: string; code: string; net: number; netOps: number; openCash: number; endCash: number; cur: string; fxOk: boolean }>()
+    const agg = new Map<string, { area: string; code: string; net: number; cur: string; fxOk: boolean }>()
     for (const c of cells) {
       const code = c.project_code; if (!code) continue
       const key = c.area + SEP + code
-      let a = agg.get(key); if (!a) { a = { area: c.area, code, net: 0, netOps: 0, openCash: 0, endCash: 0, cur: 'USD', fxOk: true }; agg.set(key, a) }
+      let a = agg.get(key); if (!a) { a = { area: c.area, code, net: 0, cur: 'USD', fxOk: true }; agg.set(key, a) }
       if (c.currency && c.currency !== 'USD') a.cur = c.currency
-      const r = rateOf(c.currency); if (r == null) { a.fxOk = false; continue }
-      const usd = c.value * r
-      // cash position: opening balance @ Jan (year start), ending balance @ as-of
-      if (c.line_code === 'opening_balance') { if (c.month === 1) a.openCash += usd; continue }
-      if (c.line_code === 'ending_balance') { if (c.month === asOfMonth) a.endCash += usd; continue }
       if (!flowCodes.has(c.line_code)) continue
-      a.net += usd
-      if (opCodes.has(c.line_code)) a.netOps += usd
+      const r = rateOf(c.currency); if (r == null) { a.fxOk = false; continue }
+      a.net += c.value * r
     }
     return [...agg.entries()].map(([key, x]) => ({ key, ...x }))
-      .sort((p, q) => Math.abs(q.netOps) - Math.abs(p.netOps))
-  }, [cells, flowCodes, opCodes, fxMap, asOfMonth])
+      .sort((p, q) => Math.abs(q.net) - Math.abs(p.net))
+  }, [cells, flowCodes, fxMap])
 
-  // Movers filter on net cash from operations (Both / Positive / Negative).
+  // Movers filter — `ranking` is sorted by |net| desc (biggest movers first), so
+  // filtering by sign keeps that order: top gainers, or top drainers. Drives the
+  // list, the top-N picks, and which project the detail panel defaults to.
   const shown = useMemo(() =>
-    moverFilter === 'pos' ? ranking.filter(r => r.netOps > 0)
-    : moverFilter === 'neg' ? ranking.filter(r => r.netOps < 0)
+    moverFilter === 'pos' ? ranking.filter(r => r.net > 0)
+    : moverFilter === 'neg' ? ranking.filter(r => r.net < 0)
     : ranking, [ranking, moverFilter])
-  // Group the filtered projects by area (area sub-header + subtotal), like the
-  // Area page grouped one level down. Areas ordered by |subtotal|; projects
-  // within an area by net cash from ops (most positive → most negative).
-  const groups = useMemo(() => {
-    const m = new Map<string, typeof shown>()
-    for (const r of shown) { const arr = m.get(r.area) ?? []; arr.push(r); m.set(r.area, arr) }
-    return [...m.entries()].map(([area, items]) => ({
-      area, label: areaLabelOf(area),
-      netOps: items.reduce((t, r) => t + r.netOps, 0),
-      openCash: items.reduce((t, r) => t + r.openCash, 0),
-      endCash: items.reduce((t, r) => t + r.endCash, 0),
-      items: [...items].sort((a, b) => b.netOps - a.netOps),
-    })).sort((a, b) => Math.abs(b.netOps) - Math.abs(a.netOps))
-  }, [shown])
-  const flat = useMemo(() => groups.flatMap(g => g.items), [groups])
-  const flatIndex = useMemo(() => { const m = new Map<string, number>(); flat.forEach((r, i) => m.set(r.key, i)); return m }, [flat])
-  const grand = useMemo(() => shown.reduce((t, r) => ({
-    netOps: t.netOps + r.netOps, openCash: t.openCash + r.openCash, endCash: t.endCash + r.endCash,
-  }), { netOps: 0, openCash: 0, endCash: 0 }), [shown])
-  const sel = project || flat[0]?.key || ''
+  const maxAbs = Math.max(1, ...shown.map(r => Math.abs(r.net)))
+  const bigCut = maxAbs * 0.12
+  const sel = project || shown[0]?.key || ''
   const selArea = sel ? sel.slice(0, sel.indexOf(SEP)) : ''
   const selCode = sel ? sel.slice(sel.indexOf(SEP) + 1) : ''
 
@@ -675,7 +823,7 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
   const rangeSelect = (idx: number) => setSelected(prev => {
     if (anchor == null) return prev
     const n = new Set(prev), [a, b] = anchor < idx ? [anchor, idx] : [idx, anchor]
-    for (let i = a; i <= b; i++) n.add(flat[i].key)
+    for (let i = a; i <= b; i++) n.add(shown[i].key)
     return n
   })
   const printProjects = async (keys: string[]) => {
@@ -748,50 +896,32 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
         <button className="crp-print" disabled={selected.size === 0} onClick={() => printProjects([...selected])}>Print selected ({selected.size})</button>
       </div>
 
-      <div className="crp-grid">
-        {/* The Area page table, but rows are projects — grouped by area, with an
-            area subtotal per group and a grand total. Click a row → detail below. */}
+      <div className="crp-grid crp-grid--proj">
+        {/* Ranked project list — big movers on top, tick to print */}
         <div className="crp-card">
-          <div className="crp-card-h">Projects <span>· net cash from operations &amp; cash position, by area{moverFilter === 'pos' ? ' · positive' : moverFilter === 'neg' ? ' · negative' : ''}</span></div>
-          {shown.length === 0
-            ? <div className="crp-note crp-note--empty">{ranking.length === 0 ? 'No project-grain cash flow for this scope.' : `No ${moverFilter === 'pos' ? 'positive' : 'negative'} projects in this scope.`}</div>
-            : <table className="crp-table crp-table--area crp-table--projarea">
-              <thead><tr>
-                <th className="crp-ck"></th>
-                <th>Project</th>
-                <th className="r">Net cash from ops</th>
-                <th className="r crp-sep-l">Cash · Jan</th>
-                <th className="r">Cash · {asOfLabel}</th>
-                <th className="r">Δ</th>
-              </tr></thead>
-              <tbody>
-                {groups.map(g => (
-                  <ProjGroupRows key={g.area} g={g} sel={sel} selected={selected} anchor={anchor}
-                    flatIndex={flatIndex} setProject={setProject} setAnchor={setAnchor} toggle={toggle} rangeSelect={rangeSelect} />
-                ))}
-                <tr className="crp-total">
-                  <td className="crp-ck"></td>
-                  <td>All shown ({shown.length})</td>
-                  <td className={`r ${cls(grand.netOps)}`}>{fMm(grand.netOps)}</td>
-                  <td className={`r crp-sep-l ${cls(grand.openCash)}`}>{fMm(grand.openCash)}</td>
-                  <td className={`r ${cls(grand.endCash)}`}>{fMm(grand.endCash)}</td>
-                  <td className={`r ${cls(grand.endCash - grand.openCash)}`}>{fMd(grand.endCash - grand.openCash)}</td>
-                </tr>
-              </tbody>
-            </table>}
-          <div className="crp-note">Net cash from operations (receipts − payments, USD, Jan–{asOfLabel}) — the same basis as the Area page. Grouped by area with an area subtotal; use <b>Movers</b> to isolate positive or negative and sort by size. Cash = the project's cash balance at Jan-start vs {asOfLabel} (Δ = movement). Tick rows (shift-click for a range) to print; click a project to open its detail below.</div>
+          <div className="crp-card-h">Projects <span>· by cash movement{moverFilter === 'pos' ? ' · generators' : moverFilter === 'neg' ? ' · consumers' : ''}</span></div>
+          <div className="crp-projlist">
+            {shown.map((r, idx) => {
+              const big = Math.abs(r.net) >= bigCut
+              return (
+                <div key={r.key} className={`crp-projrow ${r.key === sel ? 'active' : ''}`}>
+                  <input type="checkbox" checked={selected.has(r.key)}
+                    onClick={e => { if (e.shiftKey && anchor != null) { e.preventDefault(); rangeSelect(idx) } else { setAnchor(idx) } }}
+                    onChange={() => toggle(r.key)} title="Tick to select · Shift-click to select a range" />
+                  <button className="crp-projname" onClick={() => setProject(r.key)} title="View this project">
+                    {big ? <span className="crp-bigdot" /> : null}<span className="crp-projcode">{r.code}</span>{allMode ? <span className="crp-projarea">{areaLabelOf(r.area)}</span> : null}
+                  </button>
+                  <div className="crp-projbar"><div className={`crp-projbar-fill ${r.net < 0 ? 'neg' : 'pos'}`} style={{ width: `${(Math.abs(r.net) / maxAbs) * 100}%` }} /></div>
+                  <div className={`crp-projval ${cls(r.net)}`}>{fMm(r.net)}</div>
+                </div>
+              )
+            })}
+            {shown.length === 0 ? <div className="crp-note crp-note--empty">{ranking.length === 0 ? 'No project-grain cash flow for this scope.' : `No ${moverFilter === 'pos' ? 'positive' : 'negative'} movers in this scope.`}</div> : null}
+          </div>
+          <div className="crp-note"><span className="crp-bigdot" /> Big movers (largest cash movement) — the ones worth printing. Use <b>Top 5/10/20</b> above, or tick projects (shift-click for a range), then “Print selected”. Bars USD, net of the elapsed months.</div>
         </div>
 
-        {/* Diverging bars — net cash from operations, top project movers */}
-        <div className="crp-card">
-          <div className="crp-card-h">Net cash from operations <span>· top project movers</span></div>
-          <Svg html={areaBarsSvg(shown.map(r => ({ label: r.code, value: r.netOps })), undefined, { maxRows: 16 })} />
-          <div className="crp-note">Green = cash generated, crimson = consumed (USD, Jan–{asOfLabel}). Top 16 projects by size; the rest rolled into “Other”.</div>
-        </div>
-      </div>
-
-      {/* Selected project detail — full width below the table */}
-      <div className="crp-projdetail">
+        {/* Selected project detail */}
         <div className="crp-card">
           {loading ? <div className="crp-note crp-note--empty">Loading…</div>
             : !sel ? <div className="crp-note crp-note--empty">Pick a project on the left.</div>
@@ -845,47 +975,6 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
         </div>
       </div>
     </div>
-  )
-}
-
-/* One area group in the projects table: an area sub-header row (label + area
- * subtotals) followed by its project rows. Cash column = the project's cash
- * balance at Jan-start vs as-of; Δ = movement. */
-type ProjRow = { key: string; code: string; netOps: number; openCash: number; endCash: number }
-type ProjGroup = { area: string; label: string; netOps: number; openCash: number; endCash: number; items: ProjRow[] }
-function ProjGroupRows({ g, sel, selected, anchor, flatIndex, setProject, setAnchor, toggle, rangeSelect }: {
-  g: ProjGroup; sel: string; selected: Set<string>; anchor: number | null; flatIndex: Map<string, number>
-  setProject: (k: string) => void; setAnchor: (i: number | null) => void; toggle: (k: string) => void; rangeSelect: (i: number) => void
-}) {
-  return (
-    <>
-      <tr className="crp-projgrp">
-        <td className="crp-ck"></td>
-        <td className="crp-projgrp-name">{g.label} <span className="crp-key">· {g.items.length}</span></td>
-        <td className={`r ${cls(g.netOps)}`}>{fMm(g.netOps)}</td>
-        <td className={`r crp-sep-l ${cls(g.openCash)}`}>{fMm(g.openCash)}</td>
-        <td className={`r ${cls(g.endCash)}`}>{fMm(g.endCash)}</td>
-        <td className={`r ${cls(g.endCash - g.openCash)}`}>{fMd(g.endCash - g.openCash)}</td>
-      </tr>
-      {g.items.map(r => {
-        const idx = flatIndex.get(r.key)!
-        const d = r.endCash - r.openCash
-        return (
-          <tr key={r.key} className={`crp-projtr ${r.key === sel ? 'active' : ''}`}>
-            <td className="crp-ck">
-              <input type="checkbox" checked={selected.has(r.key)}
-                onClick={e => { if (e.shiftKey && anchor != null) { e.preventDefault(); rangeSelect(idx) } else { setAnchor(idx) } }}
-                onChange={() => toggle(r.key)} title="Tick to select · Shift-click to select a range" />
-            </td>
-            <td className="crp-projtd" onClick={() => setProject(r.key)} title="View this project">{r.code}</td>
-            <td className={`r crp-cell-click ${cls(r.netOps)}`} onClick={() => setProject(r.key)}>{fMm(r.netOps)}</td>
-            <td className={`r crp-sep-l ${cls(r.openCash)}`}>{fMm(r.openCash)}</td>
-            <td className={`r ${cls(r.endCash)}`}>{fMm(r.endCash)}</td>
-            <td className={`r ${cls(d)}`}>{fMd(d)}</td>
-          </tr>
-        )
-      })}
-    </>
   )
 }
 

@@ -422,6 +422,23 @@ export async function fetchPayablesForBooks(
   return [...m.entries()].sort((a, b) => a[0] - b[0]).map(([period, usd]) => ({ period, usd }))
 }
 
+/** CCC-share trade payables per BOOK at specific periods (for project-grain
+ *  payables: map each project → its books → sum here). Returns book → period → usd. */
+export async function fetchPayablesBookBalances(periods: number[]): Promise<Map<string, Map<number, number>>> {
+  const out = new Map<string, Map<number, number>>()
+  if (!periods.length) return out
+  const { data, error } = await supabase
+    .from('v_cf_payables_book_month')
+    .select('book_code, period, ccc_share_usd')
+    .in('period', periods)
+  if (error) throw error
+  for (const r of (data ?? []) as { book_code: string; period: number; ccc_share_usd: number }[]) {
+    let bm = out.get(r.book_code); if (!bm) { bm = new Map(); out.set(r.book_code, bm) }
+    bm.set(r.period, (bm.get(r.period) ?? 0) + Number(r.ccc_share_usd || 0))
+  }
+  return out
+}
+
 /* ── Account-group definitions (for the Report → Definitions view) ──────────
  * What liability account-groups exist and exactly which accounts feed each —
  * so inclusions can be reviewed (e.g. with Amr). Groups are defined/edited in

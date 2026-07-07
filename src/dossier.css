@@ -1673,19 +1673,12 @@ body, html, #root {
 .crp-table--pos .crp-total td { border-top: 0; }
 .crp-sep-l { border-left: 1px solid var(--border); }
 
-/* Projects-as-Area table: area sub-header rows + clickable project rows + a
-   checkbox column for print selection. Same base as .crp-table--area. */
+/* Movers table — the Area table with one row per project, grouped by area. */
 .crp-table--projarea { font-size: 12px; }
-.crp-table--projarea .crp-ck { width: 24px; text-align: center; padding: 4px 2px; }
-.crp-table--projarea .crp-ck input { cursor: pointer; }
 .crp-projgrp td { background: #f4f6f9; border-top: 1.5px solid var(--ink); font-weight: 800; padding-top: 6px; padding-bottom: 5px; }
 .crp-projgrp-name { text-transform: uppercase; letter-spacing: .3px; font-size: 11px; color: var(--ink); }
 .crp-projtr:hover td { background: rgba(225,0,32,0.035); }
-.crp-projtr.active td { background: rgba(225,0,32,0.07); }
-.crp-projtd { cursor: pointer; font-weight: 600; }
-.crp-projtd:hover { color: var(--crimson); }
-.crp-cell-click { cursor: pointer; }
-.crp-projdetail { margin-top: 14px; }
+.crp-projtd { font-weight: 600; }
 
 .crp-projpick { display: flex; gap: 10px; flex-wrap: wrap; }
 .crp-projtop { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
@@ -1716,14 +1709,6 @@ body, html, #root {
 .crp-projval { text-align: right; font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); }
 .crp-projval.neg { color: var(--crimson); } .crp-projval.pos { color: var(--good); }
 .crp-bigdot { width: 7px; height: 7px; border-radius: 50%; background: var(--crimson); display: inline-block; flex: none; }
-/* Area sub-headers in the grouped project list (net cash from operations). The
-   header sticks while scrolling within its group so the area stays labelled. */
-.crp-projgroup { margin-bottom: 3px; }
-.crp-projgroup-h { position: sticky; top: 0; z-index: 1; display: grid; grid-template-columns: 1fr auto auto; align-items: baseline; column-gap: 8px; padding: 8px 2px 3px; background: var(--surface, #fff); border-bottom: 1.5px solid var(--ink); }
-.crp-projgroup-t { font-size: 11px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; color: var(--ink); }
-.crp-projgroup-c { font-size: 9.5px; font-weight: 600; color: #94a3b8; }
-.crp-projgroup-n { font-size: 12.5px; font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; }
-.crp-projgroup-n.neg { color: var(--crimson); } .crp-projgroup-n.pos { color: var(--good); }
 .crp-table--matrix th, .crp-table--matrix td { white-space: nowrap; }
 .crp-table--matrix td.r { min-width: 58px; }
 .crp-clickable { cursor: pointer; }
