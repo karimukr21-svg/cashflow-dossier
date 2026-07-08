@@ -305,7 +305,7 @@ function aggregateScope(matched: AreaAgg[]) {
 /* One card per cash-flow section (canonical statement order) — each carries the
  * section's net + that net broken down by area. Shared by the Sections screen
  * and its print. Sections/areas below THRESH (50k) drop out. */
-export type SectionCard = { label: string; net: number; rows: { label: string; value: number; forecast?: number }[] }
+export type SectionCard = { label: string; net: number; fcNet?: number; rows: { label: string; value: number; forecast?: number }[] }
 function sectionCards(matched: AreaAgg[], lines: CfLine[], fcByArea?: Map<string, Map<string, number>>): SectionCard[] {
   const agg = new Map<string, number>()
   for (const a of matched) for (const [lc, v] of a.lineUsd) agg.set(lc, (agg.get(lc) ?? 0) + v)
@@ -317,6 +317,7 @@ function sectionCards(matched: AreaAgg[], lines: CfLine[], fcByArea?: Map<string
   }))
   return stmt.sections.map(s => ({
     label: s.label, net: s.net,
+    fcNet: fcByArea ? byArea.reduce((t, ba) => t + (ba.fcNets?.get(s.label) ?? 0), 0) : undefined,
     rows: byArea.map(a => ({ label: a.label, value: a.nets.get(s.label) ?? 0, forecast: a.fcNets ? (a.fcNets.get(s.label) ?? 0) : undefined }))
       .filter(r => Math.abs(r.value) >= 50000 || Math.abs(r.forecast ?? 0) >= 50000),
   })).filter(c => c.rows.length > 0)
@@ -601,7 +602,10 @@ function SectionsView({ scope, matched, asOfLabel, fcByArea, forecastActive, hor
               <div className="crp-card" key={c.label}>
                 <div className="crp-sechead">
                   <span className="crp-sechead-t">{c.label}<span> · by area</span></span>
-                  <b className={`crp-sechead-n ${cls(c.net)}`}>{fMm(c.net)}</b>
+                  <span className="crp-sechead-nn">
+                    <b className={`crp-sechead-n ${cls(c.net)}`}>{fMm(c.net)}</b>
+                    {forecastActive && <b className="crp-sechead-n crp-fc">{fMm(c.fcNet)}</b>}
+                  </span>
                 </div>
                 <Svg html={areaBarsSvg(c.rows.map(r => ({ label: r.label, value: r.value, forecast: r.forecast })), undefined, { zoom: 1.55, dualLabel: forecastActive })} />
               </div>

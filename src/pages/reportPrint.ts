@@ -248,7 +248,7 @@ function projectSheet(p: ProjectPrint, disp: PrintDisp): string {
 
 type SectionsOpts = {
   asOfLabel: string; matchedCount: number
-  sections: { label: string; net: number; rows: { label: string; value: number; forecast?: number }[] }[]
+  sections: { label: string; net: number; fcNet?: number; rows: { label: string; value: number; forecast?: number }[] }[]
   forecastActive?: boolean; horizonLabel?: string
   disp: PrintDisp
 }
@@ -256,7 +256,7 @@ function sectionsSheet(o: SectionsOpts): string {
   const f = fmtFor(o.disp)
   const chartDisp = { div: o.disp.div, dec: o.disp.dec }
   const card = (s: SectionsOpts['sections'][number]) =>
-    `<div class="chartcard"><div class="ch-h"><span class="sh-t">${s.label}</span><b class="sh-n ${cl(s.net)}">${f.fM(s.net)}</b></div>${areaBarsSvg(s.rows, chartDisp, { zoom: 1.6, maxRows: 16, dualLabel: o.forecastActive })}</div>`
+    `<div class="chartcard"><div class="ch-h"><span class="sh-t">${s.label}</span><span class="sh-nn"><b class="sh-n ${cl(s.net)}">${f.fM(s.net)}</b>${o.forecastActive ? `<b class="sh-n fc">${f.fM(s.fcNet)}</b>` : ''}</span></div>${areaBarsSvg(s.rows, chartDisp, { zoom: 1.6, maxRows: 16, dualLabel: o.forecastActive })}</div>`
   const cols = arrangeSectionColumns(o.sections)
     .map(col => `<div class="seccol">${col.map(card).join('')}</div>`).join('')
   const sub = o.forecastActive
@@ -319,6 +319,7 @@ const STYLE = `
   .seccol .chartcard { margin-bottom: 0; padding: 12px 14px; }
   .seccol .ch-h, .netcard .ch-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
   .sh-t { font-size: 16px; font-weight: 700; color: #15233b; } .sh-n { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .sh-nn { display: inline-flex; align-items: baseline; gap: 10px; } .sh-n.fc { color: #9a7b3c; font-size: 16px; }
   /* Group page — cash-journey timeline (mirrors the screen) */
   .timeline { display: flex; align-items: stretch; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; margin-bottom: 12px; }
   .tl-node { padding: 9px 15px; min-width: 150px; }
@@ -376,7 +377,7 @@ type Opts = {
   areaRows?: { label: string; netOps: number; fcNetOps?: number; payStart: number | null; payEnd: number | null }[]
   areaTotals?: { netOps: number; fcNetOps?: number; payStart: number; payEnd: number }
   forecastActive?: boolean; horizonLabel?: string
-  sections?: { label: string; net: number; rows: { label: string; value: number; forecast?: number }[] }[]
+  sections?: { label: string; net: number; fcNet?: number; rows: { label: string; value: number; forecast?: number }[] }[]
   disp?: PrintDisp
 }
 export function buildReportHtml(o: Opts): string {

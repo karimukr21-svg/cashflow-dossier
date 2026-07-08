@@ -76,10 +76,10 @@ export function areaBarsSvg(rows: { label: string; value: number; forecast?: num
     data = [...keep, ...(Math.abs(otherVal) + Math.abs(otherFc) >= 50000 ? [{ label: `Other (${rest.length})`, value: otherVal, forecast: otherFc }] : [])]
   }
   const hasFc = data.some(r => r.forecast != null)
-  const dual = !!opts.dualLabel && hasFc   // show BOTH the actual + forecast figure
+  const dual = !!opts.dualLabel && hasFc   // show BOTH the actual + forecast figure, side by side
   data = data.sort((a, b) => b.value - a.value)
   const fs = 10 * zoom, off = fs * 0.35
-  const rowH = (dual ? 26 : 22) * zoom, padT = 8, padB = 6, legendH = hasFc ? 20 * zoom : 0, W = 560, labW = 104 * zoom, valW = (dual ? 72 : 62) * zoom
+  const rowH = 22 * zoom, padT = 8, padB = 6, legendH = hasFc ? 20 * zoom : 0, W = 560, labW = 104 * zoom, valW = (dual ? 104 : 62) * zoom
   const H = padT + padB + data.length * rowH + legendH
   const plotL = labW, plotR = W - valW, plotW = plotR - plotL
   // Extent = the furthest point from zero, considering the actual end AND the
@@ -103,16 +103,19 @@ export function areaBarsSvg(rows: { label: string; value: number; forecast?: num
       const xf = Math.min(px(a), px(total)), wf = Math.abs(fc) * scale
       s += `<rect x="${xf.toFixed(1)}" y="${ry.toFixed(1)}" width="${Math.max(1.5, wf).toFixed(1)}" height="${rh.toFixed(1)}" fill="${colF}" opacity="0.3" rx="2"/>`
     }
-    // Value label(s). dual = show the actual (its colour) stacked over the
-    // forecast (bronze); otherwise a single figure — the actual when a forecast
-    // segment is drawn (the table carries the pair), else just the value.
+    // Value label(s). dual = the actual (its colour) and the forecast (bronze)
+    // side by side, both right-anchored so they pack to the right edge; otherwise
+    // a single figure — the actual when a forecast segment is drawn (the table
+    // carries the pair), else just the value.
+    const yb = y + rowH / 2 + off
     if (dual) {
-      const yc = y + rowH / 2, aCol = a >= 0 ? GOOD : CRIM
-      s += `<text x="${(W - valW + 6).toFixed(1)}" y="${(yc - fs * 0.12).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="700" fill="${aCol}">${lab(a)}</text>`
-      s += `<text x="${(W - valW + 6).toFixed(1)}" y="${(yc + fs * 0.92).toFixed(1)}" font-size="${(fs * 0.82).toFixed(1)}" font-weight="700" fill="${BRONZE}">${lab(fc)}</text>`
+      const aStr = lab(a), fStr = lab(fc), aCol = a >= 0 ? GOOD : CRIM
+      const fw = fStr.length * fs * 0.6
+      s += `<text x="${(W - valW + 4 + (valW - 8 - fw - fs * 0.6)).toFixed(1)}" y="${yb.toFixed(1)}" text-anchor="end" font-size="${fs.toFixed(1)}" font-weight="700" fill="${aCol}">${aStr}</text>`
+      s += `<text x="${(W - 4).toFixed(1)}" y="${yb.toFixed(1)}" text-anchor="end" font-size="${(fs * 0.9).toFixed(1)}" font-weight="700" fill="${BRONZE}">${fStr}</text>`
     } else {
       const lblV = hasFc ? a : r.value, lblCol = lblV >= 0 ? GOOD : CRIM
-      s += `<text x="${(W - valW + 6).toFixed(1)}" y="${(y + rowH / 2 + off).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="700" fill="${lblCol}">${lab(lblV)}</text>`
+      s += `<text x="${(W - valW + 6).toFixed(1)}" y="${yb.toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="700" fill="${lblCol}">${lab(lblV)}</text>`
     }
   })
   if (hasFc) {
