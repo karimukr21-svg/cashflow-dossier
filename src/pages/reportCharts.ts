@@ -154,8 +154,10 @@ export function payablesTrendSvg(points: { label: string; value: number }[], dis
   return s
 }
 
-/* Monthly net-cash bars — the project's cash movement per elapsed month. */
-export function netTrendSvg(labels: string[], values: number[], disp: ChartDisp = DEF): string {
+/* Monthly net-cash bars — the project's cash movement per month. When
+ * `actualCount` is given, bars at/after that index are the FORECAST tail: drawn
+ * faded (like the area bars), with a divider marking the actual→forecast seam. */
+export function netTrendSvg(labels: string[], values: number[], disp: ChartDisp = DEF, actualCount?: number): string {
   const lab = (v: number) => labf(v, disp)
   const W = 560, H = 210, padL = 8, padR = 8, top = 26, bottom = 34
   const plotW = W - padL - padR, plotH = H - top - bottom
@@ -166,14 +168,19 @@ export function netTrendSvg(labels: string[], values: number[], disp: ChartDisp 
   const n = values.length || 1, slot = plotW / n, bw = Math.min(54, slot * 0.5)
   const cx = (i: number) => padL + (i + 0.5) * slot
   const zero = yM(0)
+  const ac = actualCount ?? values.length
   let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">`
   s += `<line x1="${padL}" y1="${zero.toFixed(1)}" x2="${W - padR}" y2="${zero.toFixed(1)}" stroke="${INK}" stroke-width="1"/>`
+  if (ac < values.length && ac > 0) {   // actual→forecast seam
+    const dx = padL + ac * slot
+    s += `<line x1="${dx.toFixed(1)}" y1="${top}" x2="${dx.toFixed(1)}" y2="${(H - bottom).toFixed(1)}" stroke="${GRID}" stroke-width="1" stroke-dasharray="3,2"/>`
+  }
   values.forEach((v, i) => {
-    const y0 = yM(0), y1 = yM(mm(v)), up = v >= 0
+    const y0 = yM(0), y1 = yM(mm(v)), up = v >= 0, fc = i >= ac
     const t = Math.min(y0, y1), h = Math.max(1.5, Math.abs(y0 - y1))
-    s += `<rect x="${(cx(i) - bw / 2).toFixed(1)}" y="${t.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${up ? GOOD : CRIM}" opacity="0.85" rx="2"/>`
-    s += `<text x="${cx(i).toFixed(1)}" y="${(up ? t - 5 : t + h + 12).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="${up ? GOOD : CRIM}">${lab(v)}</text>`
-    s += `<text x="${cx(i).toFixed(1)}" y="${(H - bottom + 18).toFixed(1)}" text-anchor="middle" font-size="10" fill="${MUTE}">${labels[i] ?? ''}</text>`
+    s += `<rect x="${(cx(i) - bw / 2).toFixed(1)}" y="${t.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${up ? GOOD : CRIM}" opacity="${fc ? 0.3 : 0.85}" rx="2"/>`
+    s += `<text x="${cx(i).toFixed(1)}" y="${(up ? t - 5 : t + h + 12).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="${up ? GOOD : CRIM}" opacity="${fc ? 0.55 : 1}">${lab(v)}</text>`
+    s += `<text x="${cx(i).toFixed(1)}" y="${(H - bottom + 18).toFixed(1)}" text-anchor="middle" font-size="10" fill="${MUTE}" opacity="${fc ? 0.7 : 1}">${labels[i] ?? ''}</text>`
   })
   s += `</svg>`
   return s

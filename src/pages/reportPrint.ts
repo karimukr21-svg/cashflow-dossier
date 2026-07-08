@@ -51,10 +51,11 @@ function head(title: string, sub: string): string {
 }
 
 
-function matrixRows(sec: MatrixSection, months: number[], f: Fmt): string {
+function matrixRows(sec: MatrixSection, months: number[], f: Fmt, asOfMonth = 99): string {
   const sum = (rows: { monthly: number[] }[], i: number) => rows.reduce((t, r) => t + r.monthly[i], 0)
+  const fcCls = (i: number) => `${months[i] > asOfMonth ? 'fc' : ''} ${months[i] === asOfMonth + 1 ? 'fcseam' : ''}`
   const row = (label: string, monthly: number[], total: number, klass: string) =>
-    `<tr class="${klass}"><td class="${klass === '' ? 'item' : ''}">${label}</td>${monthly.map(v => `<td class="r ${cl(v)}">${f.fM(v)}</td>`).join('')}<td class="r sepl ${cl(total)}">${f.fM(total)}</td></tr>`
+    `<tr class="${klass}"><td class="${klass === '' ? 'item' : ''}">${label}</td>${monthly.map((v, i) => `<td class="r ${fcCls(i)} ${cl(v)}">${f.fM(v)}</td>`).join('')}<td class="r sepl ${cl(total)}">${f.fM(total)}</td></tr>`
   let s = `<tr class="sec"><td colspan="${months.length + 2}">${sec.label}</td></tr>`
   s += sec.receipts.map(b => row(b.label, b.monthly, b.total, '')).join('')
   if (sec.receipts.length > 1) s += row('Total receipts', months.map((_, i) => sum(sec.receipts, i)), sec.receipts.reduce((t, b) => t + b.total, 0), 'natsub')
@@ -214,42 +215,54 @@ export type ProjectPrint = {
   /* Trade-payables balance (USD, CCC share), aligned to `months`; `start` is the
    * Dec prior-year opening; `change` = latest − start. Undefined = not mapped. */
   payables?: { monthly: (number | null)[]; start: number | null; change: number | null }
+  /* When set, months after index `actualCount` are the forecast tail (faded /
+   * tinted); `horizonLabel` names the horizon. */
+  actualCount?: number; horizonLabel?: string
 }
 function projectSheet(p: ProjectPrint, disp: PrintDisp): string {
   const f = fmtFor(disp)
   const chartDisp = { div: disp.div, dec: disp.dec }
+  const fc = p.actualCount != null && p.actualCount < p.months.length
+  const asOfM = fc ? p.months[p.actualCount! - 1] : 99   // last actual month number
   const secNet = (label: string) => p.matrix.sections.find(s => s.label === label)?.netTot ?? 0
   const band = kpis([
-    { label: 'Net cash movement · YTD', value: f.fM(p.matrix.netTotal), cls: cl(p.matrix.netTotal) },
+    { label: `Net cash movement · ${fc ? 'full year' : 'YTD'}`, value: f.fM(p.matrix.netTotal), cls: cl(p.matrix.netTotal) },
     { label: 'Net from operations', value: f.fM(secNet('Operations')), cls: cl(secNet('Operations')) },
     { label: 'Net financing', value: f.fM(secNet('Bank Financing')), cls: cl(secNet('Bank Financing')) },
   ])
   const pv = p.payables
-  const table = `<table class="t"><thead><tr><th>Line item</th>${p.months.map(m => `<th class="r">${MONTHS[m - 1]}</th>`).join('')}<th class="r sepl">YTD</th></tr></thead>
-    <tbody>${p.matrix.sections.map(s => matrixRows(s, p.months, f)).join('')}
-      <tr class="total"><td>Net cash movement</td>${p.months.map((_, i) => `<td class="r ${cl(p.matrix.netMovement[i])}">${f.fM(p.matrix.netMovement[i])}</td>`).join('')}<td class="r sepl ${cl(p.matrix.netTotal)}">${f.fM(p.matrix.netTotal)}</td></tr>
+  const th = (m: number) => `<th class="r ${fc && m > asOfM ? 'fc' : ''} ${fc && m === asOfM + 1 ? 'fcseam' : ''}">${MONTHS[m - 1]}</th>`
+  const table = `<table class="t"><thead><tr><th>Line item</th>${p.months.map(th).join('')}<th class="r sepl">${fc ? 'Total' : 'YTD'}</th></tr></thead>
+    <tbody>${p.matrix.sections.map(s => matrixRows(s, p.months, f, asOfM)).join('')}
+      <tr class="total"><td>Net cash movement</td>${p.months.map((m, i) => `<td class="r ${fc && m > asOfM ? 'fc' : ''} ${fc && m === asOfM + 1 ? 'fcseam' : ''} ${cl(p.matrix.netMovement[i])}">${f.fM(p.matrix.netMovement[i])}</td>`).join('')}<td class="r sepl ${cl(p.matrix.netTotal)}">${f.fM(p.matrix.netTotal)}</td></tr>
     </tbody></table>`
-  const chart = `<div class="chartcard"><div class="ch-h">Net cash movement <span>· by month</span></div>${netTrendSvg(p.months.map(m => MONTHS[m - 1]), p.matrix.netMovement, chartDisp)}</div>`
+  const chart = `<div class="chartcard"><div class="ch-h">Net cash movement <span>· by month${fc ? ' · incl. forecast' : ''}</span></div>${netTrendSvg(p.months.map(m => MONTHS[m - 1]), p.matrix.netMovement, chartDisp, fc ? p.actualCount : undefined)}</div>`
   const payChart = pv && pv.monthly.some(v => v != null)
     ? `<div class="chartcard"><div class="ch-h">Trade payables <span>· balance</span></div>${payablesTrendSvg(p.months.map((m, i) => ({ label: MONTHS[m - 1], value: pv.monthly[i] ?? 0 })), chartDisp)}</div>`
     : ''
-  return sheet(head(`Cash Flow Report — ${p.project}`, `${p.areaLabel} · monthly actuals Jan–${p.asOfLabel} · ${disp.lineUnit}`)
+  const sub = fc ? `${p.areaLabel} · monthly · actual Jan–${p.asOfLabel} · forecast to ${p.horizonLabel} · ${disp.lineUnit}`
+    : `${p.areaLabel} · monthly actuals Jan–${p.asOfLabel} · ${disp.lineUnit}`
+  return sheet(head(`Cash Flow Report — ${p.project}`, sub)
     + band + `<div class="cols"><div>${table}</div><div>${chart}${payChart}</div></div>`)
 }
 
 type SectionsOpts = {
   asOfLabel: string; matchedCount: number
-  sections: { label: string; net: number; rows: { label: string; value: number }[] }[]
+  sections: { label: string; net: number; rows: { label: string; value: number; forecast?: number }[] }[]
+  forecastActive?: boolean; horizonLabel?: string
   disp: PrintDisp
 }
 function sectionsSheet(o: SectionsOpts): string {
   const f = fmtFor(o.disp)
   const chartDisp = { div: o.disp.div, dec: o.disp.dec }
-  const card = (s: { label: string; net: number; rows: { label: string; value: number }[] }) =>
+  const card = (s: SectionsOpts['sections'][number]) =>
     `<div class="chartcard"><div class="ch-h"><span class="sh-t">${s.label}</span><b class="sh-n ${cl(s.net)}">${f.fM(s.net)}</b></div>${areaBarsSvg(s.rows, chartDisp, { zoom: 1.6, maxRows: 16 })}</div>`
   const cols = arrangeSectionColumns(o.sections)
     .map(col => `<div class="seccol">${col.map(card).join('')}</div>`).join('')
-  return sheet(head('Cash Flow Report — Sections', `Actual to date · Jan–${o.asOfLabel} · ${o.disp.lineUnit} · ${o.matchedCount} areas · each section's net, by area`)
+  const sub = o.forecastActive
+    ? `Actual Jan–${o.asOfLabel} · forecast to ${o.horizonLabel} · ${o.disp.lineUnit} · ${o.matchedCount} areas · each section's net, by area`
+    : `Actual to date · Jan–${o.asOfLabel} · ${o.disp.lineUnit} · ${o.matchedCount} areas · each section's net, by area`
+  return sheet(head('Cash Flow Report — Sections', sub)
     + `<div class="seccols">${cols}</div>`)
 }
 
@@ -325,6 +338,7 @@ const STYLE = `
   .dualcard .t thead th.sh-t { font-size: 14px; font-weight: 700; color: #15233b; text-transform: none; letter-spacing: 0; }
   .t td.fc, .t th.fc { color: #9a7b3c; }
   .t .fc.neg { color: #E10020; opacity: .78; } .t .fc.pos { color: #057a55; opacity: .78; }
+  .t td.fcseam, .t th.fcseam { border-left: 1px dashed #cbd5e1; }
   /* Group page — justified 3-column grid: Operations · four sections · charts */
   .groupcols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; align-items: start; }
   .groupcols .seccol { gap: 10px; }
@@ -362,13 +376,13 @@ type Opts = {
   areaRows?: { label: string; netOps: number; fcNetOps?: number; payStart: number | null; payEnd: number | null }[]
   areaTotals?: { netOps: number; fcNetOps?: number; payStart: number; payEnd: number }
   forecastActive?: boolean; horizonLabel?: string
-  sections?: { label: string; net: number; rows: { label: string; value: number }[] }[]
+  sections?: { label: string; net: number; rows: { label: string; value: number; forecast?: number }[] }[]
   disp?: PrintDisp
 }
 export function buildReportHtml(o: Opts): string {
   const disp = o.disp ?? DEF
   if (o.level === 'sections' && o.sections)
-    return skeleton('Cash Flow Report — Sections', sectionsSheet({ asOfLabel: o.asOfLabel, matchedCount: o.matchedCount ?? 0, sections: o.sections, disp }))
+    return skeleton('Cash Flow Report — Sections', sectionsSheet({ asOfLabel: o.asOfLabel, matchedCount: o.matchedCount ?? 0, sections: o.sections, forecastActive: o.forecastActive, horizonLabel: o.horizonLabel, disp }))
   if (o.level === 'area' && o.areaRows && o.areaTotals)
     return skeleton('Cash Flow Report — Areas', areaSheet({ asOfLabel: o.asOfLabel, startLabel: o.startLabel, areaRows: o.areaRows, areaTotals: o.areaTotals, forecastActive: o.forecastActive, horizonLabel: o.horizonLabel, disp }))
   return skeleton(`Cash Flow Report — ${o.scopeLabel}`, groupSheet({

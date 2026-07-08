@@ -187,7 +187,8 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
     } else if (level === 'sections') {
       html = buildReportHtml({
         level: 'sections', scopeLabel: 'Sections', year, asOfLabel, startLabel, matchedCount: cfAreas.length,
-        sections: sectionCards(cfAreas, scope.lines),
+        sections: sectionCards(cfAreas, scope.lines, forecastActive ? fcByArea : undefined),
+        forecastActive, horizonLabel,
       })
     } else {
       const { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash, loanStart, loanEnd, odStart, odEnd } = aggregateScope(cfAreas)
@@ -244,9 +245,9 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
       {loading ? <div className="placeholder-box">Loading…</div>
         : level === 'group' ? <GroupView scope={scope} matched={cfAreas} year={year} asOfLabel={asOfLabel} startLabel={startLabel} cashStartLabel={cashStartLabel} paySeries={paySeries} fcByArea={fcByArea} forecastActive={forecastActive} horizonLabel={horizonLabel} />
         : level === 'area' ? <AreaView matched={cfAreas} year={year} asOfLabel={asOfLabel} startLabel={startLabel} fcNetOpsByArea={fcNetOpsByArea} forecastActive={forecastActive} horizonLabel={horizonLabel} onOpenProjects={(id) => { setProjArea(id); setLevel('project') }} />
-        : level === 'sections' ? <SectionsView scope={scope} matched={cfAreas} asOfLabel={asOfLabel} />
-        : level === 'project' ? <ProjectView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} projArea={projArea} setProjArea={setProjArea} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} />
-        : level === 'movers' ? <MoversView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} startLabel={startLabel} registerPrint={fn => { moversPrint.current = fn }} />
+        : level === 'sections' ? <SectionsView scope={scope} matched={cfAreas} asOfLabel={asOfLabel} fcByArea={fcByArea} forecastActive={forecastActive} horizonLabel={horizonLabel} />
+        : level === 'project' ? <ProjectView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} projArea={projArea} setProjArea={setProjArea} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} forecastActive={forecastActive} horizonMonth={horizonMonth} horizonLabel={horizonLabel} />
+        : level === 'movers' ? <MoversView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} startLabel={startLabel} forecastActive={forecastActive} horizonMonth={horizonMonth} horizonLabel={horizonLabel} registerPrint={fn => { moversPrint.current = fn }} />
         : null}
     </div>
   )
@@ -304,18 +305,20 @@ function aggregateScope(matched: AreaAgg[]) {
 /* One card per cash-flow section (canonical statement order) — each carries the
  * section's net + that net broken down by area. Shared by the Sections screen
  * and its print. Sections/areas below THRESH (50k) drop out. */
-export type SectionCard = { label: string; net: number; rows: { label: string; value: number }[] }
-function sectionCards(matched: AreaAgg[], lines: CfLine[]): SectionCard[] {
+export type SectionCard = { label: string; net: number; rows: { label: string; value: number; forecast?: number }[] }
+function sectionCards(matched: AreaAgg[], lines: CfLine[], fcByArea?: Map<string, Map<string, number>>): SectionCard[] {
   const agg = new Map<string, number>()
   for (const a of matched) for (const [lc, v] of a.lineUsd) agg.set(lc, (agg.get(lc) ?? 0) + v)
   const stmt = buildStatement(agg, lines)
   const byArea = matched.map(a => ({
     label: a.label,
     nets: new Map(buildStatement(a.lineUsd, lines).sections.map(s => [s.label, s.net])),
+    fcNets: fcByArea ? new Map(buildStatement(fcByArea.get(a.areaId) ?? new Map(), lines).sections.map(s => [s.label, s.net])) : null,
   }))
   return stmt.sections.map(s => ({
     label: s.label, net: s.net,
-    rows: byArea.map(a => ({ label: a.label, value: a.nets.get(s.label) ?? 0 })).filter(r => Math.abs(r.value) >= 50000),
+    rows: byArea.map(a => ({ label: a.label, value: a.nets.get(s.label) ?? 0, forecast: a.fcNets ? (a.fcNets.get(s.label) ?? 0) : undefined }))
+      .filter(r => Math.abs(r.value) >= 50000 || Math.abs(r.forecast ?? 0) >= 50000),
   })).filter(c => c.rows.length > 0)
 }
 
@@ -572,10 +575,11 @@ function GroupView({ scope, matched, year, asOfLabel, startLabel, cashStartLabel
  * takes each section one level deeper — which AREAS drove it — reusing the same
  * diverging by-area bars as the Area page's "Net cash from operations by area".
  * Always group-scoped (a by-area breakdown of a single area is one bar). */
-function SectionsView({ scope, matched, asOfLabel }: {
+function SectionsView({ scope, matched, asOfLabel, fcByArea, forecastActive, horizonLabel }: {
   scope: Scope; matched: AreaAgg[]; asOfLabel: string
+  fcByArea: Map<string, Map<string, number>>; forecastActive: boolean; horizonLabel: string
 }) {
-  const columns = useMemo(() => arrangeSectionColumns(sectionCards(matched, scope.lines)), [matched, scope.lines])
+  const columns = useMemo(() => arrangeSectionColumns(sectionCards(matched, scope.lines, forecastActive ? fcByArea : undefined)), [matched, scope.lines, forecastActive, fcByArea])
 
   return (
     <div className="crp-page">
@@ -583,7 +587,9 @@ function SectionsView({ scope, matched, asOfLabel }: {
         <img className="crp-logo" src="/ccc-logo.png" alt="CCC" />
         <div className="crp-head-t">
           <h1>Cash Flow Report — Sections</h1>
-          <div className="crp-sub">Actual to date · Jan–{asOfLabel} · USD millions · {matched.length} areas · each section's net, by area</div>
+          <div className="crp-sub">{forecastActive
+            ? <>Actual Jan–{asOfLabel} · forecast to {horizonLabel} · USD millions · {matched.length} areas · each section's net, by area</>
+            : <>Actual to date · Jan–{asOfLabel} · USD millions · {matched.length} areas · each section's net, by area</>}</div>
         </div>
         <div className="crp-brand">Treasury</div>
       </div>
@@ -597,13 +603,13 @@ function SectionsView({ scope, matched, asOfLabel }: {
                   <span className="crp-sechead-t">{c.label}<span> · by area</span></span>
                   <b className={`crp-sechead-n ${cls(c.net)}`}>{fMm(c.net)}</b>
                 </div>
-                <Svg html={areaBarsSvg(c.rows.map(r => ({ label: r.label, value: r.value })), undefined, { zoom: 1.55 })} />
+                <Svg html={areaBarsSvg(c.rows.map(r => ({ label: r.label, value: r.value, forecast: r.forecast })), undefined, { zoom: 1.55 })} />
               </div>
             ))}
           </div>
         ))}
       </div>
-      <div className="crp-note">Each card is one cash-flow section; bars show that section's net cash per area (green = generated, crimson = consumed), USD, year-to-date. Section nets tie the "How the cash moved" waterfall on the Group page.</div>
+      <div className="crp-note">Each card is one cash-flow section; bars show that section's net cash per area (green = generated, crimson = consumed), USD{forecastActive ? <>. <b>Solid</b> = actual (Jan–{asOfLabel}); <b>faded</b> = forecast (to {horizonLabel})</> : ', year-to-date'}. Section nets tie the "How the cash moved" waterfall on the Group page.</div>
     </div>
   )
 }
@@ -689,10 +695,11 @@ function AreaView({ matched, year, asOfLabel, startLabel, fcNetOpsByArea, foreca
  * / Negative), which surfaces the biggest movers in each direction. Payables are
  * the CCC-share trade payables of each project's mapped TB books (blank where a
  * project is not yet mapped — same as the Area page). */
-type MoverRow = { key: string; area: string; code: string; netOps: number; payStart: number | null; payEnd: number | null }
-function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, startLabel, registerPrint }: {
+type MoverRow = { key: string; area: string; code: string; netOps: number; fcNetOps?: number; payStart: number | null; payEnd: number | null }
+function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, startLabel, forecastActive, horizonMonth, horizonLabel, registerPrint }: {
   scope: Scope; fxMap: Map<string, number | null>; areaOptions: { areaId: string; label: string }[]
   year: number; asOfMonth: number; asOfLabel: string; startLabel: string
+  forecastActive: boolean; horizonMonth: number; horizonLabel: string
   registerPrint: (fn: (() => void) | null) => void
 }) {
   const ALL = '__ALL__', SEP = '', MINIMAL = 100_000   // "minimal mover" = |CFO| under 0.1m
@@ -710,6 +717,7 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
   }
   const toggleCollapse = (area: string) => { const n = new Set(collapsed); n.has(area) ? n.delete(area) : n.add(area); persistCollapsed(n) }
   const [cells, setCells] = useState<(CfCell & { project_code: string | null; currency?: string })[]>([])
+  const [fcCells, setFcCells] = useState<(CfCell & { project_code: string | null; currency?: string })[]>([])
   const [loading, setLoading] = useState(false)
   const [payMaps, setPayMaps] = useState<PayablesMaps | null>(null)
   const [bookBal, setBookBal] = useState<Map<string, Map<number, number>>>(new Map())
@@ -718,23 +726,29 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
   useEffect(() => { fetchPayablesMaps().then(setPayMaps).catch(() => setPayMaps(null)) }, [])
   useEffect(() => { fetchPayablesBookBalances([decP, asOfP]).then(setBookBal).catch(() => setBookBal(new Map())) }, [decP, asOfP])
   useEffect(() => {
-    if (!scope.primaryVersion) { setCells([]); return }
+    if (!scope.primaryVersion) { setCells([]); setFcCells([]); return }
     let cancel = false; setLoading(true)
-    fetchProjectCells({ version: scope.primaryVersion, cfArea: areaId === ALL ? undefined : areaId, fromYear: year, fromMonth: 1, toYear: year, toMonth: asOfMonth })
-      .then(rows => { if (!cancel) setCells(rows) })
-      .catch(() => { if (!cancel) setCells([]) })
+    const cfArea = areaId === ALL ? undefined : areaId
+    Promise.all([
+      fetchProjectCells({ version: scope.primaryVersion, cfArea, fromYear: year, fromMonth: 1, toYear: year, toMonth: asOfMonth }),
+      forecastActive && asOfMonth < 12
+        ? fetchProjectCells({ version: scope.primaryVersion, cfArea, fromYear: year, fromMonth: asOfMonth + 1, toYear: year, toMonth: horizonMonth })
+        : Promise.resolve([] as typeof cells),
+    ])
+      .then(([act, fc]) => { if (!cancel) { setCells(act); setFcCells(fc) } })
+      .catch(() => { if (!cancel) { setCells([]); setFcCells([]) } })
       .finally(() => { if (!cancel) setLoading(false) })
     return () => { cancel = true }
-  }, [areaId, scope.primaryVersion, year, asOfMonth])
+  }, [areaId, scope.primaryVersion, year, asOfMonth, forecastActive, horizonMonth])
 
   const opCodes = useMemo(() => new Set(scope.lines.filter(l => l.category === 'Operation' || l.category === 'Claims').map(l => l.line_code)), [scope.lines])
   const rateOf = (cur?: string) => (cur || 'USD') === 'USD' ? 1 : (fxMap.get(cur || '') ?? null)
   const areaLabelOf = (a: string) => areaOptions.find(o => o.areaId === a)?.label || a
 
-  // Per-project net cash from operations (USD).
-  const projOps = useMemo(() => {
+  // Per-project net cash from operations (USD) — actual, then the forecast tail.
+  const projOpsOf = (src: typeof cells) => {
     const agg = new Map<string, { area: string; code: string; netOps: number }>()
-    for (const c of cells) {
+    for (const c of src) {
       const code = c.project_code; if (!code) continue
       if (!opCodes.has(c.line_code)) continue
       const r = rateOf(c.currency); if (r == null) continue
@@ -743,18 +757,20 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
       a.netOps += c.value * r
     }
     return agg
-  }, [cells, opCodes, fxMap])
+  }
+  const projOps = useMemo(() => projOpsOf(cells), [cells, opCodes, fxMap])
+  const fcProjOps = useMemo(() => forecastActive ? projOpsOf(fcCells) : new Map(), [forecastActive, fcCells, opCodes, fxMap])
 
-  // Attach each project's trade-payables at the two periods (via its books).
+  // Attach each project's forecast net ops + trade-payables at the two periods.
   const rows = useMemo<MoverRow[]>(() => {
     return [...projOps.entries()].map(([key, x]) => {
       const cid = payMaps?.cfCodeToCanon.get(x.code.toUpperCase())
       const books = cid ? (payMaps?.canonToBooks.get(cid) ?? []) : []
       let ps = 0, pe = 0, has = false
       for (const b of books) { const bm = bookBal.get(b); if (bm) { ps += bm.get(decP) ?? 0; pe += bm.get(asOfP) ?? 0; has = true } }
-      return { key, area: x.area, code: x.code, netOps: x.netOps, payStart: has ? ps : null, payEnd: has ? pe : null }
+      return { key, area: x.area, code: x.code, netOps: x.netOps, fcNetOps: forecastActive ? (fcProjOps.get(key)?.netOps ?? 0) : undefined, payStart: has ? ps : null, payEnd: has ? pe : null }
     }).sort((a, b) => Math.abs(b.netOps) - Math.abs(a.netOps))
-  }, [projOps, payMaps, bookBal, decP, asOfP])
+  }, [projOps, fcProjOps, forecastActive, payMaps, bookBal, decP, asOfP])
 
   const shown = useMemo(() =>
     moverFilter === 'pos' ? rows.filter(r => r.netOps > 0)
@@ -772,17 +788,18 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
       return {
         area, label: areaLabelOf(area),
         netOps: items.reduce((t, r) => t + r.netOps, 0),
+        fcNetOps: forecastActive ? items.reduce((t, r) => t + (r.fcNetOps ?? 0), 0) : undefined,
         payStart: hasPay ? ps : null, payEnd: hasPay ? pe : null,
         items: [...items].sort((a, b) => b.netOps - a.netOps),
       }
     }).sort((a, b) => Math.abs(b.netOps) - Math.abs(a.netOps))
-  }, [kept])
+  }, [kept, forecastActive])
 
   const grand = useMemo(() => {
-    let netOps = 0, ps = 0, pe = 0, hasPay = false
-    for (const r of kept) { netOps += r.netOps; if (r.payStart != null || r.payEnd != null) { ps += r.payStart ?? 0; pe += r.payEnd ?? 0; hasPay = true } }
-    return { netOps, payStart: hasPay ? ps : null, payEnd: hasPay ? pe : null }
-  }, [kept])
+    let netOps = 0, fcNetOps = 0, ps = 0, pe = 0, hasPay = false
+    for (const r of kept) { netOps += r.netOps; fcNetOps += (r.fcNetOps ?? 0); if (r.payStart != null || r.payEnd != null) { ps += r.payStart ?? 0; pe += r.payEnd ?? 0; hasPay = true } }
+    return { netOps, fcNetOps: forecastActive ? fcNetOps : undefined, payStart: hasPay ? ps : null, payEnd: hasPay ? pe : null }
+  }, [kept, forecastActive])
 
   const toggle = (key: string) => setSelected(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
   const ignoreSelected = () => { setIgnored(prev => new Set([...prev, ...selected])); setSelected(new Set()) }
@@ -797,10 +814,14 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
     const w = window.open('', '_blank'); if (!w) return
     const esc = (s: string) => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string))
     const cell = (v: number | null) => `<td class="r ${cls(v)}">${fMm(v)}</td>`
+    const fcell = (v: number | null | undefined) => forecastActive ? `<td class="r fc ${cls(v)}">${fMm(v)}</td>` : ''
     const dcell = (v: number | null) => `<td class="r ${cls(v)}">${fMd(v)}</td>`
     const body = groups.map(g => `
-      <tr class="grp"><td>${esc(g.label)} <span class="k">· ${g.items.length}</span></td>${cell(g.netOps)}${cell(g.payStart)}${cell(g.payEnd)}${dcell(payD(g.payStart, g.payEnd))}</tr>
-      ${collapsed.has(g.area) ? '' : g.items.map(r => `<tr><td class="p">${esc(r.code)}</td>${cell(r.netOps)}${cell(r.payStart)}${cell(r.payEnd)}${dcell(payD(r.payStart, r.payEnd))}</tr>`).join('')}`).join('')
+      <tr class="grp"><td>${esc(g.label)} <span class="k">· ${g.items.length}</span></td>${cell(g.netOps)}${fcell(g.fcNetOps)}${cell(g.payStart)}${cell(g.payEnd)}${dcell(payD(g.payStart, g.payEnd))}</tr>
+      ${collapsed.has(g.area) ? '' : g.items.map(r => `<tr><td class="p">${esc(r.code)}</td>${cell(r.netOps)}${fcell(r.fcNetOps)}${cell(r.payStart)}${cell(r.payEnd)}${dcell(payD(r.payStart, r.payEnd))}</tr>`).join('')}`).join('')
+    const sub = forecastActive
+      ? `${esc(areaLabel)} · net cash from operations · actual Jan–${asOfLabel} · forecast to ${horizonLabel} · USD millions · ${kept.length} projects${moverFilter !== 'both' ? ` (${moverFilter === 'pos' ? 'positive' : 'negative'})` : ''}`
+      : `${esc(areaLabel)} · net cash from operations · Jan–${asOfLabel} · USD millions · ${kept.length} projects${moverFilter !== 'both' ? ` (${moverFilter === 'pos' ? 'positive' : 'negative'})` : ''}`
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Cash Flow — Projects by area</title><style>
       @page { size: A4 landscape; margin: 12mm; }
       * { box-sizing: border-box; } body { font-family: -apple-system, Segoe UI, Helvetica, Arial, sans-serif; color: #141414; margin: 0; }
@@ -809,14 +830,15 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
       .brand { margin-left: auto; font-size: 11px; font-weight: 700; color: #E10020; text-transform: uppercase; letter-spacing: .5px; }
       table { width: 100%; border-collapse: collapse; font-size: 10.5px; } th { text-align: left; font-size: 8px; text-transform: uppercase; letter-spacing: .4px; color: #64748b; border-bottom: 1px solid #cbd5e1; padding: 3px 8px; }
       th.r, td.r { text-align: right; font-variant-numeric: tabular-nums; } td { padding: 2.5px 8px; }
+      td.fc, th.fc { color: #9a7b3c; } td.fc.neg { color: #E10020; opacity: .78; } td.fc.pos { color: #057a55; opacity: .78; }
       tr.grp td { background: #f1f4f8; font-weight: 800; text-transform: uppercase; font-size: 9.5px; border-top: 1.2px solid #141414; } td.p { padding-left: 16px; }
       tr.tot td { font-weight: 800; border-top: 2px solid #141414; } .neg { color: #E10020; } .pos { color: #057a55; } .k { color: #94a3b8; font-weight: 400; }
       .chart { margin-top: 14px; page-break-inside: avoid; }
     </style></head><body>
-      <header><img src="${location.origin}/ccc-logo.png" alt="CCC"/><div><h1>Cash Flow Report — Projects by area</h1><div class="sub">${esc(areaLabel)} · net cash from operations · Jan–${asOfLabel} · USD millions · ${kept.length} projects${moverFilter !== 'both' ? ` (${moverFilter === 'pos' ? 'positive' : 'negative'})` : ''}</div></div><div class="brand">Treasury</div></header>
-      <table><thead><tr><th>Project</th><th class="r">Net cash from ops</th><th class="r">Payables ${startLabel}</th><th class="r">Payables ${asOfLabel}</th><th class="r">Δ</th></tr></thead>
-      <tbody>${body}<tr class="tot"><td>All shown (${kept.length})</td>${cell(grand.netOps)}${cell(grand.payStart)}${cell(grand.payEnd)}${dcell(payD(grand.payStart, grand.payEnd))}</tr></tbody></table>
-      <div class="chart">${areaBarsSvg(kept.map(r => ({ label: r.code, value: r.netOps })), undefined, { zoom: 1.05, maxRows: 24 })}</div>
+      <header><img src="${location.origin}/ccc-logo.png" alt="CCC"/><div><h1>Cash Flow Report — Projects by area</h1><div class="sub">${sub}</div></div><div class="brand">Treasury</div></header>
+      <table><thead><tr><th>Project</th><th class="r">Net cash from ops</th>${forecastActive ? '<th class="r fc">Forecast</th>' : ''}<th class="r">Payables ${startLabel}</th><th class="r">Payables ${asOfLabel}</th><th class="r">Δ</th></tr></thead>
+      <tbody>${body}<tr class="tot"><td>All shown (${kept.length})</td>${cell(grand.netOps)}${fcell(grand.fcNetOps)}${cell(grand.payStart)}${cell(grand.payEnd)}${dcell(payD(grand.payStart, grand.payEnd))}</tr></tbody></table>
+      <div class="chart">${areaBarsSvg(kept.map(r => ({ label: r.code, value: r.netOps, forecast: forecastActive ? (r.fcNetOps ?? 0) : undefined })), undefined, { zoom: 1.05, maxRows: 24 })}</div>
       <script>window.onload=function(){window.print()}</script></body></html>`
     w.document.write(html); w.document.close()
   }
@@ -874,6 +896,7 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
                 <th className="crp-ck"></th>
                 <th>Project</th>
                 <th className="r">Net cash from ops</th>
+                {forecastActive && <th className="r crp-fc">Forecast</th>}
                 <th className="r crp-sep-l">Payables {startLabel}</th>
                 <th className="r">Payables {asOfLabel}</th>
                 <th className="r">Δ</th>
@@ -884,6 +907,7 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
                     <td className="crp-ck"></td>
                     <td className="crp-projgrp-name"><span className={`crp-grp-chev ${collapsed.has(g.area) ? '' : 'open'}`} aria-hidden>▶</span>{g.label} <span className="crp-key">· {g.items.length}</span></td>
                     <td className={`r ${cls(g.netOps)}`}>{fMm(g.netOps)}</td>
+                    {forecastActive && <td className={`r crp-fc ${cls(g.fcNetOps)}`}>{fMm(g.fcNetOps)}</td>}
                     <td className={`r crp-sep-l ${cls(g.payStart)}`}>{fMm(g.payStart)}</td>
                     <td className={`r ${cls(g.payEnd)}`}>{fMm(g.payEnd)}</td>
                     <td className={`r ${cls(payD(g.payStart, g.payEnd))}`}>{fMd(payD(g.payStart, g.payEnd))}</td>
@@ -893,6 +917,7 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
                       <td className="crp-ck"><input type="checkbox" checked={selected.has(r.key)} onChange={() => toggle(r.key)} title="Select to ignore" /></td>
                       <td className="crp-projtd">{r.code}</td>
                       <td className={`r ${cls(r.netOps)}`}>{fMm(r.netOps)}</td>
+                      {forecastActive && <td className={`r crp-fc ${cls(r.fcNetOps)}`}>{fMm(r.fcNetOps)}</td>}
                       <td className={`r crp-sep-l ${cls(r.payStart)}`}>{fMm(r.payStart)}</td>
                       <td className={`r ${cls(r.payEnd)}`}>{fMm(r.payEnd)}</td>
                       <td className={`r ${cls(payD(r.payStart, r.payEnd))}`}>{fMd(payD(r.payStart, r.payEnd))}</td>
@@ -903,19 +928,20 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
                   <td className="crp-ck"></td>
                   <td>All shown ({kept.length})</td>
                   <td className={`r ${cls(grand.netOps)}`}>{fMm(grand.netOps)}</td>
+                  {forecastActive && <td className={`r crp-fc ${cls(grand.fcNetOps)}`}>{fMm(grand.fcNetOps)}</td>}
                   <td className={`r crp-sep-l ${cls(grand.payStart)}`}>{fMm(grand.payStart)}</td>
                   <td className={`r ${cls(grand.payEnd)}`}>{fMm(grand.payEnd)}</td>
                   <td className={`r ${cls(payD(grand.payStart, grand.payEnd))}`}>{fMd(payD(grand.payStart, grand.payEnd))}</td>
                 </tr>
               </tbody>
             </table>}
-          <div className="crp-note">Net cash from operations (receipts − payments, USD, Jan–{asOfLabel}) — same basis as the Area page. Grouped by area with an area subtotal; use <b>Movers</b> to isolate positive or negative and sort by size. Payables = the project's CCC-share trade payables from its mapped Midas books ({startLabel} → {asOfLabel}); blank = not yet mapped to a book. Δ positive = paid down.</div>
+          <div className="crp-note">Net cash from operations (receipts − payments, USD, Jan–{asOfLabel}) — same basis as the Area page{forecastActive ? <>. <b>Forecast</b> = net operations to {horizonLabel}</> : null}. Grouped by area with an area subtotal; use <b>Movers</b> to isolate positive or negative and sort by size. Payables = the project's CCC-share trade payables from its mapped Midas books ({startLabel} → {asOfLabel}); blank = not yet mapped to a book. Δ positive = paid down.</div>
         </div>
 
         <div className="crp-card">
-          <div className="crp-card-h">Net cash from operations <span>· top project movers</span></div>
-          <Svg html={areaBarsSvg(kept.map(r => ({ label: r.code, value: r.netOps })), undefined, { maxRows: 16 })} />
-          <div className="crp-note">Green = cash generated, crimson = consumed (USD, Jan–{asOfLabel}). Top 16 projects by size; the rest rolled into “Other”.</div>
+          <div className="crp-card-h">Net cash from operations <span>· top project movers{forecastActive ? ' · actual + forecast' : ''}</span></div>
+          <Svg html={areaBarsSvg(kept.map(r => ({ label: r.code, value: r.netOps, forecast: forecastActive ? (r.fcNetOps ?? 0) : undefined })), undefined, { maxRows: 16 })} />
+          <div className="crp-note">Green = cash generated, crimson = consumed (USD{forecastActive ? <>). <b>Solid</b> = actual (Jan–{asOfLabel}); <b>faded</b> = forecast (to {horizonLabel}</> : ', Jan–' + asOfLabel}). Top 16 projects by size; the rest rolled into “Other”.</div>
         </div>
       </div>
     </div>
@@ -923,14 +949,16 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
 }
 
 /* ── Project view — line items × actual months (USD) ────────────────────────── */
-function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, asOfMonth, asOfLabel }: {
+function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, asOfMonth, asOfLabel, forecastActive, horizonMonth, horizonLabel }: {
   scope: Scope; fxMap: Map<string, number | null>; areaOptions: { areaId: string; label: string }[]
   projArea: string; setProjArea: (id: string) => void; year: number; asOfMonth: number; asOfLabel: string
+  forecastActive: boolean; horizonMonth: number; horizonLabel: string
 }) {
   const ALL = '__ALL__', SEP = ''
   const areaId = projArea || areaOptions[0]?.areaId || ''
   const allMode = areaId === ALL
   const [cells, setCells] = useState<(CfCell & { project_code: string | null; currency?: string })[]>([])
+  const [fcCells, setFcCells] = useState<(CfCell & { project_code: string | null; currency?: string })[]>([])
   const [project, setProject] = useState<string>('')   // holds the composite key (area|code)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [anchor, setAnchor] = useState<number | null>(null)   // last-clicked row for shift-range
@@ -938,14 +966,20 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
   const [moverFilter, setMoverFilter] = useState<'both' | 'pos' | 'neg'>('both')   // movers list: both / positive / negative
 
   useEffect(() => {
-    if (!scope.primaryVersion || (!allMode && !areaId)) { setCells([]); return }
+    if (!scope.primaryVersion || (!allMode && !areaId)) { setCells([]); setFcCells([]); return }
     let cancel = false; setLoading(true)
-    fetchProjectCells({ version: scope.primaryVersion, cfArea: allMode ? undefined : areaId, fromYear: year, fromMonth: 1, toYear: year, toMonth: asOfMonth })
-      .then(rows => { if (!cancel) { setCells(rows); setProject(''); setSelected(new Set()) } })
-      .catch(() => { if (!cancel) setCells([]) })
+    const cfArea = allMode ? undefined : areaId
+    Promise.all([
+      fetchProjectCells({ version: scope.primaryVersion, cfArea, fromYear: year, fromMonth: 1, toYear: year, toMonth: asOfMonth }),
+      forecastActive && asOfMonth < 12
+        ? fetchProjectCells({ version: scope.primaryVersion, cfArea, fromYear: year, fromMonth: asOfMonth + 1, toYear: year, toMonth: horizonMonth })
+        : Promise.resolve([] as typeof cells),
+    ])
+      .then(([act, fc]) => { if (!cancel) { setCells(act); setFcCells(fc); setProject(''); setSelected(new Set()) } })
+      .catch(() => { if (!cancel) { setCells([]); setFcCells([]) } })
       .finally(() => { if (!cancel) setLoading(false) })
     return () => { cancel = true }
-  }, [areaId, allMode, scope.primaryVersion, year, asOfMonth])
+  }, [areaId, allMode, scope.primaryVersion, year, asOfMonth, forecastActive, horizonMonth])
 
   // Trade-payables crosswalk (book -> project via canonical) + the selected
   // project's monthly payables balance (CCC share), from the trial balance.
@@ -954,7 +988,10 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
   const [paySeries, setPaySeries] = useState<{ period: number; usd: number }[]>([])
   const [payBooks, setPayBooks] = useState(0)
 
+  // Actual months (Jan–asOf) for the ranking/actual figures; dispMonths extends
+  // through the forecast horizon for the per-month chart + matrix.
   const months = useMemo(() => Array.from({ length: asOfMonth }, (_, i) => i + 1), [asOfMonth])
+  const dispMonths = useMemo(() => Array.from({ length: forecastActive ? horizonMonth : asOfMonth }, (_, i) => i + 1), [forecastActive, horizonMonth, asOfMonth])
   const flowCodes = useMemo(() => new Set(scope.lines.filter(l => l.nature !== 'Balance').map(l => l.line_code)), [scope.lines])
   const rateOf = (cur?: string) => (cur || 'USD') === 'USD' ? 1 : (fxMap.get(cur || '') ?? null)
   const areaLabelOf = (a: string) => areaOptions.find(o => o.areaId === a)?.label || a
@@ -976,6 +1013,20 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
       .sort((p, q) => Math.abs(q.net) - Math.abs(p.net))
   }, [cells, flowCodes, fxMap])
 
+  // Forecast net cash movement per project (flow lines, USD), keyed like ranking —
+  // drives the faded extension on each project's bar in the ranked list.
+  const fcNetByKey = useMemo(() => {
+    const m = new Map<string, number>()
+    if (forecastActive) for (const c of fcCells) {
+      const code = c.project_code; if (!code) continue
+      if (!flowCodes.has(c.line_code)) continue
+      const r = rateOf(c.currency); if (r == null) continue
+      const key = c.area + SEP + code
+      m.set(key, (m.get(key) ?? 0) + c.value * r)
+    }
+    return m
+  }, [forecastActive, fcCells, flowCodes, fxMap])
+
   // Movers filter — `ranking` is sorted by |net| desc (biggest movers first), so
   // filtering by sign keeps that order: top gainers, or top drainers. Drives the
   // list, the top-N picks, and which project the detail panel defaults to.
@@ -983,7 +1034,7 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
     moverFilter === 'pos' ? ranking.filter(r => r.net > 0)
     : moverFilter === 'neg' ? ranking.filter(r => r.net < 0)
     : ranking, [ranking, moverFilter])
-  const maxAbs = Math.max(1, ...shown.map(r => Math.abs(r.net)))
+  const maxAbs = Math.max(1, ...shown.map(r => Math.max(Math.abs(r.net), Math.abs(r.net + (fcNetByKey.get(r.key) ?? 0)))))
   const bigCut = maxAbs * 0.12
   const sel = project || shown[0]?.key || ''
   const selArea = sel ? sel.slice(0, sel.indexOf(SEP)) : ''
@@ -1008,16 +1059,19 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
     const area = key.slice(0, key.indexOf(SEP)), code = key.slice(key.indexOf(SEP) + 1)
     const perCode = new Map<string, Map<number, number>>()
     let cur = 'USD', ok = true
-    for (const c of cells) {
+    // actual cells + (when a horizon is selected) the forecast tail — so the
+    // matrix + chart carry the forecast months, faded, past the as-of divider.
+    const src = forecastActive ? [...cells, ...fcCells] : cells
+    for (const c of src) {
       if (c.area !== area || c.project_code !== code) continue
       if (c.currency && c.currency !== 'USD') cur = c.currency
       const r = rateOf(c.currency); if (r == null) { ok = false; continue }
       let m = perCode.get(c.line_code); if (!m) { m = new Map(); perCode.set(c.line_code, m) }
       m.set(c.month, (m.get(c.month) ?? 0) + c.value * r)
     }
-    return { matrix: buildStatementMatrix(perCode, scope.lines, months), currency: cur, fxOk: ok, area, code }
+    return { matrix: buildStatementMatrix(perCode, scope.lines, dispMonths), currency: cur, fxOk: ok, area, code }
   }
-  const { matrix, currency, fxOk } = useMemo(() => matrixFor(sel), [cells, sel, fxMap, scope.lines, months])
+  const { matrix, currency, fxOk } = useMemo(() => matrixFor(sel), [cells, fcCells, forecastActive, sel, fxMap, scope.lines, dispMonths])
   const areaLabel = allMode ? 'All areas' : areaLabelOf(areaId)
   const secNet = (label: string) => matrix.sections.find(s => s.label === label)?.netTot ?? 0
   const showBody = !loading && !!sel && fxOk && matrix.sections.length > 0
@@ -1039,19 +1093,20 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
     if (base.length === 0) { w.close(); return }
     const fromP = (year - 1) * 100 + 12, toP = year * 100 + asOfMonth
     const list = await Promise.all(base.map(async x => {
-      // Trade-payables balance movement for this project (Dec → as-of), aligned to months.
+      // Trade-payables balance movement for this project (Dec → as-of), aligned to
+      // dispMonths — forecast months have no TB payables (actual only) → null.
       let payables: import('./reportPrint').ProjectPrint['payables']
       const cid = payMaps?.cfCodeToCanon.get(x.code.toUpperCase())
       const books = cid ? (payMaps?.canonToBooks.get(cid) ?? []) : []
       if (books.length) {
         const s = await fetchPayablesForBooks(books, fromP, toP)
         const byP = new Map(s.map(p => [p.period, p.usd]))
-        const monthly = months.map(m => byP.has(year * 100 + m) ? byP.get(year * 100 + m)! : null)
+        const monthly = dispMonths.map(m => byP.has(year * 100 + m) ? byP.get(year * 100 + m)! : null)
         const start = byP.has(fromP) ? byP.get(fromP)! : null
         const last = [...monthly].reverse().find(v => v != null) ?? null
         payables = { monthly, start, change: last != null && start != null ? last - start : null }
       }
-      return { areaLabel: areaLabelOf(x.area), project: x.code, currency: x.currency, asOfLabel, months, matrix: x.matrix, payables }
+      return { areaLabel: areaLabelOf(x.area), project: x.code, currency: x.currency, asOfLabel, months: dispMonths, matrix: x.matrix, payables, actualCount: forecastActive ? asOfMonth : undefined, horizonLabel: forecastActive ? horizonLabel : undefined }
     }))
     w.document.open(); w.document.write(buildProjectsPrintHtml(list)); w.document.close()
   }
@@ -1068,7 +1123,7 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
         <img className="crp-logo" src="/ccc-logo.png" alt="CCC" />
         <div className="crp-head-t">
           <h1>Cash Flow Report — Projects</h1>
-          <div className="crp-sub">{areaLabel} · monthly actuals Jan–{asOfLabel} · USD millions · {shown.length}{moverFilter !== 'both' ? ` ${moverFilter === 'pos' ? 'positive' : 'negative'}` : ''} project{shown.length === 1 ? '' : 's'}</div>
+          <div className="crp-sub">{areaLabel} · monthly{forecastActive ? <> actual Jan–{asOfLabel} · forecast to {horizonLabel}</> : <> actuals Jan–{asOfLabel}</>} · USD millions · {shown.length}{moverFilter !== 'both' ? ` ${moverFilter === 'pos' ? 'positive' : 'negative'}` : ''} project{shown.length === 1 ? '' : 's'}</div>
         </div>
         <div className="crp-brand">Treasury</div>
       </div>
@@ -1117,14 +1172,17 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
                   <button className="crp-projname" onClick={() => setProject(r.key)} title="View this project">
                     {big ? <span className="crp-bigdot" /> : null}<span className="crp-projcode">{r.code}</span>{allMode ? <span className="crp-projarea">{areaLabelOf(r.area)}</span> : null}
                   </button>
-                  <div className="crp-projbar"><div className={`crp-projbar-fill ${r.net < 0 ? 'neg' : 'pos'}`} style={{ width: `${(Math.abs(r.net) / maxAbs) * 100}%` }} /></div>
+                  <div className="crp-projbar">
+                    <div className={`crp-projbar-fill ${r.net < 0 ? 'neg' : 'pos'}`} style={{ width: `${(Math.abs(r.net) / maxAbs) * 100}%` }} />
+                    {forecastActive && Math.abs(fcNetByKey.get(r.key) ?? 0) >= 1 && <div className={`crp-projbar-fill crp-projbar-fill--fc ${(fcNetByKey.get(r.key) ?? 0) < 0 ? 'neg' : 'pos'}`} style={{ width: `${(Math.abs(fcNetByKey.get(r.key) ?? 0) / maxAbs) * 100}%` }} />}
+                  </div>
                   <div className={`crp-projval ${cls(r.net)}`}>{fMm(r.net)}</div>
                 </div>
               )
             })}
             {shown.length === 0 ? <div className="crp-note crp-note--empty">{ranking.length === 0 ? 'No project-grain cash flow for this scope.' : `No ${moverFilter === 'pos' ? 'positive' : 'negative'} movers in this scope.`}</div> : null}
           </div>
-          <div className="crp-note"><span className="crp-bigdot" /> Big movers (largest cash movement) — the ones worth printing. Use <b>Top 5/10/20</b> above, or tick projects (shift-click for a range), then “Print selected”. Bars USD, net of the elapsed months.</div>
+          <div className="crp-note"><span className="crp-bigdot" /> Big movers (largest cash movement) — the ones worth printing. Use <b>Top 5/10/20</b> above, or tick projects (shift-click for a range), then “Print selected”. Bars USD, net of the elapsed months{forecastActive ? <> (<b>faded</b> = forecast to {horizonLabel})</> : null}.</div>
         </div>
 
         {/* Selected project detail */}
@@ -1138,13 +1196,13 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
                     figures read against the chart they describe (not floating). */}
                 <div className="crp-chartpair">
                   <div className="crp-chartcell">
-                    <div className="crp-chart-cap">Net cash movement <span>· by month</span></div>
+                    <div className="crp-chart-cap">Net cash movement <span>· by month{forecastActive ? ' · incl. forecast' : ''}</span></div>
                     <KpiBand compact cards={[
-                      { label: 'Net cash movement · YTD', value: fMm(matrix.netTotal), cls: cls(matrix.netTotal) },
+                      { label: `Net cash movement · ${forecastActive ? 'full year' : 'YTD'}`, value: fMm(matrix.netTotal), cls: cls(matrix.netTotal) },
                       { label: 'Net from operations', value: fMm(secNet('Operations')), cls: cls(secNet('Operations')) },
                       { label: 'Net financing', value: fMm(secNet('Bank Financing')), cls: cls(secNet('Bank Financing')) },
                     ]} />
-                    <Svg html={netTrendSvg(months.map(m => MONTHS[m - 1]), matrix.netMovement)} />
+                    <Svg html={netTrendSvg(dispMonths.map(m => MONTHS[m - 1]), matrix.netMovement, undefined, forecastActive ? asOfMonth : undefined)} />
                   </div>
                   <div className="crp-chartcell">
                     <div className="crp-chart-cap">Trade payables <span>· balance{payBooks ? ` · ${payBooks} book${payBooks === 1 ? '' : 's'}` : ''}</span></div>
@@ -1165,14 +1223,14 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
                 <table className="crp-table crp-table--matrix">
                   <thead><tr>
                     <th>Line item</th>
-                    {months.map(m => <th key={m} className="r">{MONTHS[m - 1]}</th>)}
-                    <th className="r crp-sep-l">YTD</th>
+                    {dispMonths.map(m => <th key={m} className={`r ${forecastActive && m > asOfMonth ? 'crp-fc' : ''} ${forecastActive && m === asOfMonth + 1 ? 'crp-fc-seam' : ''}`}>{MONTHS[m - 1]}</th>)}
+                    <th className="r crp-sep-l">{forecastActive ? 'Total' : 'YTD'}</th>
                   </tr></thead>
                   <tbody>
-                    {matrix.sections.map(sec => <MatrixSectionRows key={sec.label} sec={sec} months={months} />)}
+                    {matrix.sections.map(sec => <MatrixSectionRows key={sec.label} sec={sec} months={dispMonths} asOfMonth={forecastActive ? asOfMonth : 99} />)}
                     <tr className="crp-total">
                       <td>Net cash movement</td>
-                      {months.map((_, i) => <td key={i} className={`r ${cls(matrix.netMovement[i])}`}>{fMm(matrix.netMovement[i])}</td>)}
+                      {dispMonths.map((m, i) => <td key={i} className={`r ${forecastActive && m > asOfMonth ? 'crp-fc' : ''} ${forecastActive && m === asOfMonth + 1 ? 'crp-fc-seam' : ''} ${cls(matrix.netMovement[i])}`}>{fMm(matrix.netMovement[i])}</td>)}
                       <td className={`r crp-sep-l ${cls(matrix.netTotal)}`}>{fMm(matrix.netTotal)}</td>
                     </tr>
                   </tbody>
@@ -1184,11 +1242,12 @@ function ProjectView({ scope, fxMap, areaOptions, projArea, setProjArea, year, a
   )
 }
 
-function MatrixSectionRows({ sec, months }: { sec: MatrixSection; months: number[] }) {
+function MatrixSectionRows({ sec, months, asOfMonth = 99 }: { sec: MatrixSection; months: number[]; asOfMonth?: number }) {
+  const fcCls = (i: number) => `${months[i] > asOfMonth ? 'crp-fc' : ''} ${months[i] === asOfMonth + 1 ? 'crp-fc-seam' : ''}`
   const row = (label: string, monthly: number[], total: number, klass: string) => (
     <tr className={klass}>
       <td className={klass === '' ? 'crp-item' : ''}>{label}</td>
-      {monthly.map((v, i) => <td key={i} className={`r ${cls(v)}`}>{fMm(v)}</td>)}
+      {monthly.map((v, i) => <td key={i} className={`r ${fcCls(i)} ${cls(v)}`}>{fMm(v)}</td>)}
       <td className={`r crp-sep-l ${cls(total)}`}>{fMm(total)}</td>
     </tr>
   )
