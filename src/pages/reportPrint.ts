@@ -256,7 +256,7 @@ function sectionsSheet(o: SectionsOpts): string {
   const f = fmtFor(o.disp)
   const chartDisp = { div: o.disp.div, dec: o.disp.dec }
   const card = (s: SectionsOpts['sections'][number]) =>
-    `<div class="chartcard"><div class="ch-h"><span class="sh-t">${s.label}</span><b class="sh-n ${cl(s.net)}">${f.fM(s.net)}</b></div>${areaBarsSvg(s.rows, chartDisp, { zoom: 1.6, maxRows: 16 })}</div>`
+    `<div class="chartcard"><div class="ch-h"><span class="sh-t">${s.label}</span><b class="sh-n ${cl(s.net)}">${f.fM(s.net)}</b></div>${areaBarsSvg(s.rows, chartDisp, { zoom: 1.6, maxRows: 16, dualLabel: o.forecastActive })}</div>`
   const cols = arrangeSectionColumns(o.sections)
     .map(col => `<div class="seccol">${col.map(card).join('')}</div>`).join('')
   const sub = o.forecastActive

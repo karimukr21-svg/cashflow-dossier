@@ -603,7 +603,7 @@ function SectionsView({ scope, matched, asOfLabel, fcByArea, forecastActive, hor
                   <span className="crp-sechead-t">{c.label}<span> · by area</span></span>
                   <b className={`crp-sechead-n ${cls(c.net)}`}>{fMm(c.net)}</b>
                 </div>
-                <Svg html={areaBarsSvg(c.rows.map(r => ({ label: r.label, value: r.value, forecast: r.forecast })), undefined, { zoom: 1.55 })} />
+                <Svg html={areaBarsSvg(c.rows.map(r => ({ label: r.label, value: r.value, forecast: r.forecast })), undefined, { zoom: 1.55, dualLabel: forecastActive })} />
               </div>
             ))}
           </div>

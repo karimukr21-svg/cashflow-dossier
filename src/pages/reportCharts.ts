@@ -4,7 +4,7 @@
  * divisor doesn't matter for it; the value LABELS follow the display
  * denomination (millions / '000 / units) passed in via `disp`. */
 
-const INK = '#15233b', MUTE = '#64748b', CRIM = '#E10020', GOOD = '#057a55', GRID = '#e2e8f0'
+const INK = '#15233b', MUTE = '#64748b', CRIM = '#E10020', GOOD = '#057a55', GRID = '#e2e8f0', BRONZE = '#9a7b3c'
 export type ChartDisp = { div: number; dec: number }
 const DEF: ChartDisp = { div: 1e6, dec: 1 }
 const mm = (v: number) => v / 1e6
@@ -62,7 +62,7 @@ export function waterfallSvg(items: { label: string; value: number }[], total: n
  * When a row carries a `forecast` value the bar is drawn in two segments: a
  * solid ACTUAL segment then a faded FORECAST segment stacked on its end, so the
  * total bar = actual + forecast and the faded part reads as the forecast. */
-export function areaBarsSvg(rows: { label: string; value: number; forecast?: number }[], disp: ChartDisp = DEF, opts: { zoom?: number; maxRows?: number } = {}): string {
+export function areaBarsSvg(rows: { label: string; value: number; forecast?: number }[], disp: ChartDisp = DEF, opts: { zoom?: number; maxRows?: number; dualLabel?: boolean } = {}): string {
   const zoom = opts.zoom ?? 1
   const lab = (v: number) => labf(v, disp)
   const tot = (r: { value: number; forecast?: number }) => r.value + (r.forecast ?? 0)
@@ -76,9 +76,10 @@ export function areaBarsSvg(rows: { label: string; value: number; forecast?: num
     data = [...keep, ...(Math.abs(otherVal) + Math.abs(otherFc) >= 50000 ? [{ label: `Other (${rest.length})`, value: otherVal, forecast: otherFc }] : [])]
   }
   const hasFc = data.some(r => r.forecast != null)
+  const dual = !!opts.dualLabel && hasFc   // show BOTH the actual + forecast figure
   data = data.sort((a, b) => b.value - a.value)
   const fs = 10 * zoom, off = fs * 0.35
-  const rowH = 22 * zoom, padT = 8, padB = 6, legendH = hasFc ? 20 * zoom : 0, W = 560, labW = 104 * zoom, valW = 62 * zoom
+  const rowH = (dual ? 26 : 22) * zoom, padT = 8, padB = 6, legendH = hasFc ? 20 * zoom : 0, W = 560, labW = 104 * zoom, valW = (dual ? 72 : 62) * zoom
   const H = padT + padB + data.length * rowH + legendH
   const plotL = labW, plotR = W - valW, plotW = plotR - plotL
   // Extent = the furthest point from zero, considering the actual end AND the
@@ -102,10 +103,17 @@ export function areaBarsSvg(rows: { label: string; value: number; forecast?: num
       const xf = Math.min(px(a), px(total)), wf = Math.abs(fc) * scale
       s += `<rect x="${xf.toFixed(1)}" y="${ry.toFixed(1)}" width="${Math.max(1.5, wf).toFixed(1)}" height="${rh.toFixed(1)}" fill="${colF}" opacity="0.3" rx="2"/>`
     }
-    // Value label at the end = the actual figure (the solid bar) when forecast is
-    // shown (the table carries both); otherwise just the value.
-    const lblV = hasFc ? a : r.value, lblCol = lblV >= 0 ? GOOD : CRIM
-    s += `<text x="${(W - valW + 6).toFixed(1)}" y="${(y + rowH / 2 + off).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="700" fill="${lblCol}">${lab(lblV)}</text>`
+    // Value label(s). dual = show the actual (its colour) stacked over the
+    // forecast (bronze); otherwise a single figure — the actual when a forecast
+    // segment is drawn (the table carries the pair), else just the value.
+    if (dual) {
+      const yc = y + rowH / 2, aCol = a >= 0 ? GOOD : CRIM
+      s += `<text x="${(W - valW + 6).toFixed(1)}" y="${(yc - fs * 0.12).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="700" fill="${aCol}">${lab(a)}</text>`
+      s += `<text x="${(W - valW + 6).toFixed(1)}" y="${(yc + fs * 0.92).toFixed(1)}" font-size="${(fs * 0.82).toFixed(1)}" font-weight="700" fill="${BRONZE}">${lab(fc)}</text>`
+    } else {
+      const lblV = hasFc ? a : r.value, lblCol = lblV >= 0 ? GOOD : CRIM
+      s += `<text x="${(W - valW + 6).toFixed(1)}" y="${(y + rowH / 2 + off).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="700" fill="${lblCol}">${lab(lblV)}</text>`
+    }
   })
   if (hasFc) {
     const ly = H - padB - legendH / 2 + off, sw = 9 * zoom, gap = 5 * zoom
