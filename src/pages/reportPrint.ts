@@ -68,7 +68,7 @@ function matrixRows(sec: MatrixSection, months: number[], f: Fmt): string {
 
 export type GroupForecast = {
   dual: { sections: DualSection[]; netA: number; netF: number }
-  netMovement: number; endCash: number; horizonLabel: string
+  horizonLabel: string
 }
 type GroupOpts = {
   scopeLabel: string; asOfLabel: string; startLabel: string; cashStartLabel?: string; matchedCount?: number
@@ -99,14 +99,18 @@ function groupSheet(o: GroupOpts): string {
   const chips = chipsOf(o.statement.sections)
   let timeline = ''
   if (hasCash && fc) {
-    const fcNm = fc.netMovement
+    // Derive the actual/forecast segments from the dual statement so the print
+    // timeline reconciles with the dual cards (same bucket set / totals).
+    const am = fc.dual.netA, fcNm = fc.dual.netF
+    const asOfCash = (o.startCash ?? 0) + am, fcEndCash = asOfCash + fcNm
+    const aChips = chipsOf(fc.dual.sections.map(s => ({ label: s.label, net: s.netA })))
     const fcChips = chipsOf(fc.dual.sections.map(s => ({ label: s.label, net: s.netF })))
     timeline = `<div class="timeline">
       <div class="tl-node"><div class="tl-cap">Starting cash · ${o.cashStartLabel ?? o.startLabel}</div><div class="tl-val ${cl(o.startCash)}">${f.fM(o.startCash)}</div></div>
-      <div class="tl-flow"><div class="tl-move ${cl(nm)}">${nm < 0 ? '−' : '+'}${f.fM(Math.abs(nm))} <i>actual movement · of which</i></div><div class="tl-chips">${chips}</div></div>
-      <div class="tl-node tl-mid"><div class="tl-cap">Cash · ${o.asOfLabel}</div><div class="tl-val ${cl(o.endCash)}">${f.fM(o.endCash)}</div></div>
+      <div class="tl-flow"><div class="tl-move ${cl(am)}">${am < 0 ? '−' : '+'}${f.fM(Math.abs(am))} <i>actual movement · of which</i></div><div class="tl-chips">${aChips}</div></div>
+      <div class="tl-node tl-mid"><div class="tl-cap">Cash · ${o.asOfLabel}</div><div class="tl-val ${cl(asOfCash)}">${f.fM(asOfCash)}</div></div>
       <div class="tl-flow tl-flow-fc"><div class="tl-move ${cl(fcNm)}">${fcNm < 0 ? '−' : '+'}${f.fM(Math.abs(fcNm))} <i>forecast movement · of which</i></div><div class="tl-chips">${fcChips}</div></div>
-      <div class="tl-node tl-end tl-fc"><div class="tl-cap">Forecast cash · ${fc.horizonLabel}</div><div class="tl-val ${cl(fc.endCash)}">${f.fM(fc.endCash)}</div></div>
+      <div class="tl-node tl-end tl-fc"><div class="tl-cap">Forecast cash · ${fc.horizonLabel}</div><div class="tl-val ${cl(fcEndCash)}">${f.fM(fcEndCash)}</div></div>
     </div>`
   } else if (hasCash) {
     timeline = `<div class="timeline">

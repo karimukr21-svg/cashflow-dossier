@@ -189,9 +189,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
       if (forecastActive) {
         const fcLineUsd = new Map<string, number>()
         for (const a of cfAreas) { const m = fcByArea.get(a.areaId); if (m) for (const [lc, v] of m) fcLineUsd.set(lc, (fcLineUsd.get(lc) ?? 0) + v) }
-        const dual = buildDualStatement(lineUsd, fcLineUsd, scope.lines)
-        const midCash = startCash + stmt.netMovement
-        forecast = { dual, netMovement: dual.netF, endCash: midCash + dual.netF, horizonLabel }
+        forecast = { dual: buildDualStatement(lineUsd, fcLineUsd, scope.lines), horizonLabel }
       }
       html = buildReportHtml({
         level: 'group', scopeLabel, year, asOfLabel, startLabel, cashStartLabel, matchedCount: cfAreas.length,
@@ -472,13 +470,6 @@ function GroupView({ scope, matched, year, asOfLabel, startLabel, cashStartLabel
   const payDelta = hasPay ? payEnd - payStart : null
   const hasDebt = Math.abs(loanStart) + Math.abs(loanEnd) + Math.abs(odStart) + Math.abs(odEnd) > 1
   const { sections, netMovement } = buildStatement(lineUsd, scope.lines)
-  const drivers = sections.map(s => ({ label: s.label, value: s.net }))
-  // Ending cash is DERIVED (opening + net movement), not read from the stored
-  // "balance at end" line — a cash-flow statement's closing position is opening
-  // plus the flows by definition, so the walk always reconciles. (The stored
-  // ending vs this derived one is a data-quality check that lives in staging.)
-  const endCash = startCash + netMovement
-  const hasCash = Math.abs(startCash) > 1 || Math.abs(endCash) > 1
 
   // Forecast overlay: aggregate the per-area forecast lines over the in-scope
   // areas, then a dual (actual | forecast) statement. Forecast year-end cash =
@@ -489,6 +480,21 @@ function GroupView({ scope, matched, year, asOfLabel, startLabel, cashStartLabel
     return m
   }, [forecastActive, matched, fcByArea])
   const dual = useMemo(() => forecastActive ? buildDualStatement(lineUsd, fcLineUsd, scope.lines) : null, [forecastActive, lineUsd, fcLineUsd, scope.lines])
+
+  // Actual net movement + section drivers. In forecast mode these come from the
+  // dual statement so the timeline reconciles exactly with the dual cards (the
+  // dual builder keeps a bucket if EITHER side is material, so its actual total
+  // can differ from buildStatement's by sub-threshold buckets).
+  const actualMove = forecastActive && dual ? dual.netA : netMovement
+  const drivers = forecastActive && dual
+    ? dual.sections.map(s => ({ label: s.label, value: s.netA }))
+    : sections.map(s => ({ label: s.label, value: s.net }))
+  // As-of cash is DERIVED (opening + net movement), not read from the stored
+  // "balance at end" line — a cash-flow statement's closing position is opening
+  // plus the flows by definition, so the walk always reconciles. (The stored
+  // ending vs this derived one is a data-quality check that lives in staging.)
+  const endCash = startCash + actualMove
+  const hasCash = Math.abs(startCash) > 1 || Math.abs(endCash) > 1
   const forecast = forecastActive && dual
     ? { endCash: endCash + dual.netF, netMovement: dual.netF, drivers: dual.sections.map(s => ({ label: s.label, value: s.netF })), horizonLabel }
     : null
@@ -510,7 +516,7 @@ function GroupView({ scope, matched, year, asOfLabel, startLabel, cashStartLabel
         <div className="crp-brand">Treasury</div>
       </div>
 
-      <CashTimeline startCash={startCash} endCash={endCash} netMovement={netMovement} drivers={drivers} hasCash={hasCash} startLabel={cashStartLabel} asOfLabel={asOfLabel} forecast={forecast} />
+      <CashTimeline startCash={startCash} endCash={endCash} netMovement={actualMove} drivers={drivers} hasCash={hasCash} startLabel={cashStartLabel} asOfLabel={asOfLabel} forecast={forecast} />
 
       {/* Justified 3-column grid: Operations · the four stacked sections · charts.
           The Loans & Overdrafts debt position sits at the top of column 1, above
