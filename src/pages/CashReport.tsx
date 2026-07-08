@@ -9,7 +9,7 @@ import {
 } from '@/lib/queries'
 import AreaFilterPopover from '@/components/AreaFilterPopover'
 import { fmt, fmtDelta } from '@/lib/format'
-import { buildModel, buildStatement, buildStatementMatrix, payablesSeries, arrangeSectionColumns, arrangeByColumns, STMT_COLUMNS, type AreaAgg, type StmtSection, type MatrixSection, type PaySeriesPt } from './reportModel'
+import { buildModel, buildStatement, buildStatementMatrix, buildForecastLineUsd, buildDualStatement, payablesSeries, arrangeSectionColumns, arrangeByColumns, STMT_COLUMNS, type AreaAgg, type StmtSection, type DualSection, type MatrixSection, type PaySeriesPt } from './reportModel'
 import { buildReportHtml, buildProjectsPrintHtml } from './reportPrint'
 import { waterfallSvg, areaBarsSvg, netTrendSvg, payablesTrendSvg } from './reportCharts'
 import type { Scope } from './Dossier'
@@ -45,6 +45,15 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
   const startLabel = `Dec ${year - 1}`            // payables start — a real Dec month-end snapshot
   const cashStartLabel = `Jan ${year}`            // cash opening — the Jan-1 / start-of-year position
 
+  // Forecast horizon — driven by the Period selector. Actuals are always anchored
+  // Jan → as-of; when the selected period reaches PAST the cycle's as-of month,
+  // the Group page extends into the forecast tail (as-of+1 … horizon), capped at
+  // Dec of the cycle year. Default period (YTD, ending at as-of) → actual only.
+  const periodEnd = scope.toYear * 100 + scope.toMonth
+  const forecastActive = periodEnd > asOf
+  const horizonMonth = forecastActive ? (scope.toYear > year ? 12 : Math.min(scope.toMonth, 12)) : asOfMonth
+  const horizonLabel = `${MONTHS[horizonMonth - 1] ?? ''} ${year}`
+
   // Remember the last-viewed tab across reloads (localStorage, survives reopen).
   const [level, setLevel] = useState<Level>(() => {
     try { const s = localStorage.getItem('crp-level') as Level | null; return LEVELS.includes(s as Level) ? (s as Level) : 'group' } catch { return 'group' }
@@ -54,6 +63,10 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
   const [projArea, setProjArea] = useState<string>('')     // selected area for the Project grain
 
   const [cells, setCells] = useState<(CfCell & { currency?: string })[]>([])
+  // Forecast tail (as-of+1 … Dec of the cycle year), fetched once per version and
+  // sliced to the selected horizon in-memory — so changing the Period re-slices
+  // without a refetch. Empty until the actual+forecast load resolves.
+  const [fcTail, setFcTail] = useState<(CfCell & { currency?: string })[]>([])
   const [payTraj, setPayTraj] = useState<PayablesTrajRow[]>([])
   const [fxMap, setFxMap] = useState<Map<string, number | null>>(new Map())
   const [loading, setLoading] = useState(true)
@@ -63,13 +76,17 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
     let cancel = false; setLoading(true)
     ;(async () => {
       try {
-        const [a, f, pt, dec] = await Promise.all([
+        const [a, f, pt, dec, ftail] = await Promise.all([
           fetchActuals({ fromYear: year, fromMonth: 1, toYear: year, toMonth: asOfMonth }),
           fetchForecasts({ version: scope.primaryVersion, fromYear: year, fromMonth: 1, toYear: year, toMonth: asOfMonth }),
           fetchPayablesTrajectory(),
           fetchDebtStocks(year - 1, 12),   // prior-year Dec period-end debt = the start-of-year debt anchor
+          asOfMonth < 12
+            ? fetchForecasts({ version: scope.primaryVersion, fromYear: year, fromMonth: asOfMonth + 1, toYear: year, toMonth: 12 })
+            : Promise.resolve([]),
         ])
         if (cancel) return
+        setFcTail(ftail)
         // Merge/override at PROJECT grain: cf data is project-grain (many rows
         // per area|line|month), so the key MUST include project_code — else the
         // areas collapse to one project's value (undercounting multi-project
@@ -96,6 +113,14 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
 
   const model = useMemo(() => buildModel(cells, payTraj, fxMap, scope.areas, scope.cfToCanonical, scope.lines, year, asOf),
     [cells, payTraj, fxMap, scope.areas, scope.cfToCanonical, scope.lines, year, asOf])
+
+  // Forecast line→USD per area, sliced to the selected horizon (as-of+1 …
+  // horizonMonth). Empty when the period doesn't reach past the as-of month.
+  const fcByArea = useMemo(() => {
+    if (!forecastActive) return new Map<string, Map<string, number>>()
+    const tail = fcTail.filter(c => c.year === year && c.month > asOfMonth && c.month <= horizonMonth)
+    return buildForecastLineUsd(tail, fxMap, scope.cfToCanonical)
+  }, [forecastActive, fcTail, fxMap, scope.cfToCanonical, year, asOfMonth, horizonMonth])
 
   // Cash-flow scope = every area with pushed cash flow AND an FX rate (so it
   // converts to USD). NOT gated on the payables mapping — unmapped areas still
@@ -157,11 +182,23 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
     } else {
       const { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash, loanStart, loanEnd, odStart, odEnd } = aggregateScope(cfAreas)
       const stmt = buildStatement(lineUsd, scope.lines)
+      // Forecast overlay for print (mirrors the screen) — only when a forecast
+      // horizon is in scope. Aggregate the per-area forecast lines over the
+      // in-scope areas and build the dual statement.
+      let forecast: Parameters<typeof buildReportHtml>[0]['forecast']
+      if (forecastActive) {
+        const fcLineUsd = new Map<string, number>()
+        for (const a of cfAreas) { const m = fcByArea.get(a.areaId); if (m) for (const [lc, v] of m) fcLineUsd.set(lc, (fcLineUsd.get(lc) ?? 0) + v) }
+        const dual = buildDualStatement(lineUsd, fcLineUsd, scope.lines)
+        const midCash = startCash + stmt.netMovement
+        forecast = { dual, netMovement: dual.netF, endCash: midCash + dual.netF, horizonLabel }
+      }
       html = buildReportHtml({
         level: 'group', scopeLabel, year, asOfLabel, startLabel, cashStartLabel, matchedCount: cfAreas.length,
         statement: stmt, payStart, payEnd, hasPay, startCash, endCash: startCash + stmt.netMovement,   // derived ending
         loanStart, loanEnd, odStart, odEnd,
         paySeries: paySeries.map(p => ({ label: MONTHS[(p.period % 100) - 1] ?? '', value: p.usd })),
+        forecast,
       })
     }
     w.document.write(html); w.document.close()
@@ -197,7 +234,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
         : <div className="crp-toolbar no-print">{areaControl}{controls}</div>}
 
       {loading ? <div className="placeholder-box">Loading…</div>
-        : level === 'group' ? <GroupView scope={scope} matched={cfAreas} year={year} asOfLabel={asOfLabel} startLabel={startLabel} cashStartLabel={cashStartLabel} paySeries={paySeries} />
+        : level === 'group' ? <GroupView scope={scope} matched={cfAreas} year={year} asOfLabel={asOfLabel} startLabel={startLabel} cashStartLabel={cashStartLabel} paySeries={paySeries} fcByArea={fcByArea} forecastActive={forecastActive} horizonLabel={horizonLabel} />
         : level === 'area' ? <AreaView matched={cfAreas} year={year} asOfLabel={asOfLabel} startLabel={startLabel} onOpenProjects={(id) => { setProjArea(id); setLevel('project') }} />
         : level === 'sections' ? <SectionsView scope={scope} matched={cfAreas} asOfLabel={asOfLabel} />
         : level === 'project' ? <ProjectView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} projArea={projArea} setProjArea={setProjArea} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} />
@@ -294,27 +331,47 @@ const Svg = ({ html }: { html: string }) => <div className="crp-svg" dangerously
  * net movement (with net operations / net financing as the headline drivers) →
  * ending cash, read left to right. Replaces the KPI tiles + cash-walk strip. */
 const SHORT_SEC: Record<string, string> = { 'Bank Financing': 'Financing', 'Within Group': 'Within group', 'Non Operational': 'Non-op', 'New Sales': 'New sales' }
-function CashTimeline({ startCash, endCash, netMovement, drivers, hasCash, startLabel, asOfLabel }: {
+const tlChip = (label: string, v: number) => (
+  <span className="crp-tl-chip" key={label}>{SHORT_SEC[label] ?? label} <b className={cls(v)}>{fMd(v)}</b></span>
+)
+const TlFlow = ({ move, drivers, caption, forecast }: { move: number; drivers: { label: string; value: number }[]; caption: string; forecast?: boolean }) => (
+  <div className={`crp-tl-flow${forecast ? ' crp-tl-flow--fc' : ''}`}>
+    <div className={`crp-tl-move ${cls(move)}`}>{move < 0 ? '−' : '+'}{fMm(Math.abs(move))}<i>{caption}</i></div>
+    <div className="crp-tl-chips">{drivers.filter(d => Math.abs(d.value) >= 50000).map(d => tlChip(d.label, d.value))}</div>
+  </div>
+)
+const TlNode = ({ cap, val, cls: extra }: { cap: string; val: number; cls?: string }) => (
+  <div className={`crp-tl-node${extra ? ` ${extra}` : ''}`}>
+    <div className="crp-tl-cap">{cap}</div>
+    <div className={`crp-tl-val ${cls(val)}`}>{fMm(val)}</div>
+  </div>
+)
+/* Cash-journey timeline — the top band of the Group page. Actual side: starting
+ * cash → net movement → as-of cash. When a forecast horizon is in scope, the
+ * as-of cash becomes the MIDDLE pivot and a second segment extends to the right:
+ * forecast movement → forecast year-end cash. */
+function CashTimeline({ startCash, endCash, netMovement, drivers, hasCash, startLabel, asOfLabel,
+  forecast }: {
   startCash: number; endCash: number; netMovement: number; drivers: { label: string; value: number }[]
   hasCash: boolean; startLabel: string; asOfLabel: string
+  forecast?: { endCash: number; netMovement: number; drivers: { label: string; value: number }[]; horizonLabel: string } | null
 }) {
-  const chip = (label: string, v: number) => (
-    <span className="crp-tl-chip" key={label}>{SHORT_SEC[label] ?? label} <b className={cls(v)}>{fMd(v)}</b></span>
-  )
+  if (forecast) {
+    return (
+      <div className="crp-timeline crp-timeline--fc">
+        {hasCash ? <TlNode cap={`Starting cash · ${startLabel}`} val={startCash} /> : null}
+        <TlFlow move={netMovement} drivers={drivers} caption="actual movement · of which" />
+        {hasCash ? <TlNode cap={`Cash · ${asOfLabel}`} val={endCash} cls="crp-tl-node--mid" /> : null}
+        <TlFlow move={forecast.netMovement} drivers={forecast.drivers} caption="forecast movement · of which" forecast />
+        {hasCash ? <TlNode cap={`Forecast cash · ${forecast.horizonLabel}`} val={forecast.endCash} cls="crp-tl-node--end crp-tl-node--fc" /> : null}
+      </div>
+    )
+  }
   return (
     <div className={`crp-timeline${hasCash ? '' : ' crp-timeline--nocash'}`}>
-      {hasCash ? <div className="crp-tl-node">
-        <div className="crp-tl-cap">Starting cash · {startLabel}</div>
-        <div className={`crp-tl-val ${cls(startCash)}`}>{fMm(startCash)}</div>
-      </div> : null}
-      <div className="crp-tl-flow">
-        <div className={`crp-tl-move ${cls(netMovement)}`}>{netMovement < 0 ? '−' : '+'}{fMm(Math.abs(netMovement))}<i>net cash movement · of which</i></div>
-        <div className="crp-tl-chips">{drivers.filter(d => Math.abs(d.value) >= 50000).map(d => chip(d.label, d.value))}</div>
-      </div>
-      {hasCash ? <div className="crp-tl-node crp-tl-node--end">
-        <div className="crp-tl-cap">Ending cash · {asOfLabel}</div>
-        <div className={`crp-tl-val ${cls(endCash)}`}>{fMm(endCash)}</div>
-      </div> : null}
+      {hasCash ? <TlNode cap={`Starting cash · ${startLabel}`} val={startCash} /> : null}
+      <TlFlow move={netMovement} drivers={drivers} caption="net cash movement · of which" />
+      {hasCash ? <TlNode cap={`Ending cash · ${asOfLabel}`} val={endCash} cls="crp-tl-node--end" /> : null}
     </div>
   )
 }
@@ -373,10 +430,43 @@ function DebtPositionCard({ loanStart, loanEnd, odStart, odEnd, startLabel, asOf
   )
 }
 
+/* Dual statement section card — same layout as StmtSectionCard but with two
+ * value columns: the actual figure (Jan→as-of) and the forecast figure over the
+ * selected forecast period. Header carries the two column labels; a Net row at
+ * the foot shows the section net for each side. */
+function DualStmtSectionCard({ sec }: { sec: DualSection }) {
+  const dual = (label: string, a: number, f: number, klass = '') => (
+    <tr className={klass} key={`${klass}-${label}`}>
+      <td className={klass ? '' : 'crp-item'}>{label}</td>
+      <td className={`r ${cls(a)}`}>{fMm(a)}</td>
+      <td className={`r crp-fc ${cls(f)}`}>{fMm(f)}</td>
+    </tr>
+  )
+  return (
+    <div className="crp-card crp-stmtcard crp-stmtcard--dual">
+      <table className="crp-table crp-table--dual">
+        <thead><tr>
+          <th className="crp-sechead-t">{sec.label}</th>
+          <th className="r">Actual</th>
+          <th className="r crp-fc">Forecast</th>
+        </tr></thead>
+        <tbody>
+          {sec.receipts.map(b => dual(b.label, b.actual, b.forecast))}
+          {sec.receipts.length > 1 && dual('Total receipts', sec.recA, sec.recF, 'crp-natsub')}
+          {sec.payments.map(b => dual(b.label, b.actual, b.forecast))}
+          {sec.payments.length > 1 && dual('Total payments', sec.payA, sec.payF, 'crp-natsub')}
+          {dual(`Net ${sec.label.toLowerCase()}`, sec.netA, sec.netF, 'crp-secnet')}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 /* ── Group view — cash-flow statement + separated payables position ─────────── */
-function GroupView({ scope, matched, year, asOfLabel, startLabel, cashStartLabel, paySeries }: {
+function GroupView({ scope, matched, year, asOfLabel, startLabel, cashStartLabel, paySeries, fcByArea, forecastActive, horizonLabel }: {
   scope: Scope; matched: AreaAgg[]
   year: number; asOfLabel: string; startLabel: string; cashStartLabel: string; paySeries: PaySeriesPt[]
+  fcByArea: Map<string, Map<string, number>>; forecastActive: boolean; horizonLabel: string
 }) {
   const { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash, loanStart, loanEnd, odStart, odEnd } = aggregateScope(matched)
   const payDelta = hasPay ? payEnd - payStart : null
@@ -390,27 +480,48 @@ function GroupView({ scope, matched, year, asOfLabel, startLabel, cashStartLabel
   const endCash = startCash + netMovement
   const hasCash = Math.abs(startCash) > 1 || Math.abs(endCash) > 1
 
+  // Forecast overlay: aggregate the per-area forecast lines over the in-scope
+  // areas, then a dual (actual | forecast) statement. Forecast year-end cash =
+  // as-of cash + the forecast-period net movement.
+  const fcLineUsd = useMemo(() => {
+    const m = new Map<string, number>()
+    if (forecastActive) for (const a of matched) { const am = fcByArea.get(a.areaId); if (am) for (const [lc, v] of am) m.set(lc, (m.get(lc) ?? 0) + v) }
+    return m
+  }, [forecastActive, matched, fcByArea])
+  const dual = useMemo(() => forecastActive ? buildDualStatement(lineUsd, fcLineUsd, scope.lines) : null, [forecastActive, lineUsd, fcLineUsd, scope.lines])
+  const forecast = forecastActive && dual
+    ? { endCash: endCash + dual.netF, netMovement: dual.netF, drivers: dual.sections.map(s => ({ label: s.label, value: s.netF })), horizonLabel }
+    : null
+  // Column layout: dual cards when forecast is on, single-value cards otherwise.
+  const stmtColumns: { label: string }[][] = forecastActive && dual
+    ? arrangeByColumns(dual.sections, STMT_COLUMNS)
+    : arrangeByColumns(sections, STMT_COLUMNS)
+
   return (
     <div className="crp-page">
       <div className="crp-head">
         <img className="crp-logo" src="/ccc-logo.png" alt="CCC" />
         <div className="crp-head-t">
           <h1>Cash Flow Report — {scopeLabel}</h1>
-          <div className="crp-sub">Actual to date · Jan–{asOfLabel} · USD millions · {matched.length} areas</div>
+          <div className="crp-sub">{forecastActive
+            ? <>Actual Jan–{asOfLabel} · forecast to {horizonLabel} · USD millions · {matched.length} areas</>
+            : <>Actual to date · Jan–{asOfLabel} · USD millions · {matched.length} areas</>}</div>
         </div>
         <div className="crp-brand">Treasury</div>
       </div>
 
-      <CashTimeline startCash={startCash} endCash={endCash} netMovement={netMovement} drivers={drivers} hasCash={hasCash} startLabel={cashStartLabel} asOfLabel={asOfLabel} />
+      <CashTimeline startCash={startCash} endCash={endCash} netMovement={netMovement} drivers={drivers} hasCash={hasCash} startLabel={cashStartLabel} asOfLabel={asOfLabel} forecast={forecast} />
 
       {/* Justified 3-column grid: Operations · the four stacked sections · charts.
           The Loans & Overdrafts debt position sits at the top of column 1, above
           the Operations card. */}
       <div className="crp-groupcols">
-        {arrangeByColumns(sections, STMT_COLUMNS).map((col, i) => (
+        {stmtColumns.map((col, i) => (
           <div className={`crp-seccol${i === 1 ? ' crp-seccol--spaced' : ''}`} key={i}>
             {i === 0 && hasDebt && <DebtPositionCard loanStart={loanStart} loanEnd={loanEnd} odStart={odStart} odEnd={odEnd} startLabel={startLabel} asOfLabel={asOfLabel} />}
-            {col.map(sec => <StmtSectionCard key={sec.label} sec={sec} />)}
+            {col.map(sec => forecastActive
+              ? <DualStmtSectionCard key={sec.label} sec={sec as DualSection} />
+              : <StmtSectionCard key={sec.label} sec={sec as StmtSection} />)}
           </div>
         ))}
 
@@ -565,6 +676,15 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
   const [moverFilter, setMoverFilter] = useState<'both' | 'pos' | 'neg'>('both')
   const [selected, setSelected] = useState<Set<string>>(new Set())   // ticked rows
   const [ignored, setIgnored] = useState<Set<string>>(new Set())     // hidden from table/chart/totals/print
+  // Areas collapsed to just their subtotal row — persisted, and honoured in print too.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    try { const raw = localStorage.getItem('crp-movers-collapsed-v1'); return new Set<string>(raw ? JSON.parse(raw) : []) } catch { return new Set() }
+  })
+  const persistCollapsed = (n: Set<string>) => {
+    try { localStorage.setItem('crp-movers-collapsed-v1', JSON.stringify([...n])) } catch { /* ignore */ }
+    setCollapsed(n)
+  }
+  const toggleCollapse = (area: string) => { const n = new Set(collapsed); n.has(area) ? n.delete(area) : n.add(area); persistCollapsed(n) }
   const [cells, setCells] = useState<(CfCell & { project_code: string | null; currency?: string })[]>([])
   const [loading, setLoading] = useState(false)
   const [payMaps, setPayMaps] = useState<PayablesMaps | null>(null)
@@ -656,7 +776,7 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
     const dcell = (v: number | null) => `<td class="r ${cls(v)}">${fMd(v)}</td>`
     const body = groups.map(g => `
       <tr class="grp"><td>${esc(g.label)} <span class="k">· ${g.items.length}</span></td>${cell(g.netOps)}${cell(g.payStart)}${cell(g.payEnd)}${dcell(payD(g.payStart, g.payEnd))}</tr>
-      ${g.items.map(r => `<tr><td class="p">${esc(r.code)}</td>${cell(r.netOps)}${cell(r.payStart)}${cell(r.payEnd)}${dcell(payD(r.payStart, r.payEnd))}</tr>`).join('')}`).join('')
+      ${collapsed.has(g.area) ? '' : g.items.map(r => `<tr><td class="p">${esc(r.code)}</td>${cell(r.netOps)}${cell(r.payStart)}${cell(r.payEnd)}${dcell(payD(r.payStart, r.payEnd))}</tr>`).join('')}`).join('')
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Cash Flow — Projects by area</title><style>
       @page { size: A4 landscape; margin: 12mm; }
       * { box-sizing: border-box; } body { font-family: -apple-system, Segoe UI, Helvetica, Arial, sans-serif; color: #141414; margin: 0; }
@@ -705,6 +825,12 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
             ))}
           </div>
         )}
+        {groups.length > 1 && (
+          <div className="crp-pick">
+            <button className="crp-pickbtn" disabled={groups.every(g => collapsed.has(g.area))} onClick={() => persistCollapsed(new Set(groups.map(g => g.area)))}>Collapse all</button>
+            <button className="crp-pickbtn" disabled={collapsed.size === 0} onClick={() => persistCollapsed(new Set())}>Expand all</button>
+          </div>
+        )}
         {(kept.length > 0 || ignored.size > 0) && (
           <div className="crp-pick">
             <button className="crp-pickbtn" disabled={selected.size === 0} onClick={ignoreSelected}>Ignore selected ({selected.size})</button>
@@ -730,15 +856,15 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
               </tr></thead>
               <tbody>
                 {groups.flatMap(g => [
-                  <tr className="crp-projgrp" key={g.area}>
+                  <tr className="crp-projgrp crp-projgrp--clickable" key={g.area} onClick={() => toggleCollapse(g.area)} title={collapsed.has(g.area) ? 'Expand area' : 'Collapse area'}>
                     <td className="crp-ck"></td>
-                    <td className="crp-projgrp-name">{g.label} <span className="crp-key">· {g.items.length}</span></td>
+                    <td className="crp-projgrp-name"><span className={`crp-grp-chev ${collapsed.has(g.area) ? '' : 'open'}`} aria-hidden>▶</span>{g.label} <span className="crp-key">· {g.items.length}</span></td>
                     <td className={`r ${cls(g.netOps)}`}>{fMm(g.netOps)}</td>
                     <td className={`r crp-sep-l ${cls(g.payStart)}`}>{fMm(g.payStart)}</td>
                     <td className={`r ${cls(g.payEnd)}`}>{fMm(g.payEnd)}</td>
                     <td className={`r ${cls(payD(g.payStart, g.payEnd))}`}>{fMd(payD(g.payStart, g.payEnd))}</td>
                   </tr>,
-                  ...g.items.map(r => (
+                  ...(collapsed.has(g.area) ? [] : g.items.map(r => (
                     <tr className={`crp-projtr ${selected.has(r.key) ? 'sel' : ''}`} key={r.key}>
                       <td className="crp-ck"><input type="checkbox" checked={selected.has(r.key)} onChange={() => toggle(r.key)} title="Select to ignore" /></td>
                       <td className="crp-projtd">{r.code}</td>
@@ -747,7 +873,7 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
                       <td className={`r ${cls(r.payEnd)}`}>{fMm(r.payEnd)}</td>
                       <td className={`r ${cls(payD(r.payStart, r.payEnd))}`}>{fMd(payD(r.payStart, r.payEnd))}</td>
                     </tr>
-                  )),
+                  ))),
                 ])}
                 <tr className="crp-total">
                   <td className="crp-ck"></td>

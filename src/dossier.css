@@ -1613,6 +1613,23 @@ body, html, #root {
 .crp-tl-chip { font-size: 13.5px; color: var(--mute); font-weight: 600; border: 1px solid var(--border); border-radius: 20px; padding: 6px 15px; background: #fff; }
 .crp-tl-chip b { font-weight: 800; font-variant-numeric: tabular-nums; margin-left: 3px; }
 .crp-tl-chip b.neg { color: var(--crimson); } .crp-tl-chip b.pos { color: var(--good); }
+/* Forecast-extended timeline: as-of cash becomes the middle pivot; a forecast
+ * segment (bronze-tinted) extends to the right. Nodes shrink to fit five cells. */
+.crp-timeline--fc .crp-tl-node { min-width: 148px; padding: 12px 15px; }
+.crp-timeline--fc .crp-tl-val { font-size: 22px; }
+.crp-timeline--fc .crp-tl-move { font-size: 18px; }
+.crp-tl-node--mid { border-left: 1px solid var(--border); border-right: 1px solid var(--border); background: #eef2f7; }
+.crp-tl-flow--fc { background: #fbfaf6; border-left: 1px solid var(--border); }
+.crp-tl-flow--fc .crp-tl-move i { color: #9a7b3c; }
+.crp-tl-node--fc { background: #fbfaf6; }
+/* Dual (Actual | Forecast) statement card */
+.crp-table--dual thead th { border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.crp-table--dual thead th.crp-sechead-t { font-size: 14px; font-weight: 700; color: var(--ink); text-transform: none; letter-spacing: 0; }
+.crp-table--dual thead th.crp-fc { color: #9a7b3c; }
+.crp-table--dual td.crp-fc { color: #9a7b3c; }
+.crp-table--dual td.crp-fc.neg { color: var(--crimson); opacity: .74; }
+.crp-table--dual td.crp-fc.pos { color: var(--good); opacity: .74; }
+.crp-secnet td { font-weight: 800; border-top: 1.5px solid var(--ink); padding-top: 6px; }
 .crp-paysum { display: flex; gap: 18px; margin-top: 10px; font-size: 12px; color: var(--mute); }
 .crp-paysum b { font-variant-numeric: tabular-nums; color: var(--ink); }
 .crp-paysum b.neg { color: var(--crimson); } .crp-paysum b.pos { color: var(--good); }
@@ -1678,7 +1695,11 @@ body, html, #root {
 .crp-table--projarea .crp-ck { width: 24px; text-align: center; padding: 3px 2px; }
 .crp-table--projarea .crp-ck input { cursor: pointer; }
 .crp-projgrp td { background: #f4f6f9; border-top: 1.5px solid var(--ink); font-weight: 800; padding-top: 6px; padding-bottom: 5px; }
+.crp-projgrp--clickable { cursor: pointer; }
+.crp-projgrp--clickable:hover td { background: #eef1f6; }
 .crp-projgrp-name { text-transform: uppercase; letter-spacing: .3px; font-size: 11px; color: var(--ink); }
+.crp-grp-chev { display: inline-block; width: 12px; margin-right: 4px; font-size: 8px; color: #94a3b8; transition: transform .12s ease; }
+.crp-grp-chev.open { transform: rotate(90deg); }
 .crp-projtr:hover td { background: rgba(225,0,32,0.035); }
 .crp-projtr.sel td { background: rgba(225,0,32,0.06); }
 .crp-projtd { font-weight: 600; }

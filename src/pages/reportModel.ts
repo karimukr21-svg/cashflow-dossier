@@ -241,6 +241,62 @@ export function buildStatement(lineUsd: Map<string, number>, lines: CfLine[]): {
   return { sections: out, netMovement }
 }
 
+/* ── Forecast overlay ────────────────────────────────────────────────────────
+ * When the Period selector reaches past the cycle's as-of month, the Group page
+ * shows the forecast tail (as-of+1 → horizon) alongside the actuals. These two
+ * helpers build that overlay: a per-area forecast line→USD map, and a combined
+ * statement that carries BOTH the actual and the forecast figure per bucket. */
+
+/** Sum forecast cells (already windowed to as-of+1 … horizon by the caller) to
+ *  USD per area × line_code, at the as-of FX rate — same basis as the actual
+ *  side so the two are directly comparable. Cells with no rate are skipped. */
+export function buildForecastLineUsd(
+  cells: (CfCell & { currency?: string })[],
+  fxMap: Map<string, number | null>,
+  cfToCanonical: Map<string, CanonicalArea>,
+): Map<string, Map<string, number>> {
+  const byArea = new Map<string, Map<string, number>>()
+  for (const c of cells) {
+    const can = cfToCanonical.get(c.area); if (!can) continue
+    const cur = c.currency || 'USD'
+    const rate = cur === 'USD' ? 1 : (fxMap.get(cur) ?? null)
+    if (rate == null) continue
+    let m = byArea.get(can.area_id); if (!m) { m = new Map(); byArea.set(can.area_id, m) }
+    m.set(c.line_code, (m.get(c.line_code) ?? 0) + c.value * rate)
+  }
+  return byArea
+}
+
+export type DualBucket = { label: string; actual: number; forecast: number }
+export type DualSection = {
+  label: string; receipts: DualBucket[]; payments: DualBucket[]
+  recA: number; recF: number; payA: number; payF: number; netA: number; netF: number
+}
+/** Grouped statement carrying the actual and the forecast figure side by side:
+ *  same buckets/order as buildStatement, but each keeps both an `actual` and a
+ *  `forecast` value. A bucket shows if EITHER side is material (≥ THRESH). */
+export function buildDualStatement(
+  actual: Map<string, number>, forecast: Map<string, number>, lines: CfLine[],
+): { sections: DualSection[]; netA: number; netF: number } {
+  const sumA = (codes: string[]) => codes.reduce((t, c) => t + (actual.get(c) ?? 0), 0)
+  const sumF = (codes: string[]) => codes.reduce((t, c) => t + (forecast.get(c) ?? 0), 0)
+  const out: DualSection[] = []
+  let netA = 0, netF = 0
+  for (const sec of groupSections(lines)) {
+    const mk = (defs: BucketDef[]): DualBucket[] =>
+      defs.map(b => ({ label: b.label, actual: sumA(b.codes), forecast: sumF(b.codes) }))
+        .filter(b => Math.abs(b.actual) >= THRESH || Math.abs(b.forecast) >= THRESH)
+    const receipts = mk(sec.receipts), payments = mk(sec.payments)
+    if (receipts.length === 0 && payments.length === 0) continue
+    const recA = receipts.reduce((t, b) => t + b.actual, 0), recF = receipts.reduce((t, b) => t + b.forecast, 0)
+    const payA = payments.reduce((t, b) => t + b.actual, 0), payF = payments.reduce((t, b) => t + b.forecast, 0)
+    const secNetA = recA + payA, secNetF = recF + payF
+    netA += secNetA; netF += secNetF
+    out.push({ label: sec.label, receipts, payments, recA, recF, payA, payF, netA: secNetA, netF: secNetF })
+  }
+  return { sections: out, netA, netF }
+}
+
 export type PaySeriesPt = { period: number; usd: number }
 /** Monthly trade-payables series (USD) for a set of scoped areas, mirroring
  *  buildModel's subgroup→area assignment (first matching area wins) so the

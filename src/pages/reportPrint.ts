@@ -1,4 +1,4 @@
-import { arrangeSectionColumns, arrangeByColumns, STMT_COLUMNS, type StmtSection, type MatrixSection } from './reportModel'
+import { arrangeSectionColumns, arrangeByColumns, STMT_COLUMNS, type StmtSection, type DualSection, type MatrixSection } from './reportModel'
 import { waterfallSvg, areaBarsSvg, netTrendSvg, payablesTrendSvg } from './reportCharts'
 
 /* Print mirror of the Cash Flow Report (CashReport.tsx), A4 LANDSCAPE, one sheet
@@ -66,6 +66,10 @@ function matrixRows(sec: MatrixSection, months: number[], f: Fmt): string {
 
 /* ── per-report sheet bodies (inner HTML of one .sheet) ─────────────────────── */
 
+export type GroupForecast = {
+  dual: { sections: DualSection[]; netA: number; netF: number }
+  netMovement: number; endCash: number; horizonLabel: string
+}
 type GroupOpts = {
   scopeLabel: string; asOfLabel: string; startLabel: string; cashStartLabel?: string; matchedCount?: number
   statement: { sections: StmtSection[]; netMovement: number }
@@ -73,6 +77,7 @@ type GroupOpts = {
   startCash?: number; endCash?: number
   loanStart?: number; loanEnd?: number; odStart?: number; odEnd?: number
   paySeries?: { label: string; value: number }[]
+  forecast?: GroupForecast
   disp: PrintDisp
 }
 // short section labels for the timeline driver chips (mirror the screen)
@@ -85,14 +90,31 @@ function groupSheet(o: GroupOpts): string {
   const payDelta = o.hasPay ? (o.payEnd ?? 0) - (o.payStart ?? 0) : null
   const hasCash = Math.abs(o.startCash ?? 0) > 1 || Math.abs(o.endCash ?? 0) > 1
 
-  // Cash-journey timeline — start → net movement (+ driver chips) → end.
-  const chips = o.statement.sections.filter(s => Math.abs(s.net) >= 50000)
+  const fc = o.forecast
+  // Cash-journey timeline — start → net movement (+ driver chips) → end. With a
+  // forecast horizon, the as-of cash becomes the middle pivot and a forecast
+  // segment extends to the right (mirrors the screen).
+  const chipsOf = (secs: { label: string; net: number }[]) => secs.filter(s => Math.abs(s.net) >= 50000)
     .map(s => `<span class="tl-chip">${SHORT_SEC[s.label] ?? s.label} <b class="${cl(s.net)}">${f.fD(s.net)}</b></span>`).join('')
-  const timeline = hasCash ? `<div class="timeline">
+  const chips = chipsOf(o.statement.sections)
+  let timeline = ''
+  if (hasCash && fc) {
+    const fcNm = fc.netMovement
+    const fcChips = chipsOf(fc.dual.sections.map(s => ({ label: s.label, net: s.netF })))
+    timeline = `<div class="timeline">
+      <div class="tl-node"><div class="tl-cap">Starting cash · ${o.cashStartLabel ?? o.startLabel}</div><div class="tl-val ${cl(o.startCash)}">${f.fM(o.startCash)}</div></div>
+      <div class="tl-flow"><div class="tl-move ${cl(nm)}">${nm < 0 ? '−' : '+'}${f.fM(Math.abs(nm))} <i>actual movement · of which</i></div><div class="tl-chips">${chips}</div></div>
+      <div class="tl-node tl-mid"><div class="tl-cap">Cash · ${o.asOfLabel}</div><div class="tl-val ${cl(o.endCash)}">${f.fM(o.endCash)}</div></div>
+      <div class="tl-flow tl-flow-fc"><div class="tl-move ${cl(fcNm)}">${fcNm < 0 ? '−' : '+'}${f.fM(Math.abs(fcNm))} <i>forecast movement · of which</i></div><div class="tl-chips">${fcChips}</div></div>
+      <div class="tl-node tl-end tl-fc"><div class="tl-cap">Forecast cash · ${fc.horizonLabel}</div><div class="tl-val ${cl(fc.endCash)}">${f.fM(fc.endCash)}</div></div>
+    </div>`
+  } else if (hasCash) {
+    timeline = `<div class="timeline">
       <div class="tl-node"><div class="tl-cap">Starting cash · ${o.cashStartLabel ?? o.startLabel}</div><div class="tl-val ${cl(o.startCash)}">${f.fM(o.startCash)}</div></div>
       <div class="tl-flow"><div class="tl-move ${cl(nm)}">${nm < 0 ? '−' : '+'}${f.fM(Math.abs(nm))} <i>net cash movement · of which</i></div><div class="tl-chips">${chips}</div></div>
       <div class="tl-node tl-end"><div class="tl-cap">Ending cash · ${o.asOfLabel}</div><div class="tl-val ${cl(o.endCash)}">${f.fM(o.endCash)}</div></div>
-    </div>` : ''
+    </div>`
+  }
 
   // Statement — one card per section (name + net header, line items), Operations
   // (+ New Sales) left; Interest/Non-op/Financing/Within Group stacked right.
@@ -103,6 +125,17 @@ function groupSheet(o: GroupOpts): string {
     rows += s.payments.map(b => item(b.label, b.value)).join('')
     if (s.payments.length > 1) rows += `<tr class="natsub"><td>Total payments</td><td class="r ${cl(s.payTotal)}">${f.fM(s.payTotal)}</td></tr>`
     return `<div class="chartcard stmtcard"><div class="ch-h"><span class="sh-t">${s.label}</span><b class="sh-n ${cl(s.net)}">${f.fM(s.net)}</b></div><table class="t"><tbody>${rows}</tbody></table></div>`
+  }
+  // Dual card — Actual | Forecast two-column statement per section.
+  const dualCard = (s: DualSection) => {
+    const drow = (label: string, a: number, fv: number, klass = '') =>
+      `<tr class="${klass}"><td class="${klass ? '' : 'item'}">${label}</td><td class="r ${cl(a)}">${f.fM(a)}</td><td class="r fc ${cl(fv)}">${f.fM(fv)}</td></tr>`
+    let rows = s.receipts.map(b => drow(b.label, b.actual, b.forecast)).join('')
+    if (s.receipts.length > 1) rows += drow('Total receipts', s.recA, s.recF, 'natsub')
+    rows += s.payments.map(b => drow(b.label, b.actual, b.forecast)).join('')
+    if (s.payments.length > 1) rows += drow('Total payments', s.payA, s.payF, 'natsub')
+    rows += drow(`Net ${s.label.toLowerCase()}`, s.netA, s.netF, 'subtot')
+    return `<div class="chartcard stmtcard dualcard"><table class="t"><thead><tr><th class="sh-t">${s.label}</th><th class="r">Actual</th><th class="r fc">Forecast</th></tr></thead><tbody>${rows}</tbody></table></div>`
   }
   // Loans & Overdrafts — debt position (point-in-time stocks, prior-year Dec vs
   // as-of). Δ colour inverted (down = green), matching the screen's card. Sits at
@@ -119,8 +152,11 @@ function groupSheet(o: GroupOpts): string {
         <tr class="natsub"><td>Total debt</td><td class="r">${f.fM(totDS)}</td><td class="r">${f.fM(totDE)}</td><td class="r ${dcl(totDE - totDS)}">${f.fD(totDE - totDS)}</td></tr>
       </tbody></table></div>` : ''
 
-  const stmtCols = arrangeByColumns(o.statement.sections, STMT_COLUMNS)
-    .map((col, i) => `<div class="seccol${i === 1 ? ' spaced' : ''}">${(i === 0 ? debtCard : '') + col.map(secCard).join('')}</div>`).join('')
+  const stmtCols = fc
+    ? arrangeByColumns(fc.dual.sections, STMT_COLUMNS)
+        .map((col, i) => `<div class="seccol${i === 1 ? ' spaced' : ''}">${(i === 0 ? debtCard : '') + col.map(dualCard).join('')}</div>`).join('')
+    : arrangeByColumns(o.statement.sections, STMT_COLUMNS)
+        .map((col, i) => `<div class="seccol${i === 1 ? ' spaced' : ''}">${(i === 0 ? debtCard : '') + col.map(secCard).join('')}</div>`).join('')
 
   const charts = `<div class="seccol">
     <div class="chartcard"><div class="ch-h">How the cash moved <span>· sections → net movement</span></div>
@@ -131,7 +167,10 @@ function groupSheet(o: GroupOpts): string {
         <div class="note">Suppliers, subcontractors &amp; taxes — the editable <b>trade_payables</b> group (Midas TB, USD). Δ positive = paid down. Recent months still posting.</div>`
         : `<div class="note">No matched payables for this scope.</div>`}</div>
   </div>`
-  return sheet(head(`Cash Flow Report — ${o.scopeLabel}`, `Actual to date · Jan–${o.asOfLabel} · ${o.disp.lineUnit}${o.matchedCount != null ? ` · ${o.matchedCount} areas` : ''}`)
+  const sub = fc
+    ? `Actual Jan–${o.asOfLabel} · forecast to ${fc.horizonLabel} · ${o.disp.lineUnit}${o.matchedCount != null ? ` · ${o.matchedCount} areas` : ''}`
+    : `Actual to date · Jan–${o.asOfLabel} · ${o.disp.lineUnit}${o.matchedCount != null ? ` · ${o.matchedCount} areas` : ''}`
+  return sheet(head(`Cash Flow Report — ${o.scopeLabel}`, sub)
     + timeline + `<div class="groupcols">${stmtCols}${charts}</div>`)
 }
 
@@ -264,6 +303,15 @@ const STYLE = `
   .tl-chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
   .tl-chip { font-size: 12px; color: #64748b; font-weight: 600; border: 1px solid #e2e8f0; border-radius: 20px; padding: 4px 11px; background: #fff; }
   .tl-chip b { font-weight: 800; margin-left: 3px; }
+  .tl-mid { background: #eef2f7; border-left: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; }
+  .tl-flow-fc { background: #fbfaf6; } .tl-flow-fc .tl-move i { color: #9a7b3c; }
+  .tl-fc { background: #fbfaf6; }
+  /* Dual (Actual | Forecast) statement card */
+  .dualcard .t thead th { border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
+  .dualcard .t thead th.sh-t { font-size: 14px; font-weight: 700; color: #15233b; text-transform: none; letter-spacing: 0; }
+  .dualcard .t td.fc, .dualcard .t th.fc { color: #9a7b3c; }
+  .dualcard .t th.fc { color: #9a7b3c; }
+  .dualcard .t .fc.neg { color: #E10020; opacity: .78; } .dualcard .t .fc.pos { color: #057a55; opacity: .78; }
   /* Group page — justified 3-column grid: Operations · four sections · charts */
   .groupcols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; align-items: start; }
   .groupcols .seccol { gap: 10px; }
@@ -297,6 +345,7 @@ type Opts = {
   startCash?: number; endCash?: number
   loanStart?: number; loanEnd?: number; odStart?: number; odEnd?: number
   paySeries?: { label: string; value: number }[]
+  forecast?: GroupForecast
   areaRows?: { label: string; netOps: number; payStart: number | null; payEnd: number | null }[]
   areaTotals?: { netOps: number; payStart: number; payEnd: number }
   sections?: { label: string; net: number; rows: { label: string; value: number }[] }[]
@@ -312,7 +361,7 @@ export function buildReportHtml(o: Opts): string {
     scopeLabel: o.scopeLabel, asOfLabel: o.asOfLabel, startLabel: o.startLabel, cashStartLabel: o.cashStartLabel, matchedCount: o.matchedCount,
     statement: o.statement!, payStart: o.payStart, payEnd: o.payEnd, hasPay: o.hasPay, startCash: o.startCash, endCash: o.endCash,
     loanStart: o.loanStart, loanEnd: o.loanEnd, odStart: o.odStart, odEnd: o.odEnd,
-    paySeries: o.paySeries, disp,
+    paySeries: o.paySeries, forecast: o.forecast, disp,
   }))
 }
 
