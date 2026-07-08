@@ -175,31 +175,36 @@ function groupSheet(o: GroupOpts): string {
     ? `Actual Jan–${o.asOfLabel} · forecast to ${fc.horizonLabel} · ${o.disp.lineUnit}${o.matchedCount != null ? ` · ${o.matchedCount} areas` : ''}`
     : `Actual to date · Jan–${o.asOfLabel} · ${o.disp.lineUnit}${o.matchedCount != null ? ` · ${o.matchedCount} areas` : ''}`
   return sheet(head(`Cash Flow Report — ${o.scopeLabel}`, sub)
-    + timeline + `<div class="groupcols">${stmtCols}${charts}</div>`)
+    + timeline + `<div class="groupcols">${stmtCols}${charts}</div>`, true)
 }
 
 type AreaOpts = {
   asOfLabel: string; startLabel: string
-  areaRows: { label: string; netOps: number; payStart: number | null; payEnd: number | null }[]
-  areaTotals: { netOps: number; payStart: number; payEnd: number }
+  areaRows: { label: string; netOps: number; fcNetOps?: number; payStart: number | null; payEnd: number | null }[]
+  areaTotals: { netOps: number; fcNetOps?: number; payStart: number; payEnd: number }
+  forecastActive?: boolean; horizonLabel?: string
   disp: PrintDisp
 }
 function areaSheet(o: AreaOpts): string {
   const f = fmtFor(o.disp)
   const chartDisp = { div: o.disp.div, dec: o.disp.dec }
   const t = o.areaTotals
-  const row = (label: string, netOps: number, ps: number | null, pe: number | null, tot = false) => {
+  const fc = !!o.forecastActive
+  const row = (label: string, netOps: number, fcNetOps: number | undefined, ps: number | null, pe: number | null, tot = false) => {
     const d = (ps != null && pe != null) ? pe - ps : null
     return `<tr${tot ? ' class="total"' : ''}><td>${label}</td><td class="r ${cl(netOps)}">${f.fM(netOps)}</td>
+      ${fc ? `<td class="r fc ${cl(fcNetOps ?? 0)}">${f.fM(fcNetOps ?? 0)}</td>` : ''}
       <td class="r sepl ${cl(ps)}">${f.fM(ps)}</td><td class="r ${cl(pe)}">${f.fM(pe)}</td><td class="r ${cl(d)}">${f.fD(d)}</td></tr>`
   }
-  const left = `<table class="t tarea"><thead><tr><th>Area</th><th class="r">Net cash from ops</th><th class="r sepl">Payables ${o.startLabel}</th><th class="r">Payables ${o.asOfLabel}</th><th class="r">Δ</th></tr></thead>
-    <tbody>${o.areaRows.map(a => row(a.label, a.netOps, a.payStart, a.payEnd)).join('')}${row(`Group (${o.areaRows.length} areas)`, t.netOps, t.payStart, t.payEnd, true)}</tbody></table>`
-  const right = `<div class="chartcard areachart"><div class="ch-h">Net cash from operations <span>· by area</span></div>
-    ${areaBarsSvg(o.areaRows.map(a => ({ label: a.label, value: a.netOps })), chartDisp, { zoom: 1.5, maxRows: 20 })}
-    <div class="note">Green = cash generated, crimson = cash consumed (${o.disp.lineUnit}, YTD).</div></div>`
+  const left = `<table class="t tarea"><thead><tr><th>Area</th><th class="r">Net cash from ops</th>${fc ? '<th class="r fc">Forecast</th>' : ''}<th class="r sepl">Payables ${o.startLabel}</th><th class="r">Payables ${o.asOfLabel}</th><th class="r">Δ</th></tr></thead>
+    <tbody>${o.areaRows.map(a => row(a.label, a.netOps, a.fcNetOps, a.payStart, a.payEnd)).join('')}${row(`Group (${o.areaRows.length} areas)`, t.netOps, t.fcNetOps, t.payStart, t.payEnd, true)}</tbody></table>`
+  const right = `<div class="chartcard areachart"><div class="ch-h">Net cash from operations <span>· by area${fc ? ' · actual + forecast' : ''}</span></div>
+    ${areaBarsSvg(o.areaRows.map(a => ({ label: a.label, value: a.netOps, forecast: fc ? (a.fcNetOps ?? 0) : undefined })), chartDisp, { zoom: 1.5, maxRows: 20 })}
+    <div class="note">Green = cash generated, crimson = cash consumed (${o.disp.lineUnit}${fc ? `). Solid = actual (Jan–${o.asOfLabel}); faded = forecast (to ${o.horizonLabel})` : ', YTD'}.</div></div>`
+  const sub = fc ? `Actual Jan–${o.asOfLabel} · forecast to ${o.horizonLabel} · ${o.disp.lineUnit} · ${o.areaRows.length} areas`
+    : `Actual to date · Jan–${o.asOfLabel} · ${o.disp.lineUnit} · ${o.areaRows.length} areas`
   // No KPI band — chart is the headline, given the full sheet height.
-  return sheet(head('Cash Flow Report — Areas', `Actual to date · Jan–${o.asOfLabel} · ${o.disp.lineUnit} · ${o.areaRows.length} areas`)
+  return sheet(head('Cash Flow Report — Areas', sub)
     + `<div class="cols"><div>${left}</div><div>${right}</div></div>`)
 }
 
@@ -248,7 +253,11 @@ function sectionsSheet(o: SectionsOpts): string {
     + `<div class="seccols">${cols}</div>`)
 }
 
-const sheet = (inner: string) => `<div class="page"><div class="sheet">${inner}</div></div>`
+/* wide=true lays the sheet out on a wider design canvas (1240px). The page stays
+ * 1040px; the fit-to-page script then scales the sheet down to fill the page
+ * WIDTH exactly (a tall statement is otherwise height-bound and shrinks away from
+ * the right edge, wasting ~20% of the width). Used by the Group sheet. */
+const sheet = (inner: string, wide = false) => `<div class="page"><div class="sheet${wide ? ' wide' : ''}">${inner}</div></div>`
 
 /* ── skeleton: shared style + fit-to-page script ────────────────────────────── */
 const STYLE = `
@@ -259,6 +268,7 @@ const STYLE = `
   .page { width: 1040px; height: 726px; overflow: hidden; }
   .page + .page { page-break-before: always; }
   .sheet { width: 1040px; transform-origin: top left; }
+  .sheet.wide { width: 1240px; }
   .head { display: flex; align-items: center; gap: 11px; border-bottom: 2.5px solid #E10020; padding-bottom: 7px; margin-bottom: 10px; }
   .logo { height: 34px; width: auto; flex: 0 0 auto; }
   .ht { min-width: 0; }
@@ -313,9 +323,8 @@ const STYLE = `
   /* Dual (Actual | Forecast) statement card */
   .dualcard .t thead th { border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
   .dualcard .t thead th.sh-t { font-size: 14px; font-weight: 700; color: #15233b; text-transform: none; letter-spacing: 0; }
-  .dualcard .t td.fc, .dualcard .t th.fc { color: #9a7b3c; }
-  .dualcard .t th.fc { color: #9a7b3c; }
-  .dualcard .t .fc.neg { color: #E10020; opacity: .78; } .dualcard .t .fc.pos { color: #057a55; opacity: .78; }
+  .t td.fc, .t th.fc { color: #9a7b3c; }
+  .t .fc.neg { color: #E10020; opacity: .78; } .t .fc.pos { color: #057a55; opacity: .78; }
   /* Group page — justified 3-column grid: Operations · four sections · charts */
   .groupcols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; align-items: start; }
   .groupcols .seccol { gap: 10px; }
@@ -350,8 +359,9 @@ type Opts = {
   loanStart?: number; loanEnd?: number; odStart?: number; odEnd?: number
   paySeries?: { label: string; value: number }[]
   forecast?: GroupForecast
-  areaRows?: { label: string; netOps: number; payStart: number | null; payEnd: number | null }[]
-  areaTotals?: { netOps: number; payStart: number; payEnd: number }
+  areaRows?: { label: string; netOps: number; fcNetOps?: number; payStart: number | null; payEnd: number | null }[]
+  areaTotals?: { netOps: number; fcNetOps?: number; payStart: number; payEnd: number }
+  forecastActive?: boolean; horizonLabel?: string
   sections?: { label: string; net: number; rows: { label: string; value: number }[] }[]
   disp?: PrintDisp
 }
@@ -360,7 +370,7 @@ export function buildReportHtml(o: Opts): string {
   if (o.level === 'sections' && o.sections)
     return skeleton('Cash Flow Report — Sections', sectionsSheet({ asOfLabel: o.asOfLabel, matchedCount: o.matchedCount ?? 0, sections: o.sections, disp }))
   if (o.level === 'area' && o.areaRows && o.areaTotals)
-    return skeleton('Cash Flow Report — Areas', areaSheet({ asOfLabel: o.asOfLabel, startLabel: o.startLabel, areaRows: o.areaRows, areaTotals: o.areaTotals, disp }))
+    return skeleton('Cash Flow Report — Areas', areaSheet({ asOfLabel: o.asOfLabel, startLabel: o.startLabel, areaRows: o.areaRows, areaTotals: o.areaTotals, forecastActive: o.forecastActive, horizonLabel: o.horizonLabel, disp }))
   return skeleton(`Cash Flow Report — ${o.scopeLabel}`, groupSheet({
     scopeLabel: o.scopeLabel, asOfLabel: o.asOfLabel, startLabel: o.startLabel, cashStartLabel: o.cashStartLabel, matchedCount: o.matchedCount,
     statement: o.statement!, payStart: o.payStart, payEnd: o.payEnd, hasPay: o.hasPay, startCash: o.startCash, endCash: o.endCash,

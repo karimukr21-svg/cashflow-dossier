@@ -122,6 +122,16 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
     return buildForecastLineUsd(tail, fxMap, scope.cfToCanonical)
   }, [forecastActive, fcTail, fxMap, scope.cfToCanonical, year, asOfMonth, horizonMonth])
 
+  // Forecast net cash from operations (Operation + Claims) per area — feeds the
+  // Area page's forecast column + the solid/faded bars. Same op categories as
+  // buildModel's netOps, so the actual and forecast columns are comparable.
+  const opCodes = useMemo(() => new Set(scope.lines.filter(l => l.category === 'Operation' || l.category === 'Claims').map(l => l.line_code)), [scope.lines])
+  const fcNetOpsByArea = useMemo(() => {
+    const m = new Map<string, number>()
+    if (forecastActive) for (const [aid, lm] of fcByArea) { let n = 0; for (const [lc, v] of lm) if (opCodes.has(lc)) n += v; m.set(aid, n) }
+    return m
+  }, [forecastActive, fcByArea, opCodes])
+
   // Cash-flow scope = every area with pushed cash flow AND an FX rate (so it
   // converts to USD). NOT gated on the payables mapping — unmapped areas still
   // show their cash flow; their payables columns just stay blank (that mapping
@@ -171,9 +181,9 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
     const w = window.open('', '_blank'); if (!w) return
     let html = ''
     if (level === 'area') {
-      const areaRows = cfAreas.map(a => ({ label: a.label, netOps: a.netOps, payStart: a.payStart, payEnd: a.payEnd }))
-      const areaTotals = cfAreas.reduce((t, a) => ({ netOps: t.netOps + a.netOps, payStart: t.payStart + (a.payStart ?? 0), payEnd: t.payEnd + (a.payEnd ?? 0) }), { netOps: 0, payStart: 0, payEnd: 0 })
-      html = buildReportHtml({ level: 'area', scopeLabel: 'Areas', year, asOfLabel, startLabel, areaRows, areaTotals, matchedCount: cfAreas.length })
+      const areaRows = cfAreas.map(a => ({ label: a.label, netOps: a.netOps, fcNetOps: forecastActive ? (fcNetOpsByArea.get(a.areaId) ?? 0) : undefined, payStart: a.payStart, payEnd: a.payEnd }))
+      const areaTotals = cfAreas.reduce((t, a) => ({ netOps: t.netOps + a.netOps, fcNetOps: t.fcNetOps + (forecastActive ? (fcNetOpsByArea.get(a.areaId) ?? 0) : 0), payStart: t.payStart + (a.payStart ?? 0), payEnd: t.payEnd + (a.payEnd ?? 0) }), { netOps: 0, fcNetOps: 0, payStart: 0, payEnd: 0 })
+      html = buildReportHtml({ level: 'area', scopeLabel: 'Areas', year, asOfLabel, startLabel, areaRows, areaTotals, matchedCount: cfAreas.length, forecastActive, horizonLabel })
     } else if (level === 'sections') {
       html = buildReportHtml({
         level: 'sections', scopeLabel: 'Sections', year, asOfLabel, startLabel, matchedCount: cfAreas.length,
@@ -233,7 +243,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
 
       {loading ? <div className="placeholder-box">Loading…</div>
         : level === 'group' ? <GroupView scope={scope} matched={cfAreas} year={year} asOfLabel={asOfLabel} startLabel={startLabel} cashStartLabel={cashStartLabel} paySeries={paySeries} fcByArea={fcByArea} forecastActive={forecastActive} horizonLabel={horizonLabel} />
-        : level === 'area' ? <AreaView matched={cfAreas} year={year} asOfLabel={asOfLabel} startLabel={startLabel} onOpenProjects={(id) => { setProjArea(id); setLevel('project') }} />
+        : level === 'area' ? <AreaView matched={cfAreas} year={year} asOfLabel={asOfLabel} startLabel={startLabel} fcNetOpsByArea={fcNetOpsByArea} forecastActive={forecastActive} horizonLabel={horizonLabel} onOpenProjects={(id) => { setProjArea(id); setLevel('project') }} />
         : level === 'sections' ? <SectionsView scope={scope} matched={cfAreas} asOfLabel={asOfLabel} />
         : level === 'project' ? <ProjectView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} projArea={projArea} setProjArea={setProjArea} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} />
         : level === 'movers' ? <MoversView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} startLabel={startLabel} registerPrint={fn => { moversPrint.current = fn }} />
@@ -599,12 +609,15 @@ function SectionsView({ scope, matched, asOfLabel }: {
 }
 
 /* ── Area view — one row per matched area ───────────────────────────────────── */
-function AreaView({ matched, year, asOfLabel, startLabel, onOpenProjects }: {
-  matched: AreaAgg[]; year: number; asOfLabel: string; startLabel: string; onOpenProjects?: (id: string) => void
+function AreaView({ matched, year, asOfLabel, startLabel, fcNetOpsByArea, forecastActive, horizonLabel, onOpenProjects }: {
+  matched: AreaAgg[]; year: number; asOfLabel: string; startLabel: string
+  fcNetOpsByArea: Map<string, number>; forecastActive: boolean; horizonLabel: string
+  onOpenProjects?: (id: string) => void
 }) {
+  const fcOf = (id: string) => forecastActive ? (fcNetOpsByArea.get(id) ?? 0) : 0
   const tot = matched.reduce((t, a) => ({
-    netOps: t.netOps + a.netOps, payStart: t.payStart + (a.payStart ?? 0), payEnd: t.payEnd + (a.payEnd ?? 0),
-  }), { netOps: 0, payStart: 0, payEnd: 0 })
+    netOps: t.netOps + a.netOps, fcNetOps: t.fcNetOps + fcOf(a.areaId), payStart: t.payStart + (a.payStart ?? 0), payEnd: t.payEnd + (a.payEnd ?? 0),
+  }), { netOps: 0, fcNetOps: 0, payStart: 0, payEnd: 0 })
   const totDelta = tot.payEnd - tot.payStart
 
   return (
@@ -613,13 +626,15 @@ function AreaView({ matched, year, asOfLabel, startLabel, onOpenProjects }: {
         <img className="crp-logo" src="/ccc-logo.png" alt="CCC" />
         <div className="crp-head-t">
           <h1>Cash Flow Report — Areas</h1>
-          <div className="crp-sub">Actual to date · Jan–{asOfLabel} · USD millions · {matched.length} areas</div>
+          <div className="crp-sub">{forecastActive
+            ? <>Actual Jan–{asOfLabel} · forecast to {horizonLabel} · USD millions · {matched.length} areas</>
+            : <>Actual to date · Jan–{asOfLabel} · USD millions · {matched.length} areas</>}</div>
         </div>
         <div className="crp-brand">Treasury</div>
       </div>
 
       <div className="crp-lede">
-        From January to {asOfLabel}, these areas <b className={cls(tot.netOps)}>{tot.netOps < 0 ? 'used' : 'generated'} {fMm(Math.abs(tot.netOps))}m</b> of cash from operations, and mapped trade payables moved from <b>{fMm(Math.abs(tot.payStart))}m</b> to <b>{fMm(Math.abs(tot.payEnd))}m</b> — <b className={cls(totDelta)}>{totDelta >= 0 ? 'paid down' : 'up'} {fMm(Math.abs(totDelta))}m</b>.
+        From January to {asOfLabel}, these areas <b className={cls(tot.netOps)}>{tot.netOps < 0 ? 'used' : 'generated'} {fMm(Math.abs(tot.netOps))}m</b> of cash from operations{forecastActive ? <>, and are forecast to <b className={cls(tot.fcNetOps)}>{tot.fcNetOps < 0 ? 'use' : 'generate'} {fMm(Math.abs(tot.fcNetOps))}m</b> more by {horizonLabel}</> : null}. Mapped trade payables moved from <b>{fMm(Math.abs(tot.payStart))}m</b> to <b>{fMm(Math.abs(tot.payEnd))}m</b> — <b className={cls(totDelta)}>{totDelta >= 0 ? 'paid down' : 'up'} {fMm(Math.abs(totDelta))}m</b>.
       </div>
 
       <div className="crp-grid">
@@ -628,6 +643,7 @@ function AreaView({ matched, year, asOfLabel, startLabel, onOpenProjects }: {
           <thead><tr>
             <th>Area</th>
             <th className="r">Net cash from ops</th>
+            {forecastActive && <th className="r crp-fc">Forecast</th>}
             <th className="r crp-sep-l">Payables {startLabel}</th>
             <th className="r">Payables {asOfLabel}</th>
             <th className="r">Δ</th>
@@ -637,6 +653,7 @@ function AreaView({ matched, year, asOfLabel, startLabel, onOpenProjects }: {
               <tr key={a.areaId} className="crp-clickable" onClick={() => onOpenProjects?.(a.areaId)} title="Open this area's projects">
                 <td>{a.label}</td>
                 <td className={`r ${cls(a.netOps)}`}>{fMm(a.netOps)}</td>
+                {forecastActive && <td className={`r crp-fc ${cls(fcOf(a.areaId))}`}>{fMm(fcOf(a.areaId))}</td>}
                 <td className={`r crp-sep-l ${cls(a.payStart)}`}>{fMm(a.payStart)}</td>
                 <td className={`r ${cls(a.payEnd)}`}>{fMm(a.payEnd)}</td>
                 <td className={`r ${cls(a.payEnd != null && a.payStart != null ? a.payEnd - a.payStart : null)}`}>{fMd(a.payEnd != null && a.payStart != null ? a.payEnd - a.payStart : null)}</td>
@@ -645,19 +662,20 @@ function AreaView({ matched, year, asOfLabel, startLabel, onOpenProjects }: {
             <tr className="crp-total">
               <td>Group ({matched.length} areas)</td>
               <td className={`r ${cls(tot.netOps)}`}>{fMm(tot.netOps)}</td>
+              {forecastActive && <td className={`r crp-fc ${cls(tot.fcNetOps)}`}>{fMm(tot.fcNetOps)}</td>}
               <td className={`r crp-sep-l ${cls(tot.payStart)}`}>{fMm(tot.payStart)}</td>
               <td className={`r ${cls(tot.payEnd)}`}>{fMm(tot.payEnd)}</td>
               <td className={`r ${cls(totDelta)}`}>{fMd(totDelta)}</td>
             </tr>
           </tbody>
         </table>
-          <div className="crp-note">Net cash from operations (receipts − payments, USD-converted) — all areas with cash flow. Payables = trade_payables (Midas TB), shown only where an area is mapped (blank = not yet mapped; see Coverage). Δ positive = paid down. Click an area to drill into its projects.</div>
+          <div className="crp-note">Net cash from operations (receipts − payments, USD-converted) — all areas with cash flow{forecastActive ? <>. <b>Forecast</b> = net operations {asOfLabel.replace(/ \d+$/, '')}→{horizonLabel} from the selected period</> : null}. Payables = trade_payables (Midas TB), shown only where an area is mapped (blank = not yet mapped; see Coverage). Δ positive = paid down. Click an area to drill into its projects.</div>
         </div>
 
         <div className="crp-card">
-          <div className="crp-card-h">Net cash from operations <span>· by area</span></div>
-          <Svg html={areaBarsSvg(matched.map(a => ({ label: a.label, value: a.netOps })))} />
-          <div className="crp-note">Green = cash generated, crimson = cash consumed (USD, YTD). Click a row on the left to drill into an area's projects.</div>
+          <div className="crp-card-h">Net cash from operations <span>· by area{forecastActive ? ' · actual + forecast' : ''}</span></div>
+          <Svg html={areaBarsSvg(matched.map(a => ({ label: a.label, value: a.netOps, forecast: forecastActive ? fcOf(a.areaId) : undefined })))} />
+          <div className="crp-note">Green = cash generated, crimson = cash consumed (USD{forecastActive ? <>). The <b>solid</b> bar is actual (Jan–{asOfLabel}); the <b>faded</b> extension is forecast (to {horizonLabel}</> : ', YTD'}). Click a row on the left to drill into an area's projects.</div>
         </div>
       </div>
     </div>

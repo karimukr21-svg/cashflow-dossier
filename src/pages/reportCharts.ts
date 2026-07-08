@@ -58,35 +58,66 @@ export function waterfallSvg(items: { label: string; value: number }[], total: n
 /* Horizontal diverging bars — a value per area (e.g. net cash from operations).
  * opts.zoom scales fonts + row height (for print legibility); opts.maxRows caps
  * to the top-N areas by magnitude and rolls the remainder into one "Other" bar
- * (so a many-area chart stays short and the print sheet doesn't shrink away). */
-export function areaBarsSvg(rows: { label: string; value: number }[], disp: ChartDisp = DEF, opts: { zoom?: number; maxRows?: number } = {}): string {
+ * (so a many-area chart stays short and the print sheet doesn't shrink away).
+ * When a row carries a `forecast` value the bar is drawn in two segments: a
+ * solid ACTUAL segment then a faded FORECAST segment stacked on its end, so the
+ * total bar = actual + forecast and the faded part reads as the forecast. */
+export function areaBarsSvg(rows: { label: string; value: number; forecast?: number }[], disp: ChartDisp = DEF, opts: { zoom?: number; maxRows?: number } = {}): string {
   const zoom = opts.zoom ?? 1
   const lab = (v: number) => labf(v, disp)
-  let data = rows.filter(r => Math.abs(r.value) >= 50000)
+  const tot = (r: { value: number; forecast?: number }) => r.value + (r.forecast ?? 0)
+  let data = rows.filter(r => Math.abs(r.value) >= 50000 || Math.abs(r.forecast ?? 0) >= 50000)
   if (data.length === 0) return `<svg viewBox="0 0 560 40" width="100%"><text x="280" y="24" text-anchor="middle" font-size="12" fill="#94a3b8" font-family="sans-serif">No data</text></svg>`
   if (opts.maxRows && data.length > opts.maxRows) {
-    const keep = [...data].sort((a, b) => Math.abs(b.value) - Math.abs(a.value)).slice(0, opts.maxRows)
+    const keep = [...data].sort((a, b) => Math.abs(tot(b)) - Math.abs(tot(a))).slice(0, opts.maxRows)
     const rest = data.filter(d => !keep.includes(d))
     const otherVal = rest.reduce((t, r) => t + r.value, 0)
-    data = [...keep, ...(Math.abs(otherVal) >= 50000 ? [{ label: `Other (${rest.length})`, value: otherVal }] : [])]
+    const otherFc = rest.reduce((t, r) => t + (r.forecast ?? 0), 0)
+    data = [...keep, ...(Math.abs(otherVal) + Math.abs(otherFc) >= 50000 ? [{ label: `Other (${rest.length})`, value: otherVal, forecast: otherFc }] : [])]
   }
+  const hasFc = data.some(r => r.forecast != null)
   data = data.sort((a, b) => b.value - a.value)
   const fs = 10 * zoom, off = fs * 0.35
-  const rowH = 22 * zoom, padT = 8, padB = 6, W = 560, labW = 104 * zoom, valW = 56 * zoom
-  const H = padT + padB + data.length * rowH
+  const rowH = 22 * zoom, padT = 8, padB = 6, legendH = hasFc ? 20 * zoom : 0, W = 560, labW = 104 * zoom, valW = 62 * zoom
+  const H = padT + padB + data.length * rowH + legendH
   const plotL = labW, plotR = W - valW, plotW = plotR - plotL
-  const max = Math.max(1, ...data.map(r => Math.abs(r.value)))
+  // Extent = the furthest point from zero, considering the actual end AND the
+  // stacked total (they differ when actual and forecast share a sign).
+  const max = Math.max(1, ...data.map(r => Math.max(Math.abs(r.value), Math.abs(tot(r)))))
   const cxZero = plotL + plotW / 2
   const scale = (plotW / 2) / max
+  const px = (v: number) => cxZero + v * scale     // signed value → x (positive → right)
   let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">`
-  s += `<line x1="${cxZero}" y1="${padT}" x2="${cxZero}" y2="${H - padB}" stroke="${GRID}" stroke-width="1"/>`
+  s += `<line x1="${cxZero}" y1="${padT}" x2="${cxZero}" y2="${(H - padB - legendH).toFixed(1)}" stroke="${GRID}" stroke-width="1"/>`
   data.forEach((r, i) => {
-    const y = padT + i * rowH, w = Math.abs(r.value) * scale, up = r.value >= 0
-    const x = up ? cxZero : cxZero - w
+    const y = padT + i * rowH, ry = y + rowH * 0.18, rh = rowH * 0.64
+    const a = r.value, fc = r.forecast ?? 0, total = a + fc
+    const colA = a >= 0 ? GOOD : CRIM, colF = fc >= 0 ? GOOD : CRIM
     s += `<text x="${(plotL - 6).toFixed(1)}" y="${(y + rowH / 2 + off).toFixed(1)}" text-anchor="end" font-size="${fs.toFixed(1)}" fill="${INK}">${r.label.length > 16 ? r.label.slice(0, 15) + '…' : r.label}</text>`
-    s += `<rect x="${x.toFixed(1)}" y="${(y + rowH * 0.18).toFixed(1)}" width="${Math.max(1.5, w).toFixed(1)}" height="${(rowH * 0.64).toFixed(1)}" fill="${up ? GOOD : CRIM}" opacity="0.88" rx="2"/>`
-    s += `<text x="${(W - valW + 6).toFixed(1)}" y="${(y + rowH / 2 + off).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="700" fill="${up ? GOOD : CRIM}">${lab(r.value)}</text>`
+    // Actual (solid) segment: 0 → a
+    const xa = Math.min(cxZero, px(a)), wa = Math.abs(a) * scale
+    if (wa >= 0.5) s += `<rect x="${xa.toFixed(1)}" y="${ry.toFixed(1)}" width="${Math.max(1.5, wa).toFixed(1)}" height="${rh.toFixed(1)}" fill="${colA}" opacity="0.9" rx="2"/>`
+    // Forecast (faded) segment: a → a+fc
+    if (Math.abs(fc) >= 1) {
+      const xf = Math.min(px(a), px(total)), wf = Math.abs(fc) * scale
+      s += `<rect x="${xf.toFixed(1)}" y="${ry.toFixed(1)}" width="${Math.max(1.5, wf).toFixed(1)}" height="${rh.toFixed(1)}" fill="${colF}" opacity="0.3" rx="2"/>`
+    }
+    // Value label at the end = the actual figure (the solid bar) when forecast is
+    // shown (the table carries both); otherwise just the value.
+    const lblV = hasFc ? a : r.value, lblCol = lblV >= 0 ? GOOD : CRIM
+    s += `<text x="${(W - valW + 6).toFixed(1)}" y="${(y + rowH / 2 + off).toFixed(1)}" font-size="${fs.toFixed(1)}" font-weight="700" fill="${lblCol}">${lab(lblV)}</text>`
   })
+  if (hasFc) {
+    const ly = H - padB - legendH / 2 + off, sw = 9 * zoom, gap = 5 * zoom
+    let lx = plotL
+    const swatch = (fill: string, opacity: number, text: string) => {
+      const seg = `<rect x="${lx.toFixed(1)}" y="${(ly - sw + off).toFixed(1)}" width="${sw.toFixed(1)}" height="${sw.toFixed(1)}" fill="${fill}" opacity="${opacity}" rx="1.5"/><text x="${(lx + sw + gap).toFixed(1)}" y="${ly.toFixed(1)}" font-size="${(fs * 0.92).toFixed(1)}" fill="${MUTE}">${text}</text>`
+      lx += sw + gap + text.length * fs * 0.52 + 14 * zoom
+      return seg
+    }
+    s += swatch(GOOD, 0.9, 'Actual')
+    s += swatch(GOOD, 0.3, 'Forecast')
+  }
   s += `</svg>`
   return s
 }

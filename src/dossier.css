@@ -1629,6 +1629,10 @@ body, html, #root {
 .crp-table--dual td.crp-fc { color: #9a7b3c; }
 .crp-table--dual td.crp-fc.neg { color: var(--crimson); opacity: .74; }
 .crp-table--dual td.crp-fc.pos { color: var(--good); opacity: .74; }
+/* Forecast column on the Area table */
+.crp-table--area td.crp-fc, .crp-table--area th.crp-fc { color: #9a7b3c; }
+.crp-table--area td.crp-fc.neg { color: var(--crimson); opacity: .8; }
+.crp-table--area td.crp-fc.pos { color: var(--good); opacity: .8; }
 .crp-secnet td { font-weight: 800; border-top: 1.5px solid var(--ink); padding-top: 6px; }
 .crp-paysum { display: flex; gap: 18px; margin-top: 10px; font-size: 12px; color: var(--mute); }
 .crp-paysum b { font-variant-numeric: tabular-nums; color: var(--ink); }
