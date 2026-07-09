@@ -923,17 +923,18 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
       .ptotal { flex: none; display: flex; align-items: baseline; gap: 16px; background: #141414; color: #fff; border-radius: 7px; padding: 7px 13px; margin-bottom: 10px; font-size: 10.5px; }
       .ptotal b { font-size: 12px; } .ptotal .lbl { color: #9aa4b2; text-transform: uppercase; letter-spacing: .4px; font-size: 8px; font-weight: 700; margin-right: 5px; }
       .ptotal .neg { color: #ff7a8a; } .ptotal .pos { color: #6ee7a8; }
-      .pbody { flex: 1; display: flex; gap: 14px; align-items: stretch; min-height: 0; }
-      .pcards { flex: 1; columns: 300px; column-gap: 12px; }
-      .pchart { flex: 0 0 43%; display: flex; align-items: flex-start; justify-content: center; }
-      .pchart svg { width: 100%; height: auto; max-height: 100%; }
+      /* All cards flow as a full-width masonry; the chart is the LAST block, so it
+         settles at the bottom of the last (right-most) column — i.e. bottom-right. */
+      .pflow { flex: 1; columns: 300px; column-gap: 12px; min-height: 0; }
+      .pchart { break-inside: avoid; page-break-inside: avoid; margin-top: 2px; }
+      .pchart svg { width: 100%; height: auto; }
       .pcard { break-inside: avoid; page-break-inside: avoid; border: 1px solid #e2e8f0; border-radius: 7px; overflow: hidden; margin: 0 0 11px; }
       .pcard-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; background: #f1f4f8; border-bottom: 1px solid #e2e8f0; padding: 5px 9px; }
-      .pcard-name { font-weight: 800; text-transform: uppercase; font-size: 10.5px; letter-spacing: .3px; }
+      .pcard-name { font-weight: 800; text-transform: uppercase; font-size: 11.5px; letter-spacing: .3px; }
       /* table-layout:fixed + equal numeric column widths → numbers align across every card */
-      .pct { width: 100%; border-collapse: collapse; font-size: 10.5px; table-layout: fixed; }
-      .pct th { text-align: left; font-size: 8px; text-transform: uppercase; letter-spacing: .3px; color: #94a3b8; font-weight: 700; border-bottom: 1px solid #e2e8f0; padding: 2.5px 6px; }
-      .pct th.r, .pct td.r { text-align: right; font-variant-numeric: tabular-nums; width: 47px; }
+      .pct { width: 100%; border-collapse: collapse; font-size: 11.5px; table-layout: fixed; }
+      .pct th { text-align: left; font-size: 8.5px; text-transform: uppercase; letter-spacing: .3px; color: #94a3b8; font-weight: 700; border-bottom: 1px solid #e2e8f0; padding: 2.5px 6px; }
+      .pct th.r, .pct td.r { text-align: right; font-variant-numeric: tabular-nums; width: 50px; }
       .pct th.r { white-space: nowrap; }
       .pct td { padding: 2.5px 6px; }
       .pct td.p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -946,10 +947,7 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
     </style></head><body>
       <header><img src="${location.origin}/ccc-logo.png" alt="CCC"/><div><h1>Cash Flow Report — Projects by area</h1><div class="sub">${sub}</div></div><div class="brand">Treasury</div></header>
       <div class="ptotal"><span><span class="lbl">${esc(areaLabel)} total</span><span class="k" style="color:#9aa4b2">${totStr}</span></span><span><span class="lbl">Net cash from ops</span><b class="${gNet < 0 ? 'neg' : 'pos'}">${fMm(gNet)}</b>${forecastActive ? ` <span class="lbl">fcst</span><b>${fMm(gFc)}</b>` : ''}</span><span><span class="lbl">Payables ${startLabel} → ${asOfLabel}</span><b>${fMm(gPayStart)} → ${fMm(gPayEnd)}</b> <b class="${(payD(gPayStart, gPayEnd) ?? 0) < 0 ? 'neg' : 'pos'}">${fMd(payD(gPayStart, gPayEnd))}</b></span></div>
-      <div class="pbody">
-        <div class="pcards">${cards.map(cardHtml).join('')}</div>
-        ${chartRows.length ? `<div class="pchart">${areaBarsSvg(chartRows, undefined, { zoom: 1.05, maxRows: 26 })}</div>` : ''}
-      </div>
+      <div class="pflow">${cards.map(cardHtml).join('')}${chartRows.length ? `<div class="pchart">${areaBarsSvg(chartRows, undefined, { zoom: 1.05, maxRows: 26 })}</div>` : ''}</div>
       <script>window.onload=function(){window.print()}</script></body></html>`
     w.document.write(html); w.document.close()
   }
