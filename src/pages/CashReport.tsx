@@ -834,72 +834,101 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
     const dcell = (v: number | null) => `<td class="r ${cls(v)}">${fMd(v)}</td>`
     const sumPay = (arr: MoverRow[]) => { let s = 0, e = 0, has = false; for (const r of arr) if (r.payStart != null || r.payEnd != null) { s += r.payStart ?? 0; e += r.payEnd ?? 0; has = true } return { s: has ? s : null, e: has ? e : null } }
 
-    let body: string, chartRows: { label: string; value: number; forecast?: number }[], nShown: number, headNote: string
+    type PRow = { code: string; star: boolean; netOps: number; fcNetOps?: number; payStart: number | null; payEnd: number | null; sec?: boolean }
+    type PCard = { label: string; count: string; rows: PRow[]; subNet: number; subFc?: number; subPayStart: number | null; subPayEnd: number | null }
+
+    let cards: PCard[], chartRows: { label: string; value: number; forecast?: number }[], headNote: string
+    let gNet = 0, gFc = 0, gPayStart: number | null = null, gPayEnd: number | null = null, gN = 0, gMain = 0
     if (foldSecondary) {
       // Base = all tiers in scope, honouring mover filter + ignored (NOT the tier filter).
       const base = rows.filter(r => !ignored.has(r.key)).filter(r =>
         moverFilter === 'pos' ? r.netOps > 0 : moverFilter === 'neg' ? r.netOps < 0 : true)
       const byArea = new Map<string, MoverRow[]>()
       for (const r of base) { const a = byArea.get(r.area) ?? []; a.push(r); byArea.set(r.area, a) }
-      const fgroups = [...byArea.entries()].map(([area, items]) => {
+      cards = [...byArea.entries()].map(([area, items]) => {
         const primary = items.filter(r => r.isPrimary).sort((a, b) => b.netOps - a.netOps)
         const secondary = items.filter(r => !r.isPrimary)
-        const ap = sumPay(items)
-        const sp = sumPay(secondary)
+        const ap = sumPay(items), sp = sumPay(secondary)
+        const prows: PRow[] = primary.map(r => ({ code: r.code, star: true, netOps: r.netOps, fcNetOps: r.fcNetOps, payStart: r.payStart, payEnd: r.payEnd }))
+        if (secondary.length) prows.push({ code: `Secondary projects`, star: false, sec: true,
+          netOps: secondary.reduce((t, r) => t + r.netOps, 0),
+          fcNetOps: forecastActive ? secondary.reduce((t, r) => t + (r.fcNetOps ?? 0), 0) : undefined,
+          payStart: sp.s, payEnd: sp.e })
         return {
-          area, label: areaLabelOf(area),
-          netOps: items.reduce((t, r) => t + r.netOps, 0),
-          fcNetOps: forecastActive ? items.reduce((t, r) => t + (r.fcNetOps ?? 0), 0) : undefined,
-          payStart: ap.s, payEnd: ap.e, primary,
-          secN: secondary.length,
-          secNet: secondary.reduce((t, r) => t + r.netOps, 0),
-          secFc: forecastActive ? secondary.reduce((t, r) => t + (r.fcNetOps ?? 0), 0) : undefined,
-          secPayStart: sp.s, secPayEnd: sp.e,
+          label: areaLabelOf(area), count: `${primary.length} main${secondary.length ? ` · ${secondary.length} sec` : ''}`,
+          rows: prows,
+          subNet: items.reduce((t, r) => t + r.netOps, 0),
+          subFc: forecastActive ? items.reduce((t, r) => t + (r.fcNetOps ?? 0), 0) : undefined,
+          subPayStart: ap.s, subPayEnd: ap.e,
         }
-      }).sort((a, b) => Math.abs(b.netOps) - Math.abs(a.netOps))
-      body = fgroups.map(g => `
-        <tr class="grp"><td>${esc(g.label)} <span class="k">· ${g.primary.length} main${g.secN ? ` + ${g.secN}` : ''}</span></td>${cell(g.netOps)}${fcell(g.fcNetOps)}${cell(g.payStart)}${cell(g.payEnd)}${dcell(payD(g.payStart, g.payEnd))}</tr>
-        ${g.primary.map(r => `<tr><td class="p">${esc(r.code)}</td>${cell(r.netOps)}${fcell(r.fcNetOps)}${cell(r.payStart)}${cell(r.payEnd)}${dcell(payD(r.payStart, r.payEnd))}</tr>`).join('')}
-        ${g.secN ? `<tr class="sec"><td class="p">Secondary projects <span class="k">· ${g.secN}</span></td>${cell(g.secNet)}${fcell(g.secFc)}${cell(g.secPayStart)}${cell(g.secPayEnd)}${dcell(payD(g.secPayStart, g.secPayEnd))}</tr>` : ''}`).join('')
-      const gNet = base.reduce((t, r) => t + r.netOps, 0)
-      const gFc = forecastActive ? base.reduce((t, r) => t + (r.fcNetOps ?? 0), 0) : undefined
+      }).sort((a, b) => Math.abs(b.subNet) - Math.abs(a.subNet))
       const gp = sumPay(base)
-      const nMain = base.filter(r => r.isPrimary).length
-      body += `<tr class="tot"><td>Group total (${nMain} main · ${base.length} projects)</td>${cell(gNet)}${fcell(gFc)}${cell(gp.s)}${cell(gp.e)}${dcell(payD(gp.s, gp.e))}</tr>`
-      chartRows = fgroups.flatMap(g => g.primary).map(r => ({ label: r.code, value: r.netOps, forecast: forecastActive ? (r.fcNetOps ?? 0) : undefined }))
-      nShown = base.filter(r => r.isPrimary).length
+      gNet = base.reduce((t, r) => t + r.netOps, 0); gFc = forecastActive ? base.reduce((t, r) => t + (r.fcNetOps ?? 0), 0) : 0
+      gPayStart = gp.s; gPayEnd = gp.e; gN = base.length; gMain = base.filter(r => r.isPrimary).length
+      chartRows = cards.flatMap(c => c.rows.filter(r => !r.sec)).map(r => ({ label: r.code, value: r.netOps, forecast: forecastActive ? (r.fcNetOps ?? 0) : undefined }))
       headNote = `Mainstream projects · secondary folded per area`
     } else {
-      body = groups.map(g => `
-        <tr class="grp"><td>${esc(g.label)} <span class="k">· ${g.items.length}</span></td>${cell(g.netOps)}${fcell(g.fcNetOps)}${cell(g.payStart)}${cell(g.payEnd)}${dcell(payD(g.payStart, g.payEnd))}</tr>
-        ${collapsed.has(g.area) ? '' : g.items.map(r => `<tr><td class="p">${esc(r.code)}${r.isPrimary ? ' <span class="star">★</span>' : ''}</td>${cell(r.netOps)}${fcell(r.fcNetOps)}${cell(r.payStart)}${cell(r.payEnd)}${dcell(payD(r.payStart, r.payEnd))}</tr>`).join('')}`).join('')
-      body += `<tr class="tot"><td>All shown (${kept.length})</td>${cell(grand.netOps)}${fcell(grand.fcNetOps)}${cell(grand.payStart)}${cell(grand.payEnd)}${dcell(payD(grand.payStart, grand.payEnd))}</tr>`
+      cards = groups.map(g => ({
+        label: g.label, count: `${g.items.length}`,
+        rows: collapsed.has(g.area) ? [] : g.items.map(r => ({ code: r.code, star: r.isPrimary, netOps: r.netOps, fcNetOps: r.fcNetOps, payStart: r.payStart, payEnd: r.payEnd })),
+        subNet: g.netOps, subFc: forecastActive ? g.fcNetOps : undefined, subPayStart: g.payStart, subPayEnd: g.payEnd,
+      }))
+      gNet = grand.netOps; gFc = forecastActive ? (grand.fcNetOps ?? 0) : 0; gPayStart = grand.payStart; gPayEnd = grand.payEnd
+      gN = kept.length; gMain = kept.filter(r => r.isPrimary).length
       chartRows = kept.map(r => ({ label: r.code, value: r.netOps, forecast: forecastActive ? (r.fcNetOps ?? 0) : undefined }))
-      nShown = kept.length
       headNote = tierFilter === 'main' ? 'Mainstream projects' : tierFilter === 'secondary' ? 'Secondary projects' : `${kept.length} projects`
     }
+
+    const cardHtml = (c: PCard) => `
+      <div class="pcard">
+        <div class="pcard-h"><span class="pcard-name">${esc(c.label)}</span><span class="k">${esc(c.count)}</span></div>
+        <table class="pct"><thead><tr><th>Project</th><th class="r">Net</th>${forecastActive ? '<th class="r fc">Fcst</th>' : ''}<th class="r">Pay ${startLabel}</th><th class="r">Pay ${asOfLabel}</th><th class="r">Δ</th></tr></thead>
+        <tbody>
+          ${c.rows.length ? c.rows.map(r => `<tr class="${r.sec ? 'sec' : ''}"><td class="p">${esc(r.code)}${r.star ? ' <span class="star">★</span>' : ''}</td>${cell(r.netOps)}${fcell(r.fcNetOps)}${cell(r.payStart)}${cell(r.payEnd)}${dcell(payD(r.payStart, r.payEnd))}</tr>`).join('')
+            : '<tr class="sec"><td class="p">Collapsed</td><td colspan="5"></td></tr>'}
+          <tr class="sub"><td>Subtotal</td>${cell(c.subNet)}${fcell(c.subFc)}${cell(c.subPayStart)}${cell(c.subPayEnd)}${dcell(payD(c.subPayStart, c.subPayEnd))}</tr>
+        </tbody></table>
+      </div>`
+
     const filt = moverFilter !== 'both' ? ` (${moverFilter === 'pos' ? 'positive' : 'negative'})` : ''
     const sub = forecastActive
       ? `${esc(areaLabel)} · net cash from operations · actual Jan–${asOfLabel} · forecast to ${horizonLabel} · USD millions · ${headNote}${filt}`
       : `${esc(areaLabel)} · net cash from operations · Jan–${asOfLabel} · USD millions · ${headNote}${filt}`
+    const totStr = `${gMain} main · ${gN} project${gN === 1 ? '' : 's'}`
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Cash Flow — Projects by area</title><style>
-      @page { size: A4 landscape; margin: 12mm; }
-      * { box-sizing: border-box; } body { font-family: -apple-system, Segoe UI, Helvetica, Arial, sans-serif; color: #141414; margin: 0; }
-      header { display: flex; align-items: center; gap: 14px; border-bottom: 2px solid #E10020; padding-bottom: 8px; margin-bottom: 12px; }
-      header img { height: 34px; } header h1 { font-size: 16px; margin: 0; font-weight: 700; } .sub { font-size: 10px; color: #64748b; }
+      @page { size: A4 landscape; margin: 11mm; }
+      * { box-sizing: border-box; } html, body { height: 100%; }
+      body { font-family: -apple-system, Segoe UI, Helvetica, Arial, sans-serif; color: #141414; margin: 0; display: flex; flex-direction: column; }
+      header { display: flex; align-items: center; gap: 14px; border-bottom: 2px solid #E10020; padding-bottom: 7px; margin-bottom: 9px; flex: none; }
+      header img { height: 30px; } header h1 { font-size: 15px; margin: 0; font-weight: 700; } .sub { font-size: 9.5px; color: #64748b; }
       .brand { margin-left: auto; font-size: 11px; font-weight: 700; color: #E10020; text-transform: uppercase; letter-spacing: .5px; }
-      table { width: 100%; border-collapse: collapse; font-size: 10.5px; } th { text-align: left; font-size: 8px; text-transform: uppercase; letter-spacing: .4px; color: #64748b; border-bottom: 1px solid #cbd5e1; padding: 3px 8px; }
-      th.r, td.r { text-align: right; font-variant-numeric: tabular-nums; } td { padding: 2.5px 8px; }
-      td.fc, th.fc { color: #9a7b3c; } td.fc.neg { color: #E10020; opacity: .78; } td.fc.pos { color: #057a55; opacity: .78; }
-      tr.grp td { background: #f1f4f8; font-weight: 800; text-transform: uppercase; font-size: 9.5px; border-top: 1.2px solid #141414; } td.p { padding-left: 16px; }
-      tr.sec td { color: #64748b; font-style: italic; } td.p .k, .star { color: #94a3b8; } .star { color: #E10020; font-style: normal; }
-      tr.tot td { font-weight: 800; border-top: 2px solid #141414; } .neg { color: #E10020; } .pos { color: #057a55; } .k { color: #94a3b8; font-weight: 400; }
-      .chart { margin-top: 14px; page-break-inside: avoid; }
+      .ptotal { flex: none; display: flex; align-items: baseline; gap: 16px; background: #141414; color: #fff; border-radius: 7px; padding: 7px 13px; margin-bottom: 10px; font-size: 10.5px; }
+      .ptotal b { font-size: 12px; } .ptotal .lbl { color: #9aa4b2; text-transform: uppercase; letter-spacing: .4px; font-size: 8px; font-weight: 700; margin-right: 5px; }
+      .ptotal .neg { color: #ff7a8a; } .ptotal .pos { color: #6ee7a8; }
+      .pbody { flex: 1; display: flex; gap: 14px; align-items: stretch; min-height: 0; }
+      .pcards { flex: 1; columns: 300px; column-gap: 12px; }
+      .pchart { flex: 0 0 43%; display: flex; align-items: flex-start; justify-content: center; }
+      .pchart svg { width: 100%; height: auto; max-height: 100%; }
+      .pcard { break-inside: avoid; page-break-inside: avoid; border: 1px solid #e2e8f0; border-radius: 7px; overflow: hidden; margin: 0 0 11px; }
+      .pcard-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; background: #f1f4f8; border-bottom: 1px solid #e2e8f0; padding: 5px 9px; }
+      .pcard-name { font-weight: 800; text-transform: uppercase; font-size: 9.5px; letter-spacing: .3px; }
+      .pct { width: 100%; border-collapse: collapse; font-size: 9px; }
+      .pct th { text-align: left; font-size: 6.8px; text-transform: uppercase; letter-spacing: .3px; color: #94a3b8; font-weight: 700; border-bottom: 1px solid #e2e8f0; padding: 2px 7px; }
+      .pct th.r, .pct td.r { text-align: right; font-variant-numeric: tabular-nums; }
+      .pct td { padding: 2px 7px; }
+      .pct td.p { max-width: 118px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .pct td.fc, .pct th.fc { color: #9a7b3c; } .pct td.fc.neg { color: #E10020; opacity: .8; } .pct td.fc.pos { color: #057a55; opacity: .8; }
+      .pct tr.sec td { color: #64748b; font-style: italic; }
+      .pct tr.sub td { font-weight: 800; border-top: 1.4px solid #141414; }
+      .star { color: #E10020; font-style: normal; } .k { color: #94a3b8; font-weight: 600; font-size: 8.5px; }
+      .neg { color: #E10020; } .pos { color: #057a55; }
     </style></head><body>
       <header><img src="${location.origin}/ccc-logo.png" alt="CCC"/><div><h1>Cash Flow Report — Projects by area</h1><div class="sub">${sub}</div></div><div class="brand">Treasury</div></header>
-      <table><thead><tr><th>Project</th><th class="r">Net cash from ops</th>${forecastActive ? '<th class="r fc">Forecast</th>' : ''}<th class="r">Payables ${startLabel}</th><th class="r">Payables ${asOfLabel}</th><th class="r">Δ</th></tr></thead>
-      <tbody>${body}</tbody></table>
-      ${chartRows.length ? `<div class="chart">${areaBarsSvg(chartRows, undefined, { zoom: 1.05, maxRows: 24 })}</div>` : ''}
+      <div class="ptotal"><span><span class="lbl">${esc(areaLabel)} total</span><span class="k" style="color:#9aa4b2">${totStr}</span></span><span><span class="lbl">Net cash from ops</span><b class="${gNet < 0 ? 'neg' : 'pos'}">${fMm(gNet)}</b>${forecastActive ? ` <span class="lbl">fcst</span><b>${fMm(gFc)}</b>` : ''}</span><span><span class="lbl">Payables ${startLabel} → ${asOfLabel}</span><b>${fMm(gPayStart)} → ${fMm(gPayEnd)}</b> <b class="${(payD(gPayStart, gPayEnd) ?? 0) < 0 ? 'neg' : 'pos'}">${fMd(payD(gPayStart, gPayEnd))}</b></span></div>
+      <div class="pbody">
+        <div class="pcards">${cards.map(cardHtml).join('')}</div>
+        ${chartRows.length ? `<div class="pchart">${areaBarsSvg(chartRows, undefined, { zoom: 1.05, maxRows: 26 })}</div>` : ''}
+      </div>
       <script>window.onload=function(){window.print()}</script></body></html>`
     w.document.write(html); w.document.close()
   }
