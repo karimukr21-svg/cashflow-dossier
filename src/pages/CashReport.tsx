@@ -879,16 +879,17 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
       headNote = tierFilter === 'main' ? 'Mainstream projects' : tierFilter === 'secondary' ? 'Secondary projects' : `${kept.length} projects`
     }
 
+    const thead = `<thead><tr><th>Project</th><th class="r">Net</th>${forecastActive ? '<th class="r fc">Fcst</th>' : ''}<th class="r">Pay ${startLabel}</th><th class="r">Pay ${asOfLabel}</th><th class="r">Δ</th></tr></thead>`
     // A card with a single line (one project, or only a folded "Secondary" line) is
-    // its own total — drop the redundant subtotal row and header; render it as a
-    // compact one-liner instead of a mini-table.
+    // its own total — drop the redundant subtotal row, but keep the header row so its
+    // numbers align with every other card.
     const cardHtml = (c: PCard) => {
       if (c.rows.length === 1) {
         const r = c.rows[0]
         return `
         <div class="pcard pcard--one">
           <div class="pcard-h"><span class="pcard-name">${esc(c.label)}</span>${r.star ? '<span class="star">★</span>' : r.sec ? `<span class="k">${esc(c.count)}</span>` : ''}</div>
-          <table class="pct"><tbody>
+          <table class="pct">${thead}<tbody>
             <tr class="one ${r.sec ? 'sec' : ''}"><td class="p">${esc(r.code)}</td>${cell(r.netOps)}${fcell(r.fcNetOps)}${cell(r.payStart)}${cell(r.payEnd)}${dcell(payD(r.payStart, r.payEnd))}</tr>
           </tbody></table>
         </div>`
@@ -896,7 +897,7 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
       return `
       <div class="pcard">
         <div class="pcard-h"><span class="pcard-name">${esc(c.label)}</span><span class="k">${esc(c.count)}</span></div>
-        <table class="pct"><thead><tr><th>Project</th><th class="r">Net</th>${forecastActive ? '<th class="r fc">Fcst</th>' : ''}<th class="r">Pay ${startLabel}</th><th class="r">Pay ${asOfLabel}</th><th class="r">Δ</th></tr></thead>
+        <table class="pct">${thead}
         <tbody>
           ${c.rows.length ? c.rows.map(r => `<tr class="${r.sec ? 'sec' : ''}"><td class="p">${esc(r.code)}${r.star ? ' <span class="star">★</span>' : ''}</td>${cell(r.netOps)}${fcell(r.fcNetOps)}${cell(r.payStart)}${cell(r.payEnd)}${dcell(payD(r.payStart, r.payEnd))}</tr>`).join('')
             : '<tr class="sec"><td class="p">Collapsed</td><td colspan="5"></td></tr>'}
@@ -926,16 +927,17 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
       .pchart svg { width: 100%; height: auto; max-height: 100%; }
       .pcard { break-inside: avoid; page-break-inside: avoid; border: 1px solid #e2e8f0; border-radius: 7px; overflow: hidden; margin: 0 0 11px; }
       .pcard-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; background: #f1f4f8; border-bottom: 1px solid #e2e8f0; padding: 5px 9px; }
-      .pcard-name { font-weight: 800; text-transform: uppercase; font-size: 9.5px; letter-spacing: .3px; }
-      .pct { width: 100%; border-collapse: collapse; font-size: 9px; }
-      .pct th { text-align: left; font-size: 6.8px; text-transform: uppercase; letter-spacing: .3px; color: #94a3b8; font-weight: 700; border-bottom: 1px solid #e2e8f0; padding: 2px 7px; }
-      .pct th.r, .pct td.r { text-align: right; font-variant-numeric: tabular-nums; }
-      .pct td { padding: 2px 7px; }
-      .pct td.p { max-width: 118px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .pcard-name { font-weight: 800; text-transform: uppercase; font-size: 10.5px; letter-spacing: .3px; }
+      /* table-layout:fixed + equal numeric column widths → numbers align across every card */
+      .pct { width: 100%; border-collapse: collapse; font-size: 10.5px; table-layout: fixed; }
+      .pct th { text-align: left; font-size: 8px; text-transform: uppercase; letter-spacing: .3px; color: #94a3b8; font-weight: 700; border-bottom: 1px solid #e2e8f0; padding: 2.5px 6px; }
+      .pct th.r, .pct td.r { text-align: right; font-variant-numeric: tabular-nums; width: 47px; }
+      .pct td { padding: 2.5px 6px; }
+      .pct td.p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .pct td.fc, .pct th.fc { color: #9a7b3c; } .pct td.fc.neg { color: #E10020; opacity: .8; } .pct td.fc.pos { color: #057a55; opacity: .8; }
       .pct tr.sec td { color: #64748b; font-style: italic; }
       .pct tr.sub td { font-weight: 800; border-top: 1.4px solid #141414; }
-      .pcard--one .pct td { font-weight: 700; padding: 3px 9px; } .pcard--one .pct tr.one.sec td { font-weight: 600; font-style: italic; color: #64748b; }
+      .pcard--one .pct tr.one td { font-weight: 700; } .pcard--one .pct tr.one.sec td { font-weight: 600; font-style: italic; color: #64748b; }
       .star { color: #E10020; font-style: normal; } .k { color: #94a3b8; font-weight: 600; font-size: 8.5px; }
       .neg { color: #E10020; } .pos { color: #057a55; }
     </style></head><body>
