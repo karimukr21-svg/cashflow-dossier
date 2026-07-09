@@ -699,7 +699,7 @@ function AreaView({ matched, year, asOfLabel, startLabel, fcNetOpsByArea, foreca
  * / Negative), which surfaces the biggest movers in each direction. Payables are
  * the CCC-share trade payables of each project's mapped TB books (blank where a
  * project is not yet mapped — same as the Area page). */
-type MoverRow = { key: string; area: string; code: string; netOps: number; fcNetOps?: number; payStart: number | null; payEnd: number | null }
+type MoverRow = { key: string; area: string; code: string; netOps: number; fcNetOps?: number; payStart: number | null; payEnd: number | null; isPrimary: boolean }
 function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, startLabel, forecastActive, horizonMonth, horizonLabel, registerPrint }: {
   scope: Scope; fxMap: Map<string, number | null>; areaOptions: { areaId: string; label: string }[]
   year: number; asOfMonth: number; asOfLabel: string; startLabel: string
@@ -709,6 +709,7 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
   const ALL = '__ALL__', SEP = '', MINIMAL = 100_000   // "minimal mover" = |CFO| under 0.1m
   const [areaId, setAreaId] = useState<string>(ALL)
   const [moverFilter, setMoverFilter] = useState<'both' | 'pos' | 'neg'>('both')
+  const [tierFilter, setTierFilter] = useState<'all' | 'main' | 'secondary'>('all')  // mainstream vs secondary (is_primary from Nexus)
   const [selected, setSelected] = useState<Set<string>>(new Set())   // ticked rows
   const [ignored, setIgnored] = useState<Set<string>>(new Set())     // hidden from table/chart/totals/print
   // Areas collapsed to just their subtotal row — persisted, and honoured in print too.
@@ -772,14 +773,19 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
       const books = cid ? (payMaps?.canonToBooks.get(cid) ?? []) : []
       let ps = 0, pe = 0, has = false
       for (const b of books) { const bm = bookBal.get(b); if (bm) { ps += bm.get(decP) ?? 0; pe += bm.get(asOfP) ?? 0; has = true } }
-      return { key, area: x.area, code: x.code, netOps: x.netOps, fcNetOps: forecastActive ? (fcProjOps.get(key)?.netOps ?? 0) : undefined, payStart: has ? ps : null, payEnd: has ? pe : null }
+      return { key, area: x.area, code: x.code, netOps: x.netOps, fcNetOps: forecastActive ? (fcProjOps.get(key)?.netOps ?? 0) : undefined, payStart: has ? ps : null, payEnd: has ? pe : null, isPrimary: cid ? !!payMaps?.primaryCanon.has(cid) : false }
     }).sort((a, b) => Math.abs(b.netOps) - Math.abs(a.netOps))
   }, [projOps, fcProjOps, forecastActive, payMaps, bookBal, decP, asOfP])
 
-  const shown = useMemo(() =>
-    moverFilter === 'pos' ? rows.filter(r => r.netOps > 0)
-    : moverFilter === 'neg' ? rows.filter(r => r.netOps < 0)
-    : rows, [rows, moverFilter])
+  const nPrimary = useMemo(() => rows.filter(r => r.isPrimary).length, [rows])
+  const shown = useMemo(() => {
+    let r = tierFilter === 'main' ? rows.filter(x => x.isPrimary)
+      : tierFilter === 'secondary' ? rows.filter(x => !x.isPrimary)
+      : rows
+    return moverFilter === 'pos' ? r.filter(x => x.netOps > 0)
+      : moverFilter === 'neg' ? r.filter(x => x.netOps < 0)
+      : r
+  }, [rows, moverFilter, tierFilter])
   // Visible set = filtered rows minus the ones the user has ignored.
   const kept = useMemo(() => shown.filter(r => !ignored.has(r.key)), [shown, ignored])
 
@@ -814,18 +820,68 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
   const areaLabel = areaId === ALL ? 'All areas' : areaLabelOf(areaId)
   const payD = (s: number | null, e: number | null) => (s != null && e != null) ? e - s : null
 
-  const printMovers = () => {
+  // Print. Two shapes:
+  //   • foldSecondary=false → the on-screen view (every kept project listed, honouring
+  //     the tier/mover filters + collapsed areas).
+  //   • foldSecondary=true  → Amr's "main projects only" cut: MAINSTREAM projects listed
+  //     in full, every other project folded into ONE "Secondary projects" line per area
+  //     so the area subtotal + grand total still reconcile to the full figure.
+  const printMovers = (foldSecondary = false) => {
     const w = window.open('', '_blank'); if (!w) return
     const esc = (s: string) => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string))
     const cell = (v: number | null) => `<td class="r ${cls(v)}">${fMm(v)}</td>`
     const fcell = (v: number | null | undefined) => forecastActive ? `<td class="r fc ${cls(v)}">${fMm(v)}</td>` : ''
     const dcell = (v: number | null) => `<td class="r ${cls(v)}">${fMd(v)}</td>`
-    const body = groups.map(g => `
-      <tr class="grp"><td>${esc(g.label)} <span class="k">· ${g.items.length}</span></td>${cell(g.netOps)}${fcell(g.fcNetOps)}${cell(g.payStart)}${cell(g.payEnd)}${dcell(payD(g.payStart, g.payEnd))}</tr>
-      ${collapsed.has(g.area) ? '' : g.items.map(r => `<tr><td class="p">${esc(r.code)}</td>${cell(r.netOps)}${fcell(r.fcNetOps)}${cell(r.payStart)}${cell(r.payEnd)}${dcell(payD(r.payStart, r.payEnd))}</tr>`).join('')}`).join('')
+    const sumPay = (arr: MoverRow[]) => { let s = 0, e = 0, has = false; for (const r of arr) if (r.payStart != null || r.payEnd != null) { s += r.payStart ?? 0; e += r.payEnd ?? 0; has = true } return { s: has ? s : null, e: has ? e : null } }
+
+    let body: string, chartRows: { label: string; value: number; forecast?: number }[], nShown: number, headNote: string
+    if (foldSecondary) {
+      // Base = all tiers in scope, honouring mover filter + ignored (NOT the tier filter).
+      const base = rows.filter(r => !ignored.has(r.key)).filter(r =>
+        moverFilter === 'pos' ? r.netOps > 0 : moverFilter === 'neg' ? r.netOps < 0 : true)
+      const byArea = new Map<string, MoverRow[]>()
+      for (const r of base) { const a = byArea.get(r.area) ?? []; a.push(r); byArea.set(r.area, a) }
+      const fgroups = [...byArea.entries()].map(([area, items]) => {
+        const primary = items.filter(r => r.isPrimary).sort((a, b) => b.netOps - a.netOps)
+        const secondary = items.filter(r => !r.isPrimary)
+        const ap = sumPay(items)
+        const sp = sumPay(secondary)
+        return {
+          area, label: areaLabelOf(area),
+          netOps: items.reduce((t, r) => t + r.netOps, 0),
+          fcNetOps: forecastActive ? items.reduce((t, r) => t + (r.fcNetOps ?? 0), 0) : undefined,
+          payStart: ap.s, payEnd: ap.e, primary,
+          secN: secondary.length,
+          secNet: secondary.reduce((t, r) => t + r.netOps, 0),
+          secFc: forecastActive ? secondary.reduce((t, r) => t + (r.fcNetOps ?? 0), 0) : undefined,
+          secPayStart: sp.s, secPayEnd: sp.e,
+        }
+      }).sort((a, b) => Math.abs(b.netOps) - Math.abs(a.netOps))
+      body = fgroups.map(g => `
+        <tr class="grp"><td>${esc(g.label)} <span class="k">· ${g.primary.length} main${g.secN ? ` + ${g.secN}` : ''}</span></td>${cell(g.netOps)}${fcell(g.fcNetOps)}${cell(g.payStart)}${cell(g.payEnd)}${dcell(payD(g.payStart, g.payEnd))}</tr>
+        ${g.primary.map(r => `<tr><td class="p">${esc(r.code)}</td>${cell(r.netOps)}${fcell(r.fcNetOps)}${cell(r.payStart)}${cell(r.payEnd)}${dcell(payD(r.payStart, r.payEnd))}</tr>`).join('')}
+        ${g.secN ? `<tr class="sec"><td class="p">Secondary projects <span class="k">· ${g.secN}</span></td>${cell(g.secNet)}${fcell(g.secFc)}${cell(g.secPayStart)}${cell(g.secPayEnd)}${dcell(payD(g.secPayStart, g.secPayEnd))}</tr>` : ''}`).join('')
+      const gNet = base.reduce((t, r) => t + r.netOps, 0)
+      const gFc = forecastActive ? base.reduce((t, r) => t + (r.fcNetOps ?? 0), 0) : undefined
+      const gp = sumPay(base)
+      const nMain = base.filter(r => r.isPrimary).length
+      body += `<tr class="tot"><td>Group total (${nMain} main · ${base.length} projects)</td>${cell(gNet)}${fcell(gFc)}${cell(gp.s)}${cell(gp.e)}${dcell(payD(gp.s, gp.e))}</tr>`
+      chartRows = fgroups.flatMap(g => g.primary).map(r => ({ label: r.code, value: r.netOps, forecast: forecastActive ? (r.fcNetOps ?? 0) : undefined }))
+      nShown = base.filter(r => r.isPrimary).length
+      headNote = `Mainstream projects · secondary folded per area`
+    } else {
+      body = groups.map(g => `
+        <tr class="grp"><td>${esc(g.label)} <span class="k">· ${g.items.length}</span></td>${cell(g.netOps)}${fcell(g.fcNetOps)}${cell(g.payStart)}${cell(g.payEnd)}${dcell(payD(g.payStart, g.payEnd))}</tr>
+        ${collapsed.has(g.area) ? '' : g.items.map(r => `<tr><td class="p">${esc(r.code)}${r.isPrimary ? ' <span class="star">★</span>' : ''}</td>${cell(r.netOps)}${fcell(r.fcNetOps)}${cell(r.payStart)}${cell(r.payEnd)}${dcell(payD(r.payStart, r.payEnd))}</tr>`).join('')}`).join('')
+      body += `<tr class="tot"><td>All shown (${kept.length})</td>${cell(grand.netOps)}${fcell(grand.fcNetOps)}${cell(grand.payStart)}${cell(grand.payEnd)}${dcell(payD(grand.payStart, grand.payEnd))}</tr>`
+      chartRows = kept.map(r => ({ label: r.code, value: r.netOps, forecast: forecastActive ? (r.fcNetOps ?? 0) : undefined }))
+      nShown = kept.length
+      headNote = tierFilter === 'main' ? 'Mainstream projects' : tierFilter === 'secondary' ? 'Secondary projects' : `${kept.length} projects`
+    }
+    const filt = moverFilter !== 'both' ? ` (${moverFilter === 'pos' ? 'positive' : 'negative'})` : ''
     const sub = forecastActive
-      ? `${esc(areaLabel)} · net cash from operations · actual Jan–${asOfLabel} · forecast to ${horizonLabel} · USD millions · ${kept.length} projects${moverFilter !== 'both' ? ` (${moverFilter === 'pos' ? 'positive' : 'negative'})` : ''}`
-      : `${esc(areaLabel)} · net cash from operations · Jan–${asOfLabel} · USD millions · ${kept.length} projects${moverFilter !== 'both' ? ` (${moverFilter === 'pos' ? 'positive' : 'negative'})` : ''}`
+      ? `${esc(areaLabel)} · net cash from operations · actual Jan–${asOfLabel} · forecast to ${horizonLabel} · USD millions · ${headNote}${filt}`
+      : `${esc(areaLabel)} · net cash from operations · Jan–${asOfLabel} · USD millions · ${headNote}${filt}`
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Cash Flow — Projects by area</title><style>
       @page { size: A4 landscape; margin: 12mm; }
       * { box-sizing: border-box; } body { font-family: -apple-system, Segoe UI, Helvetica, Arial, sans-serif; color: #141414; margin: 0; }
@@ -836,18 +892,19 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
       th.r, td.r { text-align: right; font-variant-numeric: tabular-nums; } td { padding: 2.5px 8px; }
       td.fc, th.fc { color: #9a7b3c; } td.fc.neg { color: #E10020; opacity: .78; } td.fc.pos { color: #057a55; opacity: .78; }
       tr.grp td { background: #f1f4f8; font-weight: 800; text-transform: uppercase; font-size: 9.5px; border-top: 1.2px solid #141414; } td.p { padding-left: 16px; }
+      tr.sec td { color: #64748b; font-style: italic; } td.p .k, .star { color: #94a3b8; } .star { color: #E10020; font-style: normal; }
       tr.tot td { font-weight: 800; border-top: 2px solid #141414; } .neg { color: #E10020; } .pos { color: #057a55; } .k { color: #94a3b8; font-weight: 400; }
       .chart { margin-top: 14px; page-break-inside: avoid; }
     </style></head><body>
       <header><img src="${location.origin}/ccc-logo.png" alt="CCC"/><div><h1>Cash Flow Report — Projects by area</h1><div class="sub">${sub}</div></div><div class="brand">Treasury</div></header>
       <table><thead><tr><th>Project</th><th class="r">Net cash from ops</th>${forecastActive ? '<th class="r fc">Forecast</th>' : ''}<th class="r">Payables ${startLabel}</th><th class="r">Payables ${asOfLabel}</th><th class="r">Δ</th></tr></thead>
-      <tbody>${body}<tr class="tot"><td>All shown (${kept.length})</td>${cell(grand.netOps)}${fcell(grand.fcNetOps)}${cell(grand.payStart)}${cell(grand.payEnd)}${dcell(payD(grand.payStart, grand.payEnd))}</tr></tbody></table>
-      <div class="chart">${areaBarsSvg(kept.map(r => ({ label: r.code, value: r.netOps, forecast: forecastActive ? (r.fcNetOps ?? 0) : undefined })), undefined, { zoom: 1.05, maxRows: 24 })}</div>
+      <tbody>${body}</tbody></table>
+      ${chartRows.length ? `<div class="chart">${areaBarsSvg(chartRows, undefined, { zoom: 1.05, maxRows: 24 })}</div>` : ''}
       <script>window.onload=function(){window.print()}</script></body></html>`
     w.document.write(html); w.document.close()
   }
-  // Keep the top-bar Print button wired to the current print closure.
-  useEffect(() => { registerPrint(kept.length ? printMovers : null); return () => registerPrint(null) })
+  // Keep the top-bar Print button wired to the current on-screen view.
+  useEffect(() => { registerPrint(kept.length ? () => printMovers(false) : null); return () => registerPrint(null) })
 
   return (
     <div className="crp-page">
@@ -875,6 +932,16 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
             ))}
           </div>
         )}
+        {nPrimary > 0 && (
+          <div className="crp-movers" role="group" aria-label="Show which project tier">
+            <span className="crp-pick-l">Tier</span>
+            {([['all', 'All'], ['main', 'Mainstream'], ['secondary', 'Secondary']] as const).map(([k, l]) => (
+              <button key={k} className={`crp-moverbtn ${tierFilter === k ? 'active' : ''} ${k === 'main' ? 'crp-tier-main' : ''}`}
+                title={k === 'main' ? 'Only mainstream projects (flagged in Nexus)' : k === 'secondary' ? 'Only secondary projects' : 'Every project'}
+                onClick={() => setTierFilter(k)}>{l}</button>
+            ))}
+          </div>
+        )}
         {groups.length > 1 && (
           <div className="crp-pick">
             <button className="crp-pickbtn" disabled={groups.every(g => collapsed.has(g.area))} onClick={() => persistCollapsed(new Set(groups.map(g => g.area)))}>Collapse all</button>
@@ -886,6 +953,11 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
             <button className="crp-pickbtn" disabled={selected.size === 0} onClick={ignoreSelected}>Ignore selected ({selected.size})</button>
             <button className="crp-pickbtn" disabled={nMinimal === 0} onClick={ignoreMinimal} title="Hide projects that barely move — |net cash from ops| under 0.1m">Ignore minimal ({nMinimal})</button>
             {ignored.size > 0 && <button className="crp-pickbtn" onClick={resetIgnored}>Reset ({ignored.size} ignored)</button>}
+          </div>
+        )}
+        {nPrimary > 0 && (
+          <div className="crp-pick">
+            <button className="crp-pickbtn crp-pickbtn--main" onClick={() => printMovers(true)} title="Print mainstream projects in full; fold every other project into one Secondary line per area (totals reconcile)">Print main</button>
           </div>
         )}
       </div>
@@ -919,7 +991,7 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
                   ...(collapsed.has(g.area) ? [] : g.items.map(r => (
                     <tr className={`crp-projtr ${selected.has(r.key) ? 'sel' : ''}`} key={r.key}>
                       <td className="crp-ck"><input type="checkbox" checked={selected.has(r.key)} onChange={() => toggle(r.key)} title="Select to ignore" /></td>
-                      <td className="crp-projtd">{r.code}</td>
+                      <td className="crp-projtd">{r.code}{r.isPrimary && <span className="crp-star" title="Mainstream project">★</span>}</td>
                       <td className={`r ${cls(r.netOps)}`}>{fMm(r.netOps)}</td>
                       {forecastActive && <td className={`r crp-fc ${cls(r.fcNetOps)}`}>{fMm(r.fcNetOps)}</td>}
                       <td className={`r crp-sep-l ${cls(r.payStart)}`}>{fMm(r.payStart)}</td>

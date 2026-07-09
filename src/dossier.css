@@ -1725,6 +1725,10 @@ body, html, #root {
 .crp-pickbtn { border: 1px solid var(--border); background: var(--surface, #fff); color: var(--ink); font-size: 12px; font-weight: 600; padding: 5px 11px; border-radius: 7px; cursor: pointer; }
 .crp-pickbtn:hover { border-color: var(--crimson); color: var(--crimson); }
 .crp-pickbtn:disabled { opacity: .45; cursor: default; }
+.crp-pickbtn--main { border-color: var(--crimson); color: #fff; background: var(--crimson); }
+.crp-pickbtn--main:hover { color: #fff; opacity: .9; }
+.crp-star { color: var(--crimson); font-size: 10px; margin-left: 5px; vertical-align: 1px; }
+.crp-moverbtn.crp-tier-main.active { background: var(--crimson); }
 .crp-grid--proj { grid-template-columns: 340px 1fr; }
 .crp-projlist { display: flex; flex-direction: column; max-height: 620px; overflow-y: auto; margin-top: 2px; }
 .crp-projrow { display: grid; grid-template-columns: auto 1fr 72px 58px; align-items: center; gap: 9px; padding: 4px 2px; border-bottom: 1px solid var(--border); }

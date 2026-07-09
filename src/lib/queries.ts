@@ -372,36 +372,58 @@ export async function fetchProjectCells(opts: {
     .map(r => ({ ...r, value: Number(r.value) }))
 }
 
-/* ── Project-level trade payables (from the trial balance) ──────────────────
- * The Payables map (entity_alias source_system='trial_balance') pins each TB
- * book to a canonical project; a cf project resolves to a canonical via its
- * treasury_cashflow alias. v_cf_payables_book_month already sums CCC's share
- * across accounts + consolidations per book per month. These helpers let the
- * Project view show a project's payables balance and its month-by-month move. */
+/* ── Project-level trade payables (from the org_chart book map) ─────────────
+ * A cf project resolves to a canonical via its treasury_cashflow alias; that
+ * canonical then resolves to its Midas books via the ORG_CHART book mapping
+ * (entity_alias source_system='org_chart') — the map the Atlas mapping module
+ * owns and is the single writer of going forward. v_cf_payables_book_month
+ * already sums CCC's share across accounts + consolidations per book per month.
+ *
+ * 2026-07-08: repointed off the 'trial_balance' book map (only 58 books, a
+ * strict subset) to the 'org_chart' map (378 books) — the main reason payables
+ * showed blank for many projects. Honors the payables rule "a project's
+ * payables = the sum of its books across ALL consolidations": org_chart keys
+ * are '<CONSOLIDATION>::<BOOKCODE>' and ONE book can appear under several
+ * consolidations, so we take the bare book_code (split on '::') and DEDUP per
+ * canonical_id before the reader sums v_cf_payables_book_month (which itself is
+ * already consolidation-summed per book) — dedup prevents double-counting.
+ * The 2 books that disagreed on their canonical node between the two maps
+ * (NFEAREA, NFEQTR) resolve to org_chart's node here (Atlas is authoritative). */
 
 export type PayablesMaps = {
   cfCodeToCanon: Map<string, string>   // cf project_code (UPPER) -> canonical_id
-  canonToBooks: Map<string, string[]>  // canonical_id -> trial-balance book_codes
+  canonToBooks: Map<string, string[]>  // canonical_id -> deduped Midas book_codes
+  primaryCanon: Set<string>            // canonical_ids flagged is_primary (mainstream) in Nexus
 }
 
 export async function fetchPayablesMaps(): Promise<PayablesMaps> {
-  const [tc, tb] = await Promise.all([
+  const [tc, oc, pr] = await Promise.all([
     supabase.from('entity_alias').select('local_key, canonical_id').eq('source_system', 'treasury_cashflow'),
-    supabase.from('entity_alias').select('local_key, canonical_id').eq('source_system', 'trial_balance'),
+    supabase.from('entity_alias').select('local_key, canonical_id').eq('source_system', 'org_chart'),
+    supabase.from('canonical_entity').select('id').eq('entity_type', 'project').eq('is_primary', true),
   ])
   if (tc.error) throw tc.error
-  if (tb.error) throw tb.error
+  if (oc.error) throw oc.error
+  if (pr.error) throw pr.error
+  const primaryCanon = new Set<string>(((pr.data ?? []) as { id: string }[]).map((r) => r.id))
   const cfCodeToCanon = new Map<string, string>()
   for (const r of (tc.data ?? []) as { local_key: string; canonical_id: string }[]) {
     const code = r.local_key.replace(/^proj:/, '').trim().toUpperCase()
     if (code) cfCodeToCanon.set(code, r.canonical_id)
   }
-  const canonToBooks = new Map<string, string[]>()
-  for (const r of (tb.data ?? []) as { local_key: string; canonical_id: string }[]) {
-    const arr = canonToBooks.get(r.canonical_id) ?? []
-    arr.push(r.local_key); canonToBooks.set(r.canonical_id, arr)
+  // org_chart local_key = '<CONSOLIDATION>::<BOOKCODE>' → bare BOOKCODE, deduped
+  // per canonical (same book under multiple consolidations must count once).
+  const canonToBookSet = new Map<string, Set<string>>()
+  for (const r of (oc.data ?? []) as { local_key: string; canonical_id: string }[]) {
+    const book = (r.local_key.split('::')[1] ?? '').trim()
+    if (!book) continue
+    let s = canonToBookSet.get(r.canonical_id)
+    if (!s) { s = new Set<string>(); canonToBookSet.set(r.canonical_id, s) }
+    s.add(book)
   }
-  return { cfCodeToCanon, canonToBooks }
+  const canonToBooks = new Map<string, string[]>()
+  for (const [cid, set] of canonToBookSet) canonToBooks.set(cid, [...set])
+  return { cfCodeToCanon, canonToBooks, primaryCanon }
 }
 
 /** Monthly CCC-share trade payables for a set of TB books, summed per period. */
