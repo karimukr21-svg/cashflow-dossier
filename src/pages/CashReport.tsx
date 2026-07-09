@@ -879,7 +879,9 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
       headNote = tierFilter === 'main' ? 'Mainstream projects' : tierFilter === 'secondary' ? 'Secondary projects' : `${kept.length} projects`
     }
 
-    const thead = `<thead><tr><th>Project</th><th class="r">Net</th>${forecastActive ? '<th class="r fc">Fcst</th>' : ''}<th class="r">Pay ${startLabel}</th><th class="r">Pay ${asOfLabel}</th><th class="r">Δ</th></tr></thead>`
+    // Compact payables headers so they never wrap: "Dec 2025" → "Dec '25".
+    const shortPd = (l: string) => l.replace(/\s*20(\d\d)\b/, " '$1")
+    const thead = `<thead><tr><th>Project</th><th class="r">Net</th>${forecastActive ? '<th class="r fc">Fcst</th>' : ''}<th class="r">${shortPd(startLabel)}</th><th class="r">${shortPd(asOfLabel)}</th><th class="r">Δ</th></tr></thead>`
     // A card with a single line (one project, or only a folded "Secondary" line) is
     // its own total — drop the redundant subtotal row, but keep the header row so its
     // numbers align with every other card.
@@ -932,6 +934,7 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
       .pct { width: 100%; border-collapse: collapse; font-size: 10.5px; table-layout: fixed; }
       .pct th { text-align: left; font-size: 8px; text-transform: uppercase; letter-spacing: .3px; color: #94a3b8; font-weight: 700; border-bottom: 1px solid #e2e8f0; padding: 2.5px 6px; }
       .pct th.r, .pct td.r { text-align: right; font-variant-numeric: tabular-nums; width: 47px; }
+      .pct th.r { white-space: nowrap; }
       .pct td { padding: 2.5px 6px; }
       .pct td.p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .pct td.fc, .pct th.fc { color: #9a7b3c; } .pct td.fc.neg { color: #E10020; opacity: .8; } .pct td.fc.pos { color: #057a55; opacity: .8; }
