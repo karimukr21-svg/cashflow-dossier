@@ -879,7 +879,21 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
       headNote = tierFilter === 'main' ? 'Mainstream projects' : tierFilter === 'secondary' ? 'Secondary projects' : `${kept.length} projects`
     }
 
-    const cardHtml = (c: PCard) => `
+    // A card with a single line (one project, or only a folded "Secondary" line) is
+    // its own total — drop the redundant subtotal row and header; render it as a
+    // compact one-liner instead of a mini-table.
+    const cardHtml = (c: PCard) => {
+      if (c.rows.length === 1) {
+        const r = c.rows[0]
+        return `
+        <div class="pcard pcard--one">
+          <div class="pcard-h"><span class="pcard-name">${esc(c.label)}</span>${r.star ? '<span class="star">★</span>' : r.sec ? `<span class="k">${esc(c.count)}</span>` : ''}</div>
+          <table class="pct"><tbody>
+            <tr class="one ${r.sec ? 'sec' : ''}"><td class="p">${esc(r.code)}</td>${cell(r.netOps)}${fcell(r.fcNetOps)}${cell(r.payStart)}${cell(r.payEnd)}${dcell(payD(r.payStart, r.payEnd))}</tr>
+          </tbody></table>
+        </div>`
+      }
+      return `
       <div class="pcard">
         <div class="pcard-h"><span class="pcard-name">${esc(c.label)}</span><span class="k">${esc(c.count)}</span></div>
         <table class="pct"><thead><tr><th>Project</th><th class="r">Net</th>${forecastActive ? '<th class="r fc">Fcst</th>' : ''}<th class="r">Pay ${startLabel}</th><th class="r">Pay ${asOfLabel}</th><th class="r">Δ</th></tr></thead>
@@ -889,6 +903,7 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
           <tr class="sub"><td>Subtotal</td>${cell(c.subNet)}${fcell(c.subFc)}${cell(c.subPayStart)}${cell(c.subPayEnd)}${dcell(payD(c.subPayStart, c.subPayEnd))}</tr>
         </tbody></table>
       </div>`
+    }
 
     const filt = moverFilter !== 'both' ? ` (${moverFilter === 'pos' ? 'positive' : 'negative'})` : ''
     const sub = forecastActive
@@ -896,7 +911,7 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
       : `${esc(areaLabel)} · net cash from operations · Jan–${asOfLabel} · USD millions · ${headNote}${filt}`
     const totStr = `${gMain} main · ${gN} project${gN === 1 ? '' : 's'}`
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Cash Flow — Projects by area</title><style>
-      @page { size: A4 landscape; margin: 11mm; }
+      @page { size: A4 landscape; margin: 6mm; }
       * { box-sizing: border-box; } html, body { height: 100%; }
       body { font-family: -apple-system, Segoe UI, Helvetica, Arial, sans-serif; color: #141414; margin: 0; display: flex; flex-direction: column; }
       header { display: flex; align-items: center; gap: 14px; border-bottom: 2px solid #E10020; padding-bottom: 7px; margin-bottom: 9px; flex: none; }
@@ -920,6 +935,7 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
       .pct td.fc, .pct th.fc { color: #9a7b3c; } .pct td.fc.neg { color: #E10020; opacity: .8; } .pct td.fc.pos { color: #057a55; opacity: .8; }
       .pct tr.sec td { color: #64748b; font-style: italic; }
       .pct tr.sub td { font-weight: 800; border-top: 1.4px solid #141414; }
+      .pcard--one .pct td { font-weight: 700; padding: 3px 9px; } .pcard--one .pct tr.one.sec td { font-weight: 600; font-style: italic; color: #64748b; }
       .star { color: #E10020; font-style: normal; } .k { color: #94a3b8; font-weight: 600; font-size: 8.5px; }
       .neg { color: #E10020; } .pos { color: #057a55; }
     </style></head><body>
