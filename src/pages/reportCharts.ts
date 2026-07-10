@@ -62,7 +62,7 @@ export function waterfallSvg(items: { label: string; value: number }[], total: n
  * When a row carries a `forecast` value the bar is drawn in two segments: a
  * solid ACTUAL segment then a faded FORECAST segment stacked on its end, so the
  * total bar = actual + forecast and the faded part reads as the forecast. */
-export function areaBarsSvg(rows: { label: string; value: number; forecast?: number }[], disp: ChartDisp = DEF, opts: { zoom?: number; maxRows?: number; dualLabel?: boolean; width?: number } = {}): string {
+export function areaBarsSvg(rows: { label: string; value: number; forecast?: number }[], disp: ChartDisp = DEF, opts: { zoom?: number; maxRows?: number; dualLabel?: boolean; width?: number; rowHpx?: number; fontPx?: number; labW?: number; valW?: number; barFrac?: number } = {}): string {
   const zoom = opts.zoom ?? 1
   const lab = (v: number) => labf(v, disp)
   const tot = (r: { value: number; forecast?: number }) => r.value + (r.forecast ?? 0)
@@ -78,8 +78,9 @@ export function areaBarsSvg(rows: { label: string; value: number; forecast?: num
   const hasFc = data.some(r => r.forecast != null)
   const dual = !!opts.dualLabel && hasFc   // show BOTH the actual + forecast figure, side by side
   data = data.sort((a, b) => b.value - a.value)
-  const fs = 10 * zoom, off = fs * 0.35
-  const rowH = 22 * zoom, padT = 8, padB = 6, legendH = hasFc ? 20 * zoom : 0, W = opts.width ?? 560, labW = 104 * zoom, valW = (dual ? 104 : 62) * zoom
+  const fs = opts.fontPx ?? 10 * zoom, off = fs * 0.35
+  const rowH = opts.rowHpx ?? 22 * zoom, padT = 8, padB = 6, legendH = hasFc ? 20 * zoom : 0, W = opts.width ?? 560
+  const labW = opts.labW ?? 104 * zoom, valW = opts.valW ?? (dual ? 104 : 62) * zoom, barFrac = opts.barFrac ?? 0.64
   const H = padT + padB + data.length * rowH + legendH
   const plotL = labW, plotR = W - valW, plotW = plotR - plotL
   // Extent = the furthest point from zero, considering the actual end AND the
@@ -91,7 +92,7 @@ export function areaBarsSvg(rows: { label: string; value: number; forecast?: num
   let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">`
   s += `<line x1="${cxZero}" y1="${padT}" x2="${cxZero}" y2="${(H - padB - legendH).toFixed(1)}" stroke="${GRID}" stroke-width="1"/>`
   data.forEach((r, i) => {
-    const y = padT + i * rowH, ry = y + rowH * 0.18, rh = rowH * 0.64
+    const y = padT + i * rowH, ry = y + rowH * (1 - barFrac) / 2, rh = rowH * barFrac
     const a = r.value, fc = r.forecast ?? 0, total = a + fc
     const colA = a >= 0 ? GOOD : CRIM, colF = fc >= 0 ? GOOD : CRIM
     s += `<text x="${(plotL - 6).toFixed(1)}" y="${(y + rowH / 2 + off).toFixed(1)}" text-anchor="end" font-size="${fs.toFixed(1)}" fill="${INK}">${r.label.length > 16 ? r.label.slice(0, 15) + '…' : r.label}</text>`

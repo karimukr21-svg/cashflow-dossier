@@ -363,15 +363,26 @@ function moversSheet(o: MoversOpts): string {
     : `${o.areaLabel} · net cash from operations · Jan–${o.asOfLabel} · ${o.disp.lineUnit} · ${o.headNote}`
   const chartDisp = { div: o.disp.div, dec: o.disp.dec }
   if (o.layout === 'chartCol') {
-    // Cards in `cardCols` columns (left), the chart alone in a full-height final
-    // column (right) at a bigger font via a narrower chart viewBox.
+    // Cards balanced across `cardCols` columns (left), the chart alone in a
+    // full-height final column (right).
     const cardCols = o.cardCols ?? 2
-    const chartW = cardCols >= 3 ? 360 : 430
+    const tight = cardCols >= 3
+    // Balance cards by estimated height (tallest first into the shortest column)
+    // so no column runs long — same packing as the Sections page.
+    const est = (c: MoversCard) => Math.min(30, c.rows.length) + 2
+    const bins: MoversCard[][] = Array.from({ length: cardCols }, () => [])
+    const bh = new Array(cardCols).fill(0)
+    ;[...o.cards].sort((a, b) => est(b) - est(a)).forEach(c => {
+      let mi = 0; for (let i = 1; i < cardCols; i++) if (bh[i] < bh[mi]) mi = i
+      bins[mi].push(c); bh[mi] += est(c)
+    })
+    const colDivs = bins.map(col => `<div class="pmain-col">${col.map(cardHtml).join('')}</div>`).join('')
+    // Chart fills the column: thick bars sized to run top-to-bottom, short label +
+    // value gutters so the bars themselves are long.
     const chart = o.chartRows.length
-      ? `<div class="pchart pchart--tall">${areaBarsSvg(o.chartRows, chartDisp, { zoom: 1.35, maxRows: 40, width: chartW })}</div>` : ''
-    const cardsClass = cardCols < 3 ? 'pmain-cards--roomy' : 'pmain-cards--tight'
+      ? `<div class="pchart pchart--tall">${areaBarsSvg(o.chartRows, chartDisp, { maxRows: 40, width: 340, rowHpx: 34, fontPx: 14, labW: 74, valW: 58, barFrac: 0.72 })}</div>` : ''
     return sheet(head(o.title, sub, o.bmk)
-      + `<div class="pmain" style="--cardcols:${cardCols}"><div class="pmain-cards ${cardsClass}">${o.cards.map(cardHtml).join('')}</div><div class="pmain-chart">${chart}</div></div>`)
+      + `<div class="pmain${tight ? ' pmain--tight' : ''}" style="--cardcols:${cardCols}"><div class="pmain-cardcols">${colDivs}</div><div class="pmain-chart">${chart}</div></div>`)
   }
   const chart = o.chartRows.length ? `<div class="pchart">${areaBarsSvg(o.chartRows, chartDisp, { zoom: 1.05, maxRows: 26 })}</div>` : ''
   return sheet(head(o.title, sub, o.bmk) + `<div class="pflow">${o.cards.map(cardHtml).join('')}${chart}</div>`)
@@ -475,24 +486,24 @@ const STYLE = `
   .ptotal .lbl { color: #9aa4b2; text-transform: uppercase; letter-spacing: .4px; font-size: 8px; font-weight: 700; margin-right: 5px; }
   .pflow { columns: 300px; column-gap: 12px; }
   .pchart { break-inside: avoid; margin-top: 2px; } .pchart svg { width: 100%; height: auto; display: block; }
-  /* Movers with a dedicated chart column — cards in var(--cardcols) columns
-     (left), the chart alone in a full-height final column (right). */
-  .pmain { display: flex; gap: 16px; align-items: stretch; min-height: 660px; }
-  .pmain-cards { flex: var(--cardcols, 2); column-count: var(--cardcols, 2); column-gap: 12px; }
+  /* Movers with a dedicated chart column — cards balanced across var(--cardcols)
+     columns (left), the chart alone in a full-height final column (right). */
+  .pmain { display: flex; gap: 16px; align-items: stretch; min-height: 640px; }
+  .pmain-cardcols { flex: var(--cardcols, 2); display: flex; gap: 12px; align-items: flex-start; }
+  .pmain-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 11px; }
   /* Tighter horizontal padding in the (narrower) chart-column cards so project
      names keep room next to the numeric columns. */
-  .pmain-cards .pct td, .pmain-cards .pct th { padding-left: 4px; padding-right: 4px; }
+  .pmain-cardcols .pct td, .pmain-cardcols .pct th { padding-left: 4px; padding-right: 4px; }
   /* 3-card-column pack (all-projects page) — smaller font + narrower numeric
      columns so short project codes fit beside four value columns. */
-  .pmain-cards--tight .pct { font-size: 10.5px; }
-  .pmain-cards--tight .pct td.r, .pmain-cards--tight .pct th.r { width: 45px; }
-  .pmain-chart { flex: 0.95; display: flex; flex-direction: column; justify-content: center; border: 1px solid #e2e8f0; border-radius: 7px; padding: 8px 10px; }
-  .pmain-chart .pchart--tall { margin-top: 0; width: 100%; }
-  .pmain-chart .pchart--tall svg { width: 100%; height: auto; }
-  /* Roomier project rows on the mainstream page for easier reading. */
-  .pmain-cards--roomy .pct td { padding-top: 5px; padding-bottom: 5px; }
-  .pmain-cards--roomy .pct th { padding-top: 4px; padding-bottom: 4px; }
-  .pmain-cards--roomy .pcard { margin-bottom: 13px; }
+  .pmain--tight .pct { font-size: 10.5px; }
+  .pmain--tight .pct td.r, .pmain--tight .pct th.r { width: 45px; }
+  /* Roomier project rows when there are only two card columns (mainstream page). */
+  .pmain:not(.pmain--tight) .pct td { padding-top: 5px; padding-bottom: 5px; }
+  .pmain:not(.pmain--tight) .pct th { padding-top: 4px; padding-bottom: 4px; }
+  .pmain-chart { flex: 1; display: flex; flex-direction: column; justify-content: flex-start; border: 1px solid #e2e8f0; border-radius: 7px; padding: 10px 12px; }
+  .pmain-chart .pchart--tall { margin-top: 0; width: 100%; flex: 1; display: flex; align-items: stretch; }
+  .pmain-chart .pchart--tall svg { width: 100%; height: 100%; }
   .pcard { break-inside: avoid; border: 1px solid #e2e8f0; border-radius: 7px; overflow: hidden; margin: 0 0 11px; }
   .pcard-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; background: #f1f4f8; border-bottom: 1px solid #e2e8f0; padding: 5px 9px; }
   .pcard-name { font-weight: 800; text-transform: uppercase; font-size: 11.5px; letter-spacing: .3px; }
