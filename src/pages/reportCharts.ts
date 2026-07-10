@@ -158,19 +158,29 @@ export function moverBarsSvg(rows: { label: string; value: number; forecast?: nu
   const padT = 8, padB = 6
   const H = padT + padB + data.length * rowH
   const baseX = labW, plotR = W - valW, plotW = plotR - baseX
-  const max = Math.max(1, ...data.map(r => Math.max(Math.abs(r.value), Math.abs(tot(r)))))
-  const scale = plotW / max
+  // Diverging: generators (positive) grow RIGHT, consumers (negative) grow LEFT
+  // from a zero line. The zero line is positioned by the ratio of the largest
+  // consumer to the largest generator, so both sides share one scale and neither
+  // half is wasted when the magnitudes are lopsided (e.g. one big generator).
+  const maxPos = Math.max(0, ...data.map(r => Math.max(r.value, tot(r))))
+  const maxNeg = Math.max(0, ...data.map(r => Math.max(-r.value, -tot(r))))
+  const span = maxPos + maxNeg || 1
+  const scale = plotW / span
+  const zeroX = baseX + maxNeg * scale
   let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">`
-  s += `<line x1="${baseX}" y1="${padT}" x2="${baseX}" y2="${(H - padB).toFixed(1)}" stroke="${GRID}" stroke-width="1"/>`
+  s += `<line x1="${zeroX.toFixed(1)}" y1="${padT}" x2="${zeroX.toFixed(1)}" y2="${(H - padB).toFixed(1)}" stroke="${GRID}" stroke-width="1"/>`
   data.forEach((r, i) => {
     const y = padT + i * rowH, ry = y + rowH * (1 - barFrac) / 2, rh = rowH * barFrac, yb = y + rowH / 2 + off
     const a = r.value, fc = r.forecast ?? 0
     s += `<text x="${(baseX - 8).toFixed(1)}" y="${yb.toFixed(1)}" text-anchor="end" font-size="${fs.toFixed(1)}" fill="${INK}">${r.label.length > 13 ? r.label.slice(0, 12) + '…' : r.label}</text>`
-    const wa = Math.abs(a) * scale
-    s += `<rect x="${baseX}" y="${ry.toFixed(1)}" width="${Math.max(1.5, wa).toFixed(1)}" height="${rh.toFixed(1)}" fill="${a >= 0 ? GOOD : CRIM}" opacity="0.9" rx="2"/>`
+    // Actual bar: from the zero line, right if positive, left if negative.
+    const wa = Math.abs(a) * scale, xa = a >= 0 ? zeroX : zeroX - wa
+    s += `<rect x="${xa.toFixed(1)}" y="${ry.toFixed(1)}" width="${Math.max(1.5, wa).toFixed(1)}" height="${rh.toFixed(1)}" fill="${a >= 0 ? GOOD : CRIM}" opacity="0.9" rx="2"/>`
+    // Forecast (faded) trails from the actual bar's outer end, in fc's direction.
     if (Math.abs(fc) >= 1) {
-      const wf = Math.abs(fc) * scale
-      s += `<rect x="${(baseX + wa).toFixed(1)}" y="${ry.toFixed(1)}" width="${Math.max(1.5, wf).toFixed(1)}" height="${rh.toFixed(1)}" fill="${fc >= 0 ? GOOD : CRIM}" opacity="0.3" rx="2"/>`
+      const wf = Math.abs(fc) * scale, outer = a >= 0 ? zeroX + wa : zeroX - wa
+      const xf = fc >= 0 ? outer : outer - wf
+      s += `<rect x="${xf.toFixed(1)}" y="${ry.toFixed(1)}" width="${Math.max(1.5, wf).toFixed(1)}" height="${rh.toFixed(1)}" fill="${fc >= 0 ? GOOD : CRIM}" opacity="0.3" rx="2"/>`
     }
     s += `<text x="${(W - 4).toFixed(1)}" y="${yb.toFixed(1)}" text-anchor="end" font-size="${fs.toFixed(1)}" font-weight="700" fill="${a >= 0 ? GOOD : CRIM}">${lab(a)}</text>`
   })
