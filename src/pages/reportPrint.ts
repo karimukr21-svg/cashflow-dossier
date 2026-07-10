@@ -333,14 +333,11 @@ function moversSheet(o: MoversOpts): string {
         <tr class="sub"><td>Subtotal</td>${cell(c.subNet)}${fcell(c.subFc)}${cell(c.subPayStart)}${cell(c.subPayEnd)}${dcell(payD(c.subPayStart, c.subPayEnd))}</tr>
       </tbody></table></div>`
   }
-  const g = o.grand
-  const totStr = `${o.gMain} main · ${o.gN} project${o.gN === 1 ? '' : 's'}`
-  const ptotal = `<div class="ptotal"><span><span class="lbl">${esc(o.areaLabel)} total</span><span class="k" style="color:#9aa4b2">${totStr}</span></span><span><span class="lbl">Net cash from ops</span><b class="${cl(g.netOps)}">${f.fM(g.netOps)}</b>${fc ? ` <span class="lbl">fcst</span><b>${f.fM(g.fcNetOps)}</b>` : ''}</span><span><span class="lbl">Payables ${o.startLabel} → ${o.asOfLabel}</span><b>${f.fM(g.payStart)} → ${f.fM(g.payEnd)}</b> <b class="${cl(payD(g.payStart, g.payEnd))}">${f.fD(payD(g.payStart, g.payEnd))}</b></span></div>`
   const sub = fc
     ? `${o.areaLabel} · net cash from operations · actual Jan–${o.asOfLabel} · forecast to ${o.horizonLabel} · ${o.disp.lineUnit} · ${o.headNote}`
     : `${o.areaLabel} · net cash from operations · Jan–${o.asOfLabel} · ${o.disp.lineUnit} · ${o.headNote}`
   const chart = o.chartRows.length ? `<div class="pchart">${areaBarsSvg(o.chartRows, { div: o.disp.div, dec: o.disp.dec }, { zoom: 1.05, maxRows: 26 })}</div>` : ''
-  return sheet(head(o.title, sub, o.bmk) + ptotal + `<div class="pflow">${o.cards.map(cardHtml).join('')}${chart}</div>`)
+  return sheet(head(o.title, sub, o.bmk) + `<div class="pflow">${o.cards.map(cardHtml).join('')}${chart}</div>`)
 }
 
 /* wide=true lays the sheet out on a wider design canvas (1240px). The page stays

@@ -1145,7 +1145,6 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
       .neg { color: #E10020; } .pos { color: #057a55; }
     </style></head><body>
       <header><img src="${location.origin}/ccc-logo.png" alt="CCC"/><div><h1>Cash Flow Report — Projects by area</h1><div class="sub">${sub}</div></div><div class="brand">Treasury</div></header>
-      <div class="ptotal"><span><span class="lbl">${esc(areaLabel)} total</span><span class="k" style="color:#9aa4b2">${totStr}</span></span><span><span class="lbl">Net cash from ops</span><b class="${gNet < 0 ? 'neg' : 'pos'}">${fMm(gNet)}</b>${forecastActive ? ` <span class="lbl">fcst</span><b>${fMm(gFc)}</b>` : ''}</span><span><span class="lbl">Payables ${startLabel} → ${asOfLabel}</span><b>${fMm(gPayStart)} → ${fMm(gPayEnd)}</b> <b class="${(payD(gPayStart, gPayEnd) ?? 0) < 0 ? 'neg' : 'pos'}">${fMd(payD(gPayStart, gPayEnd))}</b></span></div>
       <div class="pflow">${cards.map(cardHtml).join('')}${chartRows.length ? `<div class="pchart">${areaBarsSvg(chartRows, undefined, { zoom: 1.05, maxRows: 26 })}</div>` : ''}</div>
       <script>window.onload=function(){window.print()}</script></body></html>`
     w.document.write(html); w.document.close()
