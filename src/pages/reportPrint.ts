@@ -306,6 +306,10 @@ export type MoversOpts = {
   grand: { netOps: number; fcNetOps?: number; payStart: number | null; payEnd: number | null }
   gN: number; gMain: number
   disp: PrintDisp
+  /* 'masonry' (default) = cards flow full-width, chart tucked bottom-right.
+   * 'chartCol' = cards in two columns, the net-CFO chart alone in a full-height
+   * third column (bigger fonts). Used by the mainstream-only movers page. */
+  layout?: 'masonry' | 'chartCol'
   bmk?: Bmk | Bmk[] | null
 }
 function moversSheet(o: MoversOpts): string {
@@ -336,7 +340,16 @@ function moversSheet(o: MoversOpts): string {
   const sub = fc
     ? `${o.areaLabel} · net cash from operations · actual Jan–${o.asOfLabel} · forecast to ${o.horizonLabel} · ${o.disp.lineUnit} · ${o.headNote}`
     : `${o.areaLabel} · net cash from operations · Jan–${o.asOfLabel} · ${o.disp.lineUnit} · ${o.headNote}`
-  const chart = o.chartRows.length ? `<div class="pchart">${areaBarsSvg(o.chartRows, { div: o.disp.div, dec: o.disp.dec }, { zoom: 1.05, maxRows: 26 })}</div>` : ''
+  const chartDisp = { div: o.disp.div, dec: o.disp.dec }
+  if (o.layout === 'chartCol') {
+    // Cards in two columns (left, ~2/3), the chart alone in a full-height third
+    // column (right, ~1/3) at a bigger font via a narrower chart viewBox.
+    const chart = o.chartRows.length
+      ? `<div class="pchart pchart--tall">${areaBarsSvg(o.chartRows, chartDisp, { zoom: 1.35, maxRows: 40, width: 430 })}</div>` : ''
+    return sheet(head(o.title, sub, o.bmk)
+      + `<div class="pmain"><div class="pmain-cards pmain-cards--roomy">${o.cards.map(cardHtml).join('')}</div><div class="pmain-chart">${chart}</div></div>`)
+  }
+  const chart = o.chartRows.length ? `<div class="pchart">${areaBarsSvg(o.chartRows, chartDisp, { zoom: 1.05, maxRows: 26 })}</div>` : ''
   return sheet(head(o.title, sub, o.bmk) + `<div class="pflow">${o.cards.map(cardHtml).join('')}${chart}</div>`)
 }
 
@@ -433,6 +446,17 @@ const STYLE = `
   .ptotal .lbl { color: #9aa4b2; text-transform: uppercase; letter-spacing: .4px; font-size: 8px; font-weight: 700; margin-right: 5px; }
   .pflow { columns: 300px; column-gap: 12px; }
   .pchart { break-inside: avoid; margin-top: 2px; } .pchart svg { width: 100%; height: auto; display: block; }
+  /* Mainstream movers page — cards in two columns (left), chart alone in a
+     full-height third column (right). */
+  .pmain { display: flex; gap: 16px; align-items: stretch; min-height: 660px; }
+  .pmain-cards { flex: 2; columns: 300px; column-gap: 12px; }
+  .pmain-chart { flex: 1.05; display: flex; flex-direction: column; justify-content: center; border: 1px solid #e2e8f0; border-radius: 7px; padding: 8px 10px; }
+  .pmain-chart .pchart--tall { margin-top: 0; width: 100%; }
+  .pmain-chart .pchart--tall svg { width: 100%; height: auto; }
+  /* Roomier project rows on the mainstream page for easier reading. */
+  .pmain-cards--roomy .pct td { padding-top: 5px; padding-bottom: 5px; }
+  .pmain-cards--roomy .pct th { padding-top: 4px; padding-bottom: 4px; }
+  .pmain-cards--roomy .pcard { margin-bottom: 13px; }
   .pcard { break-inside: avoid; border: 1px solid #e2e8f0; border-radius: 7px; overflow: hidden; margin: 0 0 11px; }
   .pcard-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; background: #f1f4f8; border-bottom: 1px solid #e2e8f0; padding: 5px 9px; }
   .pcard-name { font-weight: 800; text-transform: uppercase; font-size: 11.5px; letter-spacing: .3px; }

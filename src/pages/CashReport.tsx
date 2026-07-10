@@ -10,7 +10,7 @@ import {
 import AreaFilterPopover from '@/components/AreaFilterPopover'
 import { fmt, fmtDelta } from '@/lib/format'
 import { buildModel, buildStatement, buildStatementMatrix, buildForecastLineUsd, buildDualStatement, buildMoverRows, payablesSeries, arrangeSectionColumns, arrangeByColumns, STMT_COLUMNS, type AreaAgg, type StmtSection, type DualSection, type MatrixSection, type PaySeriesPt, type MoverRow } from './reportModel'
-import { buildReportHtml, buildProjectsPrintHtml, buildPackageHtml, type PackageSheet, type MoversCard, type ProjectPrint, type PrintDisp, type GroupForecast } from './reportPrint'
+import { buildReportHtml, buildProjectsPrintHtml, buildPackageHtml, type PackageSheet, type MoversCard, type MoversCardRow, type ProjectPrint, type PrintDisp, type GroupForecast } from './reportPrint'
 import { waterfallSvg, areaBarsSvg, netTrendSvg, payablesTrendSvg } from './reportCharts'
 import type { Scope } from './Dossier'
 
@@ -28,7 +28,7 @@ import type { Scope } from './Dossier'
  * pass). Coverage of matched vs unmapped areas is its own pass. */
 
 type Level = 'group' | 'area' | 'sections' | 'project' | 'movers'
-const LEVELS: Level[] = ['group', 'area', 'sections', 'project', 'movers']
+const LEVELS: Level[] = ['group', 'sections', 'area', 'project', 'movers']
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 const fMm = (v: number | null | undefined) => v == null ? '—' : fmt(v / 1e6, { decimals: 1 })
@@ -168,7 +168,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
     [model, scope.areas])
 
   const tabs: { key: Level; label: string }[] = [
-    { key: 'group', label: 'Group' }, { key: 'area', label: 'Area' }, { key: 'sections', label: 'Sections' },
+    { key: 'group', label: 'Group' }, { key: 'sections', label: 'Sections' }, { key: 'area', label: 'Area' },
     { key: 'project', label: 'Project' }, { key: 'movers', label: 'Movers' },
   ]
   const canPrint = level === 'group' || level === 'area' || level === 'sections' || level === 'movers'
@@ -246,17 +246,17 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
           forecast, disp: PKG_DISP, bmk: { title: 'Group', depth: 0 },
         } })
       }
-      if (sel.area) {
-        const areaRows = cfAreas.map(a => ({ label: a.label, netOps: a.netOps, fcNetOps: forecastActive ? (fcNetOpsByArea.get(a.areaId) ?? 0) : undefined, payStart: a.payStart, payEnd: a.payEnd }))
-        const areaTotals = cfAreas.reduce((t, a) => ({ netOps: t.netOps + a.netOps, fcNetOps: t.fcNetOps + (forecastActive ? (fcNetOpsByArea.get(a.areaId) ?? 0) : 0), payStart: t.payStart + (a.payStart ?? 0), payEnd: t.payEnd + (a.payEnd ?? 0) }), { netOps: 0, fcNetOps: 0, payStart: 0, payEnd: 0 })
-        sheets.push({ kind: 'area', opts: { asOfLabel, startLabel, areaRows, areaTotals, forecastActive, horizonLabel, disp: PKG_DISP, bmk: { title: 'Area', depth: 0 } } })
-      }
       if (sel.sections) {
         sheets.push({ kind: 'sections', opts: {
           asOfLabel, matchedCount: cfAreas.length,
           sections: sectionCards(cfAreas, scope.lines, forecastActive ? fcByArea : undefined),
           forecastActive, horizonLabel, disp: PKG_DISP, bmk: { title: 'Sections', depth: 0 },
         } })
+      }
+      if (sel.area) {
+        const areaRows = cfAreas.map(a => ({ label: a.label, netOps: a.netOps, fcNetOps: forecastActive ? (fcNetOpsByArea.get(a.areaId) ?? 0) : undefined, payStart: a.payStart, payEnd: a.payEnd }))
+        const areaTotals = cfAreas.reduce((t, a) => ({ netOps: t.netOps + a.netOps, fcNetOps: t.fcNetOps + (forecastActive ? (fcNetOpsByArea.get(a.areaId) ?? 0) : 0), payStart: t.payStart + (a.payStart ?? 0), payEnd: t.payEnd + (a.payEnd ?? 0) }), { netOps: 0, fcNetOps: 0, payStart: 0, payEnd: 0 })
+        sheets.push({ kind: 'area', opts: { asOfLabel, startLabel, areaRows, areaTotals, forecastActive, horizonLabel, disp: PKG_DISP, bmk: { title: 'Area', depth: 0 } } })
       }
 
       // Movers + mainstream projects — project-grain cells (all areas) + payables.
@@ -275,18 +275,22 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
         const areaLabelOf = (a: string) => projAreaOptions.find(o => o.areaId === a)?.label || a
 
         if (sel.moversAll) {
-          const s = shapeMoverGroups(moverRows, forecastActive, areaLabelOf)
+          // "All projects" page: mainstream shown in full, everything else folded
+          // into one "Other projects" line per area card (totals still reconcile).
+          const s = shapeMoverGroupsFolded(moverRows, forecastActive, areaLabelOf)
           sheets.push({ kind: 'movers', opts: {
             title: 'Cash Flow Report — Movers', areaLabel: 'All areas', asOfLabel, startLabel,
-            forecastActive, horizonLabel, headNote: `${s.gN} projects`, ...s, disp: PKG_DISP,
+            forecastActive, horizonLabel, headNote: `${s.gMain} mainstream · ${s.gN} projects`, ...s, disp: PKG_DISP,
             bmk: { title: 'Movers — all projects', depth: 0 },
           } })
         }
         if (sel.moversMain) {
+          // Mainstream-only page: cards in two columns, the net-CFO chart alone in a
+          // full-height third column (layout: 'chartCol').
           const s = shapeMoverGroups(moverRows.filter(r => r.isPrimary), forecastActive, areaLabelOf)
           sheets.push({ kind: 'movers', opts: {
             title: 'Cash Flow Report — Mainstream movers', areaLabel: 'All areas', asOfLabel, startLabel,
-            forecastActive, horizonLabel, headNote: 'Mainstream projects', ...s, disp: PKG_DISP,
+            forecastActive, horizonLabel, headNote: 'Mainstream projects', layout: 'chartCol', ...s, disp: PKG_DISP,
             bmk: { title: 'Movers — mainstream', depth: 0 },
           } })
         }
@@ -356,7 +360,8 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
   // Print button appears and disappears across tabs.
   const controls = (
     <>
-      {canPrint && <button className="crp-print" style={{ marginLeft: 0 }} onClick={print}>Print</button>}
+      {canPrint && <button className="crp-print" style={{ marginLeft: 0 }} onClick={print}>Print this</button>}
+      <button className="crp-print crp-print--pkg" style={{ marginLeft: 0 }} onClick={() => setPkgOpen(true)} title="Build a print-ready report package (Group, Sections, Area, Movers, and a page per mainstream project) with PDF bookmarks">Print…</button>
       <div className="crp-levels">
         {tabs.map(t => (
           <button key={t.key} className={`crp-lvl ${level === t.key ? 'active' : ''}`} onClick={() => setLevel(t.key)}>{t.label}</button>
@@ -493,14 +498,53 @@ function shapeMoverGroups(rows: MoverRow[], forecastActive: boolean, areaLabelOf
   return { cards, chartRows, grand: { netOps, fcNetOps: forecastActive ? fcNetOps : undefined, payStart: hasPay ? ps : null, payEnd: hasPay ? pe : null }, gN: rows.length, gMain }
 }
 
+/* Like shapeMoverGroups, but each area card lists its MAINSTREAM projects in full
+ * and folds every other project into ONE "Other projects" line at the bottom of the
+ * card, so the card subtotal + grand total still reconcile to the full figure. The
+ * chart plots only the mainstream projects. Used by the "all projects" movers page. */
+function shapeMoverGroupsFolded(rows: MoverRow[], forecastActive: boolean, areaLabelOf: (a: string) => string, foldLabel = 'Other projects'): {
+  cards: MoversCard[]; chartRows: { label: string; value: number; forecast?: number }[]
+  grand: { netOps: number; fcNetOps?: number; payStart: number | null; payEnd: number | null }; gN: number; gMain: number
+} {
+  const sumPay = (arr: MoverRow[]) => { let s = 0, e = 0, has = false; for (const r of arr) if (r.payStart != null || r.payEnd != null) { s += r.payStart ?? 0; e += r.payEnd ?? 0; has = true } return { s: has ? s : null, e: has ? e : null } }
+  const byArea = new Map<string, MoverRow[]>()
+  for (const r of rows) { const a = byArea.get(r.area) ?? []; a.push(r); byArea.set(r.area, a) }
+  const groups = [...byArea.entries()].map(([area, items]) => {
+    const primary = items.filter(r => r.isPrimary).sort((a, b) => b.netOps - a.netOps)
+    const others = items.filter(r => !r.isPrimary)
+    const ap = sumPay(items), op = sumPay(others)
+    const prows: MoversCardRow[] = primary.map(r => ({ code: r.code, star: true, netOps: r.netOps, fcNetOps: r.fcNetOps, payStart: r.payStart, payEnd: r.payEnd }))
+    if (others.length) prows.push({ code: foldLabel, star: false, sec: true,
+      netOps: others.reduce((t, r) => t + r.netOps, 0),
+      fcNetOps: forecastActive ? others.reduce((t, r) => t + (r.fcNetOps ?? 0), 0) : undefined,
+      payStart: op.s, payEnd: op.e })
+    return {
+      area, label: areaLabelOf(area),
+      count: `${primary.length} main${others.length ? ` · ${others.length} other` : ''}`,
+      rows: prows, primary,
+      subNet: items.reduce((t, r) => t + r.netOps, 0),
+      subFc: forecastActive ? items.reduce((t, r) => t + (r.fcNetOps ?? 0), 0) : undefined,
+      subPayStart: ap.s, subPayEnd: ap.e,
+    }
+  }).sort((a, b) => Math.abs(b.subNet) - Math.abs(a.subNet))
+  const cards: MoversCard[] = groups.map(g => ({ label: g.label, count: g.count, rows: g.rows, subNet: g.subNet, subFc: g.subFc, subPayStart: g.subPayStart, subPayEnd: g.subPayEnd }))
+  const chartRows = groups.flatMap(g => g.primary).map(r => ({ label: r.code, value: r.netOps, forecast: forecastActive ? (r.fcNetOps ?? 0) : undefined }))
+  let netOps = 0, fcNetOps = 0, ps = 0, pe = 0, hasPay = false, gMain = 0
+  for (const r of rows) {
+    netOps += r.netOps; fcNetOps += (r.fcNetOps ?? 0); if (r.isPrimary) gMain++
+    if (r.payStart != null || r.payEnd != null) { ps += r.payStart ?? 0; pe += r.payEnd ?? 0; hasPay = true }
+  }
+  return { cards, chartRows, grand: { netOps, fcNetOps: forecastActive ? fcNetOps : undefined, payStart: hasPay ? ps : null, payEnd: hasPay ? pe : null }, gN: rows.length, gMain }
+}
+
 /* Which report pages to include in the printed package. */
 type PkgSelection = { group: boolean; area: boolean; sections: boolean; moversAll: boolean; moversMain: boolean; projects: boolean }
 const PKG_ITEMS: { key: keyof PkgSelection; label: string; hint: string }[] = [
   { key: 'group', label: 'Group page', hint: 'The consolidated cash-flow statement + payables' },
-  { key: 'area', label: 'Area page', hint: 'One row per area — net cash from ops + payables' },
   { key: 'sections', label: 'Sections page', hint: "Each section's net, broken down by area" },
-  { key: 'moversAll', label: 'Movers page — all projects', hint: 'Every project, grouped by area' },
-  { key: 'moversMain', label: 'Movers page — mainstream only', hint: 'Mainstream projects only (secondary dropped)' },
+  { key: 'area', label: 'Area page', hint: 'One row per area — net cash from ops + payables' },
+  { key: 'moversAll', label: 'Movers page — all projects', hint: 'Mainstream projects listed, the rest folded into "Other projects" per area' },
+  { key: 'moversMain', label: 'Movers page — mainstream only', hint: 'Mainstream projects only, with a full-height chart column' },
   { key: 'projects', label: 'Project page for every mainstream project', hint: 'One full page per mainstream project' },
 ]
 

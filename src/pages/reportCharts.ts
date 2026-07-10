@@ -62,7 +62,7 @@ export function waterfallSvg(items: { label: string; value: number }[], total: n
  * When a row carries a `forecast` value the bar is drawn in two segments: a
  * solid ACTUAL segment then a faded FORECAST segment stacked on its end, so the
  * total bar = actual + forecast and the faded part reads as the forecast. */
-export function areaBarsSvg(rows: { label: string; value: number; forecast?: number }[], disp: ChartDisp = DEF, opts: { zoom?: number; maxRows?: number; dualLabel?: boolean } = {}): string {
+export function areaBarsSvg(rows: { label: string; value: number; forecast?: number }[], disp: ChartDisp = DEF, opts: { zoom?: number; maxRows?: number; dualLabel?: boolean; width?: number } = {}): string {
   const zoom = opts.zoom ?? 1
   const lab = (v: number) => labf(v, disp)
   const tot = (r: { value: number; forecast?: number }) => r.value + (r.forecast ?? 0)
@@ -79,7 +79,7 @@ export function areaBarsSvg(rows: { label: string; value: number; forecast?: num
   const dual = !!opts.dualLabel && hasFc   // show BOTH the actual + forecast figure, side by side
   data = data.sort((a, b) => b.value - a.value)
   const fs = 10 * zoom, off = fs * 0.35
-  const rowH = 22 * zoom, padT = 8, padB = 6, legendH = hasFc ? 20 * zoom : 0, W = 560, labW = 104 * zoom, valW = (dual ? 104 : 62) * zoom
+  const rowH = 22 * zoom, padT = 8, padB = 6, legendH = hasFc ? 20 * zoom : 0, W = opts.width ?? 560, labW = 104 * zoom, valW = (dual ? 104 : 62) * zoom
   const H = padT + padB + data.length * rowH + legendH
   const plotL = labW, plotR = W - valW, plotW = plotR - plotL
   // Extent = the furthest point from zero, considering the actual end AND the
