@@ -1,4 +1,4 @@
-import { arrangeSectionColumns, arrangeByColumns, STMT_COLUMNS, type StmtSection, type DualSection, type MatrixSection } from './reportModel'
+import { arrangeByColumns, STMT_COLUMNS, type StmtSection, type DualSection, type MatrixSection } from './reportModel'
 import { waterfallSvg, areaBarsSvg, netTrendSvg, payablesTrendSvg } from './reportCharts'
 
 /* Print mirror of the Cash Flow Report (CashReport.tsx), A4 LANDSCAPE, one sheet
@@ -40,8 +40,8 @@ function fmtFor(d: PrintDisp): Fmt {
 const cl = (v: number | null | undefined): string => (v == null || Math.abs(v) < 50000) ? '' : (v < 0 ? 'neg' : 'pos')
 const esc = (s: string): string => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string))
 
-function kpis(cards: { label: string; value: string; cls?: string; sub?: string }[]): string {
-  return `<div class="kpis">${cards.map(c =>
+function kpis(cards: { label: string; value: string; cls?: string; sub?: string }[], compact = false): string {
+  return `<div class="kpis${compact ? ' kpis--compact' : ''}">${cards.map(c =>
     `<div class="kpi"><div class="kpi-l">${c.label}</div><div class="kpi-v ${c.cls || ''}">${c.value}</div>${c.sub ? `<div class="kpi-s">${c.sub}</div>` : ''}</div>`).join('')}</div>`
 }
 const LOGO = (typeof window !== 'undefined' ? window.location.origin : '') + '/ccc-logo.png'
@@ -249,25 +249,36 @@ function projectSheet(p: ProjectPrint, disp: PrintDisp): string {
   const fc = p.actualCount != null && p.actualCount < p.months.length
   const asOfM = fc ? p.months[p.actualCount! - 1] : 99   // last actual month number
   const secNet = (label: string) => p.matrix.sections.find(s => s.label === label)?.netTot ?? 0
-  const band = kpis([
-    { label: `Net cash movement · ${fc ? 'full year' : 'YTD'}`, value: f.fM(p.matrix.netTotal), cls: cl(p.matrix.netTotal) },
-    { label: 'Net from operations', value: f.fM(secNet('Operations')), cls: cl(secNet('Operations')) },
-    { label: 'Net financing', value: f.fM(secNet('Bank Financing')), cls: cl(secNet('Bank Financing')) },
-  ])
   const pv = p.payables
   const th = (m: number) => `<th class="r ${fc && m > asOfM ? 'fc' : ''} ${fc && m === asOfM + 1 ? 'fcseam' : ''}">${MONTHS[m - 1]}</th>`
   const table = `<table class="t"><thead><tr><th>Line item</th>${p.months.map(th).join('')}<th class="r sepl">${fc ? 'Total' : 'YTD'}</th></tr></thead>
     <tbody>${p.matrix.sections.map(s => matrixRows(s, p.months, f, asOfM)).join('')}
       <tr class="total"><td>Net cash movement</td>${p.months.map((m, i) => `<td class="r ${fc && m > asOfM ? 'fc' : ''} ${fc && m === asOfM + 1 ? 'fcseam' : ''} ${cl(p.matrix.netMovement[i])}">${f.fM(p.matrix.netMovement[i])}</td>`).join('')}<td class="r sepl ${cl(p.matrix.netTotal)}">${f.fM(p.matrix.netTotal)}</td></tr>
     </tbody></table>`
-  const chart = `<div class="chartcard"><div class="ch-h">Net cash movement <span>· by month${fc ? ' · incl. forecast' : ''}</span></div>${netTrendSvg(p.months.map(m => MONTHS[m - 1]), p.matrix.netMovement, chartDisp, fc ? p.actualCount : undefined)}</div>`
-  const payChart = pv && pv.monthly.some(v => v != null)
-    ? `<div class="chartcard"><div class="ch-h">Trade payables <span>· balance</span></div>${payablesTrendSvg(p.months.map((m, i) => ({ label: MONTHS[m - 1], value: pv.monthly[i] ?? 0 })), chartDisp)}</div>`
-    : ''
+  // Right column: each chart carries its own stat cards directly above it, so the
+  // figures read against the chart they describe (mirrors the screen).
+  const cashCards = kpis([
+    { label: `Net cash movement · ${fc ? 'full year' : 'YTD'}`, value: f.fM(p.matrix.netTotal), cls: cl(p.matrix.netTotal) },
+    { label: 'Net from operations', value: f.fM(secNet('Operations')), cls: cl(secNet('Operations')) },
+    { label: 'Net financing', value: f.fM(secNet('Bank Financing')), cls: cl(secNet('Bank Financing')) },
+  ], true)
+  const cashCell = `<div class="pchcell">${cashCards}<div class="chartcard"><div class="ch-h">Net cash movement <span>· by month${fc ? ' · incl. forecast' : ''}</span></div>${netTrendSvg(p.months.map(m => MONTHS[m - 1]), p.matrix.netMovement, chartDisp, fc ? p.actualCount : undefined)}</div></div>`
+  // Trade payables — Balance at start (Dec) · current (as-of) · Δ over the period,
+  // as stat cards above the balance-trajectory chart.
+  let payCell = ''
+  if (pv && pv.monthly.some(v => v != null)) {
+    const last = [...pv.monthly].reverse().find(v => v != null) ?? null
+    const payCards = kpis([
+      { label: `Balance · ${p.asOfLabel}`, value: f.fM(last), cls: cl(last) },
+      { label: 'At start (Dec)', value: f.fM(pv.start), cls: cl(pv.start) },
+      { label: 'Change over period', value: f.fM(pv.change), cls: cl(pv.change) },
+    ], true)
+    payCell = `<div class="pchcell">${payCards}<div class="chartcard"><div class="ch-h">Trade payables <span>· balance</span></div>${payablesTrendSvg(p.months.map((m, i) => ({ label: MONTHS[m - 1], value: pv.monthly[i] ?? 0 })), chartDisp)}</div></div>`
+  }
   const sub = fc ? `${p.areaLabel} · monthly · actual Jan–${p.asOfLabel} · forecast to ${p.horizonLabel} · ${disp.lineUnit}`
     : `${p.areaLabel} · monthly actuals Jan–${p.asOfLabel} · ${disp.lineUnit}`
   return sheet(head(`Cash Flow Report — ${p.project}`, sub, p.bmk)
-    + band + `<div class="cols"><div>${table}</div><div>${chart}${payChart}</div></div>`)
+    + `<div class="cols"><div>${table}</div><div>${cashCell}${payCell}</div></div>`)
 }
 
 export type SectionsOpts = {
@@ -282,7 +293,16 @@ function sectionsSheet(o: SectionsOpts): string {
   const chartDisp = { div: o.disp.div, dec: o.disp.dec }
   const card = (s: SectionsOpts['sections'][number]) =>
     `<div class="chartcard"><div class="ch-h"><span class="sh-t">${s.label}</span><span class="sh-nn"><b class="sh-n ${cl(s.net)}">${f.fM(s.net)}</b>${o.forecastActive ? `<b class="sh-n fc">${f.fM(s.fcNet)}</b>` : ''}</span></div>${areaBarsSvg(s.rows, chartDisp, { zoom: 1.6, maxRows: 16, dualLabel: o.forecastActive })}</div>`
-  const cols = arrangeSectionColumns(o.sections)
+  // Balance the 5 sections across 3 columns by estimated height (tallest first
+  // into the shortest column) so no column runs long and the page fills evenly.
+  const est = (s: SectionsOpts['sections'][number]) => Math.min(16, s.rows.length) + 2
+  const colBins: SectionsOpts['sections'] [] = [[], [], []]
+  const heights = [0, 0, 0]
+  ;[...o.sections].sort((a, b) => est(b) - est(a)).forEach(s => {
+    let mi = 0; for (let i = 1; i < 3; i++) if (heights[i] < heights[mi]) mi = i
+    colBins[mi].push(s); heights[mi] += est(s)
+  })
+  const cols = colBins
     .map(col => `<div class="seccol">${col.map(card).join('')}</div>`).join('')
   const sub = o.forecastActive
     ? `Actual Jan–${o.asOfLabel} · forecast to ${o.horizonLabel} · ${o.disp.lineUnit} · ${o.matchedCount} areas · each section's net, by area`
@@ -307,9 +327,10 @@ export type MoversOpts = {
   gN: number; gMain: number
   disp: PrintDisp
   /* 'masonry' (default) = cards flow full-width, chart tucked bottom-right.
-   * 'chartCol' = cards in two columns, the net-CFO chart alone in a full-height
-   * third column (bigger fonts). Used by the mainstream-only movers page. */
+   * 'chartCol' = cards in `cardCols` columns, the net-CFO chart alone in a
+   * full-height final column (bigger fonts). */
   layout?: 'masonry' | 'chartCol'
+  cardCols?: number   // card columns when layout='chartCol' (default 2); chart is the +1
   bmk?: Bmk | Bmk[] | null
 }
 function moversSheet(o: MoversOpts): string {
@@ -342,12 +363,15 @@ function moversSheet(o: MoversOpts): string {
     : `${o.areaLabel} · net cash from operations · Jan–${o.asOfLabel} · ${o.disp.lineUnit} · ${o.headNote}`
   const chartDisp = { div: o.disp.div, dec: o.disp.dec }
   if (o.layout === 'chartCol') {
-    // Cards in two columns (left, ~2/3), the chart alone in a full-height third
-    // column (right, ~1/3) at a bigger font via a narrower chart viewBox.
+    // Cards in `cardCols` columns (left), the chart alone in a full-height final
+    // column (right) at a bigger font via a narrower chart viewBox.
+    const cardCols = o.cardCols ?? 2
+    const chartW = cardCols >= 3 ? 360 : 430
     const chart = o.chartRows.length
-      ? `<div class="pchart pchart--tall">${areaBarsSvg(o.chartRows, chartDisp, { zoom: 1.35, maxRows: 40, width: 430 })}</div>` : ''
+      ? `<div class="pchart pchart--tall">${areaBarsSvg(o.chartRows, chartDisp, { zoom: 1.35, maxRows: 40, width: chartW })}</div>` : ''
+    const cardsClass = cardCols < 3 ? 'pmain-cards--roomy' : 'pmain-cards--tight'
     return sheet(head(o.title, sub, o.bmk)
-      + `<div class="pmain"><div class="pmain-cards pmain-cards--roomy">${o.cards.map(cardHtml).join('')}</div><div class="pmain-chart">${chart}</div></div>`)
+      + `<div class="pmain" style="--cardcols:${cardCols}"><div class="pmain-cards ${cardsClass}">${o.cards.map(cardHtml).join('')}</div><div class="pmain-chart">${chart}</div></div>`)
   }
   const chart = o.chartRows.length ? `<div class="pchart">${areaBarsSvg(o.chartRows, chartDisp, { zoom: 1.05, maxRows: 26 })}</div>` : ''
   return sheet(head(o.title, sub, o.bmk) + `<div class="pflow">${o.cards.map(cardHtml).join('')}${chart}</div>`)
@@ -379,6 +403,11 @@ const STYLE = `
   .kpi-l { font-size: 8.5px; letter-spacing: .4px; text-transform: uppercase; color: #64748b; font-weight: 700; }
   .kpi-v { font-size: 22px; font-weight: 800; margin-top: 2px; }
   .kpi-s { font-size: 9px; color: #64748b; margin-top: 1px; }
+  /* Compact KPI band — sits directly above the chart it describes (project page). */
+  .kpis--compact { gap: 8px; margin-bottom: 7px; }
+  .kpis--compact .kpi { padding: 6px 10px; }
+  .kpis--compact .kpi-v { font-size: 16px; }
+  .pchcell + .pchcell { margin-top: 4px; }
   .cashwalk { display: flex; align-items: stretch; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; margin-bottom: 12px; }
   .cw-pt { flex: 1; padding: 8px 14px; }
   .cw-l { font-size: 8.5px; letter-spacing: .4px; text-transform: uppercase; color: #64748b; font-weight: 700; }
@@ -446,11 +475,18 @@ const STYLE = `
   .ptotal .lbl { color: #9aa4b2; text-transform: uppercase; letter-spacing: .4px; font-size: 8px; font-weight: 700; margin-right: 5px; }
   .pflow { columns: 300px; column-gap: 12px; }
   .pchart { break-inside: avoid; margin-top: 2px; } .pchart svg { width: 100%; height: auto; display: block; }
-  /* Mainstream movers page — cards in two columns (left), chart alone in a
-     full-height third column (right). */
+  /* Movers with a dedicated chart column — cards in var(--cardcols) columns
+     (left), the chart alone in a full-height final column (right). */
   .pmain { display: flex; gap: 16px; align-items: stretch; min-height: 660px; }
-  .pmain-cards { flex: 2; columns: 300px; column-gap: 12px; }
-  .pmain-chart { flex: 1.05; display: flex; flex-direction: column; justify-content: center; border: 1px solid #e2e8f0; border-radius: 7px; padding: 8px 10px; }
+  .pmain-cards { flex: var(--cardcols, 2); column-count: var(--cardcols, 2); column-gap: 12px; }
+  /* Tighter horizontal padding in the (narrower) chart-column cards so project
+     names keep room next to the numeric columns. */
+  .pmain-cards .pct td, .pmain-cards .pct th { padding-left: 4px; padding-right: 4px; }
+  /* 3-card-column pack (all-projects page) — smaller font + narrower numeric
+     columns so short project codes fit beside four value columns. */
+  .pmain-cards--tight .pct { font-size: 10.5px; }
+  .pmain-cards--tight .pct td.r, .pmain-cards--tight .pct th.r { width: 45px; }
+  .pmain-chart { flex: 0.95; display: flex; flex-direction: column; justify-content: center; border: 1px solid #e2e8f0; border-radius: 7px; padding: 8px 10px; }
   .pmain-chart .pchart--tall { margin-top: 0; width: 100%; }
   .pmain-chart .pchart--tall svg { width: 100%; height: auto; }
   /* Roomier project rows on the mainstream page for easier reading. */

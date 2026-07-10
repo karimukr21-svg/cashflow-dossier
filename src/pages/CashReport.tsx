@@ -277,10 +277,12 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
         if (sel.moversAll) {
           // "All projects" page: mainstream shown in full, everything else folded
           // into one "Other projects" line per area card (totals still reconcile).
+          // Cards in three columns, the mainstream chart alone in a full-height
+          // fourth column (layout: 'chartCol', cardCols: 3).
           const s = shapeMoverGroupsFolded(moverRows, forecastActive, areaLabelOf)
           sheets.push({ kind: 'movers', opts: {
             title: 'Cash Flow Report — Movers', areaLabel: 'All areas', asOfLabel, startLabel,
-            forecastActive, horizonLabel, headNote: `${s.gMain} mainstream · ${s.gN} projects`, ...s, disp: PKG_DISP,
+            forecastActive, horizonLabel, headNote: `${s.gMain} mainstream · ${s.gN} projects`, layout: 'chartCol', cardCols: 3, ...s, disp: PKG_DISP,
             bmk: { title: 'Movers — all projects', depth: 0 },
           } })
         }
@@ -290,7 +292,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
           const s = shapeMoverGroups(moverRows.filter(r => r.isPrimary), forecastActive, areaLabelOf)
           sheets.push({ kind: 'movers', opts: {
             title: 'Cash Flow Report — Mainstream movers', areaLabel: 'All areas', asOfLabel, startLabel,
-            forecastActive, horizonLabel, headNote: 'Mainstream projects', layout: 'chartCol', ...s, disp: PKG_DISP,
+            forecastActive, horizonLabel, headNote: 'Mainstream projects', layout: 'chartCol', cardCols: 2, ...s, disp: PKG_DISP,
             bmk: { title: 'Movers — mainstream', depth: 0 },
           } })
         }
@@ -382,7 +384,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
         : level === 'area' ? <AreaView matched={cfAreas} year={year} asOfLabel={asOfLabel} startLabel={startLabel} fcNetOpsByArea={fcNetOpsByArea} forecastActive={forecastActive} horizonLabel={horizonLabel} onOpenProjects={(id) => { setProjArea(id); setLevel('project') }} />
         : level === 'sections' ? <SectionsView scope={scope} matched={cfAreas} asOfLabel={asOfLabel} fcByArea={fcByArea} forecastActive={forecastActive} horizonLabel={horizonLabel} />
         : level === 'project' ? <ProjectView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} projArea={projArea} setProjArea={setProjArea} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} forecastActive={forecastActive} horizonMonth={horizonMonth} horizonLabel={horizonLabel} />
-        : level === 'movers' ? <MoversView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} startLabel={startLabel} forecastActive={forecastActive} horizonMonth={horizonMonth} horizonLabel={horizonLabel} registerPrint={fn => { moversPrint.current = fn }} onOpenPackage={() => setPkgOpen(true)} />
+        : level === 'movers' ? <MoversView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} startLabel={startLabel} forecastActive={forecastActive} horizonMonth={horizonMonth} horizonLabel={horizonLabel} registerPrint={fn => { moversPrint.current = fn }} />
         : null}
 
       <PrintPackageModal open={pkgOpen} busy={pkgBusy} onClose={() => { if (!pkgBusy) setPkgOpen(false) }} onGenerate={buildPackage} />
@@ -502,7 +504,7 @@ function shapeMoverGroups(rows: MoverRow[], forecastActive: boolean, areaLabelOf
  * and folds every other project into ONE "Other projects" line at the bottom of the
  * card, so the card subtotal + grand total still reconcile to the full figure. The
  * chart plots only the mainstream projects. Used by the "all projects" movers page. */
-function shapeMoverGroupsFolded(rows: MoverRow[], forecastActive: boolean, areaLabelOf: (a: string) => string, foldLabel = 'Other projects'): {
+function shapeMoverGroupsFolded(rows: MoverRow[], forecastActive: boolean, areaLabelOf: (a: string) => string, foldLabel = 'Others'): {
   cards: MoversCard[]; chartRows: { label: string; value: number; forecast?: number }[]
   grand: { netOps: number; fcNetOps?: number; payStart: number | null; payEnd: number | null }; gN: number; gMain: number
 } {
@@ -964,12 +966,11 @@ function AreaView({ matched, year, asOfLabel, startLabel, fcNetOpsByArea, foreca
  * / Negative), which surfaces the biggest movers in each direction. Payables are
  * the CCC-share trade payables of each project's mapped TB books (blank where a
  * project is not yet mapped — same as the Area page). */
-function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, startLabel, forecastActive, horizonMonth, horizonLabel, registerPrint, onOpenPackage }: {
+function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, startLabel, forecastActive, horizonMonth, horizonLabel, registerPrint }: {
   scope: Scope; fxMap: Map<string, number | null>; areaOptions: { areaId: string; label: string }[]
   year: number; asOfMonth: number; asOfLabel: string; startLabel: string
   forecastActive: boolean; horizonMonth: number; horizonLabel: string
   registerPrint: (fn: (() => void) | null) => void
-  onOpenPackage: () => void
 }) {
   const ALL = '__ALL__', MINIMAL = 100_000   // "minimal mover" = |CFO| under 0.1m
   const [areaId, setAreaId] = useState<string>(ALL)
@@ -1243,11 +1244,6 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
             <button className="crp-pickbtn" disabled={selected.size === 0} onClick={ignoreSelected}>Ignore selected ({selected.size})</button>
             <button className="crp-pickbtn" disabled={nMinimal === 0} onClick={ignoreMinimal} title="Hide projects that barely move — |net cash from ops| under 0.1m">Ignore minimal ({nMinimal})</button>
             {ignored.size > 0 && <button className="crp-pickbtn" onClick={resetIgnored}>Reset ({ignored.size} ignored)</button>}
-          </div>
-        )}
-        {nPrimary > 0 && (
-          <div className="crp-pick">
-            <button className="crp-pickbtn crp-pickbtn--main" onClick={onOpenPackage} title="Build a print-ready report package (Group, Area, Sections, Movers, and a page per mainstream project) with PDF bookmarks">Print main…</button>
           </div>
         )}
       </div>
