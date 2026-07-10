@@ -11,7 +11,7 @@ import AreaFilterPopover from '@/components/AreaFilterPopover'
 import { fmt, fmtDelta } from '@/lib/format'
 import { buildModel, buildStatement, buildStatementMatrix, buildForecastLineUsd, buildDualStatement, buildMoverRows, payablesSeries, arrangeSectionColumns, arrangeByColumns, STMT_COLUMNS, type AreaAgg, type StmtSection, type DualSection, type MatrixSection, type PaySeriesPt, type MoverRow } from './reportModel'
 import { buildReportHtml, buildProjectsPrintHtml, buildPackageHtml, type PackageSheet, type MoversCard, type MoversCardRow, type ProjectPrint, type PrintDisp, type GroupForecast } from './reportPrint'
-import { waterfallSvg, areaBarsSvg, netTrendSvg, payablesTrendSvg } from './reportCharts'
+import { waterfallSvg, areaBarsSvg, moverBarsSvg, netTrendSvg, payablesTrendSvg } from './reportCharts'
 import type { Scope } from './Dossier'
 
 /* ── The Cash Flow Report ───────────────────────────────────────────────────
@@ -1190,7 +1190,7 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
       .neg { color: #E10020; } .pos { color: #057a55; }
     </style></head><body>
       <header><img src="${location.origin}/ccc-logo.png" alt="CCC"/><div><h1>Cash Flow Report — Projects by area</h1><div class="sub">${sub}</div></div><div class="brand">Treasury</div></header>
-      <div class="pflow">${cards.map(cardHtml).join('')}${chartRows.length ? `<div class="pchart">${areaBarsSvg(chartRows, undefined, { zoom: 1.05, maxRows: 26 })}</div>` : ''}</div>
+      <div class="pflow">${cards.map(cardHtml).join('')}${chartRows.length ? `<div class="pchart">${moverBarsSvg(chartRows, undefined, { maxRows: 26, rowHpx: 22, fontPx: 11 })}</div>` : ''}</div>
       <script>window.onload=function(){window.print()}</script></body></html>`
     w.document.write(html); w.document.close()
   }
@@ -1302,7 +1302,7 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
 
         <div className="crp-card">
           <div className="crp-card-h">Net cash from operations <span>· top project movers{forecastActive ? ' · actual + forecast' : ''}</span></div>
-          <Svg html={areaBarsSvg(kept.map(r => ({ label: r.code, value: r.netOps, forecast: forecastActive ? (r.fcNetOps ?? 0) : undefined })), undefined, { maxRows: 16 })} />
+          <Svg html={moverBarsSvg(kept.map(r => ({ label: r.code, value: r.netOps, forecast: forecastActive ? (r.fcNetOps ?? 0) : undefined })), undefined, { maxRows: 16, rowHpx: 24, fontPx: 12 })} />
           <div className="crp-note">Green = cash generated, crimson = consumed (USD{forecastActive ? <>). <b>Solid</b> = actual (Jan–{asOfLabel}); <b>faded</b> = forecast (to {horizonLabel}</> : ', Jan–' + asOfLabel}). Top 16 projects by size; the rest rolled into “Other”.</div>
         </div>
       </div>
