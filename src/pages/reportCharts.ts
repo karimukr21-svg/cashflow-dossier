@@ -134,6 +134,50 @@ export function areaBarsSvg(rows: { label: string; value: number; forecast?: num
   return s
 }
 
+/* Left-aligned "top movers" bars — one project per row, bar length ∝ |value| from
+ * a common left baseline (green = cash generated, crimson = consumed), sorted by
+ * value so the biggest generators are on top and the biggest consumers at the
+ * bottom. Unlike the diverging areaBars, this uses the FULL width for the bars
+ * (no wasted centre gutter when positives and negatives are lopsided) and keeps
+ * the value labels in a clean right column. Sized to fill a tall chart column via
+ * rowHpx. Forecast (when present) trails as a faded extension. */
+export function moverBarsSvg(rows: { label: string; value: number; forecast?: number }[], disp: ChartDisp = DEF, opts: { maxRows?: number; width?: number; rowHpx?: number; fontPx?: number; labW?: number; valW?: number; barFrac?: number } = {}): string {
+  const lab = (v: number) => labf(v, disp)
+  const tot = (r: { value: number; forecast?: number }) => r.value + (r.forecast ?? 0)
+  let data = rows.filter(r => Math.abs(r.value) >= 50000 || Math.abs(r.forecast ?? 0) >= 50000)
+  if (data.length === 0) return `<svg viewBox="0 0 340 40" width="100%"><text x="170" y="24" text-anchor="middle" font-size="12" fill="#94a3b8" font-family="sans-serif">No data</text></svg>`
+  if (opts.maxRows && data.length > opts.maxRows) {
+    const keep = [...data].sort((a, b) => Math.abs(tot(b)) - Math.abs(tot(a))).slice(0, opts.maxRows)
+    const rest = data.filter(d => !keep.includes(d))
+    const ov = rest.reduce((t, r) => t + r.value, 0), of = rest.reduce((t, r) => t + (r.forecast ?? 0), 0)
+    data = [...keep, ...(Math.abs(ov) + Math.abs(of) >= 50000 ? [{ label: `Other (${rest.length})`, value: ov, forecast: of }] : [])]
+  }
+  data = data.sort((a, b) => b.value - a.value)
+  const W = opts.width ?? 340, rowH = opts.rowHpx ?? 26, fs = opts.fontPx ?? 12, off = fs * 0.35
+  const labW = opts.labW ?? 88, valW = opts.valW ?? 54, barFrac = opts.barFrac ?? 0.66
+  const padT = 8, padB = 6
+  const H = padT + padB + data.length * rowH
+  const baseX = labW, plotR = W - valW, plotW = plotR - baseX
+  const max = Math.max(1, ...data.map(r => Math.max(Math.abs(r.value), Math.abs(tot(r)))))
+  const scale = plotW / max
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">`
+  s += `<line x1="${baseX}" y1="${padT}" x2="${baseX}" y2="${(H - padB).toFixed(1)}" stroke="${GRID}" stroke-width="1"/>`
+  data.forEach((r, i) => {
+    const y = padT + i * rowH, ry = y + rowH * (1 - barFrac) / 2, rh = rowH * barFrac, yb = y + rowH / 2 + off
+    const a = r.value, fc = r.forecast ?? 0
+    s += `<text x="${(baseX - 8).toFixed(1)}" y="${yb.toFixed(1)}" text-anchor="end" font-size="${fs.toFixed(1)}" fill="${INK}">${r.label.length > 13 ? r.label.slice(0, 12) + '…' : r.label}</text>`
+    const wa = Math.abs(a) * scale
+    s += `<rect x="${baseX}" y="${ry.toFixed(1)}" width="${Math.max(1.5, wa).toFixed(1)}" height="${rh.toFixed(1)}" fill="${a >= 0 ? GOOD : CRIM}" opacity="0.9" rx="2"/>`
+    if (Math.abs(fc) >= 1) {
+      const wf = Math.abs(fc) * scale
+      s += `<rect x="${(baseX + wa).toFixed(1)}" y="${ry.toFixed(1)}" width="${Math.max(1.5, wf).toFixed(1)}" height="${rh.toFixed(1)}" fill="${fc >= 0 ? GOOD : CRIM}" opacity="0.3" rx="2"/>`
+    }
+    s += `<text x="${(W - 4).toFixed(1)}" y="${yb.toFixed(1)}" text-anchor="end" font-size="${fs.toFixed(1)}" font-weight="700" fill="${a >= 0 ? GOOD : CRIM}">${lab(a)}</text>`
+  })
+  s += `</svg>`
+  return s
+}
+
 /* Monthly trade-payables level — magnitude bars across the elapsed months with a
  * trajectory line over the tops. Payables are credit balances (negative); bars
  * show the magnitude, labels show the signed value. A falling line = paying down. */

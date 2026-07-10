@@ -1,5 +1,5 @@
 import { arrangeByColumns, STMT_COLUMNS, type StmtSection, type DualSection, type MatrixSection } from './reportModel'
-import { waterfallSvg, areaBarsSvg, netTrendSvg, payablesTrendSvg } from './reportCharts'
+import { waterfallSvg, areaBarsSvg, moverBarsSvg, netTrendSvg, payablesTrendSvg } from './reportCharts'
 
 /* Print mirror of the Cash Flow Report (CashReport.tsx), A4 LANDSCAPE, one sheet
  * per report. Each sheet is scaled to fit a single page (fit-to-page script), so
@@ -388,7 +388,7 @@ function moversSheet(o: MoversOpts): string {
     const targetVBH = targetPx * chartVBW / colWpx
     const rowHpx = Math.max(26, Math.min(74, (targetVBH - 14) / nBars))
     const chart = o.chartRows.length
-      ? `<div class="pchart pchart--tall">${areaBarsSvg(o.chartRows, chartDisp, { maxRows: 40, width: chartVBW, rowHpx, fontPx: Math.min(16, Math.max(11, rowHpx * 0.42)), labW: 88, valW: 54, barFrac: 0.66 })}</div>` : ''
+      ? `<div class="pchart pchart--tall">${moverBarsSvg(o.chartRows, chartDisp, { maxRows: 40, width: chartVBW, rowHpx, fontPx: Math.min(16, Math.max(11, rowHpx * 0.42)), labW: 96, valW: 54, barFrac: 0.62 })}</div>` : ''
     return sheet(head(o.title, sub, o.bmk)
       + `<div class="pmain${tight ? ' pmain--tight' : ''}" style="--cardcols:${cardCols}"><div class="pmain-cardcols">${colDivs}</div><div class="pmain-chart">${chart}</div></div>`)
   }
