@@ -366,7 +366,7 @@ function moversSheet(o: MoversOpts): string {
     // Cards balanced across `cardCols` columns (left), the chart alone in a
     // full-height final column (right).
     const cardCols = o.cardCols ?? 2
-    const tight = cardCols >= 3
+    const tight = cardCols >= 3, xtight = cardCols >= 4
     // Balance cards by estimated height (tallest first into the shortest column)
     // so no column runs long — same packing as the Sections page.
     const est = (c: MoversCard) => Math.min(30, c.rows.length) + 2
@@ -390,7 +390,7 @@ function moversSheet(o: MoversOpts): string {
     const chart = o.chartRows.length
       ? `<div class="pchart pchart--tall">${moverBarsSvg(o.chartRows, chartDisp, { maxRows: 40, width: chartVBW, rowHpx, fontPx: Math.min(16, Math.max(11, rowHpx * 0.42)), labW: 96, valW: 54, barFrac: 0.62 })}</div>` : ''
     return sheet(head(o.title, sub, o.bmk)
-      + `<div class="pmain${tight ? ' pmain--tight' : ''}" style="--cardcols:${cardCols}"><div class="pmain-cardcols">${colDivs}</div><div class="pmain-chart">${chart}</div></div>`)
+      + `<div class="pmain${tight ? ' pmain--tight' : ''}${xtight ? ' pmain--xtight' : ''}" style="--cardcols:${cardCols}"><div class="pmain-cardcols">${colDivs}</div><div class="pmain-chart">${chart}</div></div>`)
   }
   const chart = o.chartRows.length ? `<div class="pchart">${areaBarsSvg(o.chartRows, chartDisp, { zoom: 1.05, maxRows: 26 })}</div>` : ''
   return sheet(head(o.title, sub, o.bmk) + `<div class="pflow">${o.cards.map(cardHtml).join('')}${chart}</div>`)
@@ -506,6 +506,12 @@ const STYLE = `
      columns so short project codes fit beside four value columns. */
   .pmain--tight .pct { font-size: 10.5px; }
   .pmain--tight .pct td.r, .pmain--tight .pct th.r { width: 45px; }
+  /* 4 card columns (5 total) — even narrower cards, so shrink further. */
+  .pmain--xtight .pct { font-size: 9px; }
+  .pmain--xtight .pct td.r, .pmain--xtight .pct th.r { width: 37px; }
+  .pmain--xtight .pcard-name { font-size: 9.5px; }
+  .pmain--xtight .pct td, .pmain--xtight .pct th { padding-left: 3px; padding-right: 3px; }
+  .pmain--xtight .pcard-h { padding: 4px 6px; }
   /* Roomier project rows when there are only two card columns (mainstream page). */
   .pmain:not(.pmain--tight) .pct td { padding-top: 5px; padding-bottom: 5px; }
   .pmain:not(.pmain--tight) .pct th { padding-top: 4px; padding-bottom: 4px; }
