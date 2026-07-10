@@ -1183,9 +1183,9 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
       .pct td { padding: 2.5px 6px; }
       .pct td.p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .pct td.fc, .pct th.fc { color: #9a7b3c; } .pct td.fc.neg { color: #E10020; opacity: .8; } .pct td.fc.pos { color: #057a55; opacity: .8; }
-      .pct tr.sec td { color: #64748b; font-style: italic; }
+      .pct tr.sec td.p { color: #64748b; font-style: italic; }
       .pct tr.sub td { font-weight: 800; border-top: 1.4px solid #141414; }
-      .pcard--one .pct tr.one td { font-weight: 700; } .pcard--one .pct tr.one.sec td { font-weight: 600; font-style: italic; color: #64748b; }
+      .pcard--one .pct tr.one td { font-weight: 700; } .pcard--one .pct tr.one.sec td.p { font-weight: 600; font-style: italic; color: #64748b; }
       .star { color: #E10020; font-style: normal; } .k { color: #94a3b8; font-weight: 600; font-size: 8.5px; }
       .neg { color: #E10020; } .pos { color: #057a55; }
     </style></head><body>
