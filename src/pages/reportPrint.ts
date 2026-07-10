@@ -255,30 +255,27 @@ function projectSheet(p: ProjectPrint, disp: PrintDisp): string {
     <tbody>${p.matrix.sections.map(s => matrixRows(s, p.months, f, asOfM)).join('')}
       <tr class="total"><td>Net cash movement</td>${p.months.map((m, i) => `<td class="r ${fc && m > asOfM ? 'fc' : ''} ${fc && m === asOfM + 1 ? 'fcseam' : ''} ${cl(p.matrix.netMovement[i])}">${f.fM(p.matrix.netMovement[i])}</td>`).join('')}<td class="r sepl ${cl(p.matrix.netTotal)}">${f.fM(p.matrix.netTotal)}</td></tr>
     </tbody></table>`
-  // Right column: each chart carries its own stat cards directly above it, so the
-  // figures read against the chart they describe (mirrors the screen).
-  const cashCards = kpis([
-    { label: `Net cash movement · ${fc ? 'full year' : 'YTD'}`, value: f.fM(p.matrix.netTotal), cls: cl(p.matrix.netTotal) },
-    { label: 'Net from operations', value: f.fM(secNet('Operations')), cls: cl(secNet('Operations')) },
-    { label: 'Net financing', value: f.fM(secNet('Bank Financing')), cls: cl(secNet('Bank Financing')) },
-  ], true)
-  const cashCell = `<div class="pchcell">${cashCards}<div class="chartcard"><div class="ch-h">Net cash movement <span>· by month${fc ? ' · incl. forecast' : ''}</span></div>${netTrendSvg(p.months.map(m => MONTHS[m - 1]), p.matrix.netMovement, chartDisp, fc ? p.actualCount : undefined)}</div></div>`
-  // Trade payables — Balance at start (Dec) · current (as-of) · Δ over the period,
-  // as stat cards above the balance-trajectory chart.
-  let payCell = ''
+  // Top-of-page band — one row of four cards: Cash From Operations (blue),
+  // Liabilities Start / End (orange), Delta Liabilities (blue). Liabilities End =
+  // the trade-payables balance at the as-of month (last non-null entry).
+  const last = pv ? ([...pv.monthly].reverse().find(v => v != null) ?? null) : null
+  const kpiBand = `<div class="kpis kpis--proj">
+    <div class="kpi kpi--blue"><div class="kpi-l">Cash From Operations</div><div class="kpi-v ${cl(secNet('Operations'))}">${f.fM(secNet('Operations'))}</div></div>
+    <div class="kpi kpi--orange"><div class="kpi-l">Liabilities Start</div><div class="kpi-v">${f.fM(pv?.start ?? null)}</div></div>
+    <div class="kpi kpi--orange"><div class="kpi-l">Liabilities End</div><div class="kpi-v">${f.fM(last)}</div></div>
+    <div class="kpi kpi--blue"><div class="kpi-l">Delta Liabilities</div><div class="kpi-v ${cl(pv?.change ?? null)}">${f.fM(pv?.change ?? null)}</div></div>
+  </div>`
+  // Right column: the two charts, no KPI band above them (the top band carries the figures).
+  const netChartCard = `<div class="chartcard"><div class="ch-h">Net cash movement <span>· by month${fc ? ' · incl. forecast' : ''}</span></div>${netTrendSvg(p.months.map(m => MONTHS[m - 1]), p.matrix.netMovement, chartDisp, fc ? p.actualCount : undefined)}</div>`
+  let payChartCard = ''
   if (pv && pv.monthly.some(v => v != null)) {
-    const last = [...pv.monthly].reverse().find(v => v != null) ?? null
-    const payCards = kpis([
-      { label: `Balance · ${p.asOfLabel}`, value: f.fM(last), cls: cl(last) },
-      { label: 'At start (Dec)', value: f.fM(pv.start), cls: cl(pv.start) },
-      { label: 'Change over period', value: f.fM(pv.change), cls: cl(pv.change) },
-    ], true)
-    payCell = `<div class="pchcell">${payCards}<div class="chartcard"><div class="ch-h">Trade payables <span>· balance</span></div>${payablesTrendSvg(p.months.map((m, i) => ({ label: MONTHS[m - 1], value: pv.monthly[i] ?? 0 })), chartDisp)}</div></div>`
+    payChartCard = `<div class="chartcard"><div class="ch-h">Trade payables <span>· balance</span></div>${payablesTrendSvg(p.months.map((m, i) => ({ label: MONTHS[m - 1], value: pv.monthly[i] ?? 0 })), chartDisp)}</div>`
   }
   const sub = fc ? `${p.areaLabel} · monthly · actual Jan–${p.asOfLabel} · forecast to ${p.horizonLabel} · ${disp.lineUnit}`
     : `${p.areaLabel} · monthly actuals Jan–${p.asOfLabel} · ${disp.lineUnit}`
   return sheet(head(`Cash Flow Report — ${p.project}`, sub, p.bmk)
-    + `<div class="cols"><div>${table}</div><div>${cashCell}${payCell}</div></div>`)
+    + kpiBand
+    + `<div class="cols"><div>${table}</div><div>${netChartCard}${payChartCard}</div></div>`)
 }
 
 export type SectionsOpts = {
@@ -381,10 +378,14 @@ function moversSheet(o: MoversOpts): string {
     // column's pixel height, then pick a bar height so nBars bars span it
     // top-to-bottom (chart renders at natural height, height:auto, no letterbox).
     const nBars = Math.max(1, Math.min(40, o.chartRows.filter(r => Math.abs(r.value) >= 50000).length))
-    const rowPx = tight ? 20 : 22
-    const tallestColPx = Math.max(...bh) * rowPx + Math.max(...bins.map(b => b.length)) * 18
-    const targetPx = Math.max(tallestColPx, 610)               // never shorter than the min column height
-    const chartVBW = 340, colWpx = 1024 / (cardCols + 1) - 26  // approx chart-column content width
+    // Estimate the tallest card column's pixel height so the chart is sized to
+    // MATCH it (calibrated to the actual row/card chrome, so the chart neither
+    // overshoots — inflating the page — nor letterboxes).
+    const rowPx = tight ? 15 : 22
+    const tallestColPx = Math.max(...bh) * rowPx + Math.max(...bins.map(b => b.length)) * 22
+    const targetPx = Math.max(tallestColPx, 500)               // never shorter than the min column height
+    const CHART_FLEX = 0.7   // keep in sync with .pmain-chart { flex } in CSS
+    const chartVBW = 340, colWpx = 1024 * CHART_FLEX / (cardCols + CHART_FLEX) - 26  // approx chart-column content width
     const targetVBH = targetPx * chartVBW / colWpx
     const rowHpx = Math.max(26, Math.min(74, (targetVBH - 14) / nBars))
     const chart = o.chartRows.length
@@ -400,7 +401,7 @@ function moversSheet(o: MoversOpts): string {
  * 1040px; the fit-to-page script then scales the sheet down to fill the page
  * WIDTH exactly (a tall statement is otherwise height-bound and shrinks away from
  * the right edge, wasting ~20% of the width). Used by the Group sheet. */
-const sheet = (inner: string, wide = false) => `<div class="page"><div class="sheet${wide ? ' wide' : ''}">${inner}</div></div>`
+const sheet = (inner: string, wide = false, cls = '') => `<div class="page"><div class="sheet${wide ? ' wide' : ''}${cls ? ' ' + cls : ''}">${inner}</div></div>`
 
 /* ── skeleton: shared style + fit-to-page script ────────────────────────────── */
 const STYLE = `
@@ -412,6 +413,7 @@ const STYLE = `
   .page + .page { page-break-before: always; }
   .sheet { width: 1040px; transform-origin: top left; }
   .sheet.wide { width: 1240px; }
+  .sheet.wide-mv { width: 1150px; }
   .head { display: flex; align-items: center; gap: 11px; border-bottom: 2.5px solid #E10020; padding-bottom: 7px; margin-bottom: 10px; }
   .logo { height: 34px; width: auto; flex: 0 0 auto; }
   .ht { min-width: 0; }
@@ -422,6 +424,12 @@ const STYLE = `
   .kpi-l { font-size: 8.5px; letter-spacing: .4px; text-transform: uppercase; color: #64748b; font-weight: 700; }
   .kpi-v { font-size: 22px; font-weight: 800; margin-top: 2px; }
   .kpi-s { font-size: 9px; color: #64748b; margin-top: 1px; }
+  /* Project-page top band — coloured fill communicates grouping, so the crimson
+     left rule is dropped in favour of a border matching each card's own colour. */
+  .kpis--proj .kpi { border-left-width: 1px; }
+  .kpi--blue { background: #d3e7f4; border-color: #a9cee6; border-left-color: #a9cee6; }
+  .kpi--orange { background: #f6d6b8; border-color: #eab98c; border-left-color: #eab98c; }
+  .kpis--proj .kpi-l { color: #15233b; }
   /* Compact KPI band — sits directly above the chart it describes (project page). */
   .kpis--compact { gap: 8px; margin-bottom: 7px; }
   .kpis--compact .kpi { padding: 6px 10px; }
@@ -498,7 +506,11 @@ const STYLE = `
      columns (left), the chart alone in a full-height final column (right). */
   .pmain { display: flex; gap: 16px; align-items: stretch; min-height: 640px; }
   .pmain-cardcols { flex: var(--cardcols, 2); display: flex; gap: 12px; align-items: flex-start; }
-  .pmain-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 11px; }
+  .pmain-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 9px; }
+  /* Cards in a flex column already get the column gap; kill the .pcard margin so
+     they are not double-spaced (which inflated the page height, forcing a
+     height-bound down-scale that left the page width unfilled). */
+  .pmain-col .pcard { margin-bottom: 0; }
   /* Tighter horizontal padding in the (narrower) chart-column cards so project
      names keep room next to the numeric columns. */
   .pmain-cardcols .pct td, .pmain-cardcols .pct th { padding-left: 4px; padding-right: 4px; }
@@ -507,7 +519,7 @@ const STYLE = `
   .pmain--tight .pct { font-size: 10.5px; }
   .pmain--tight .pct td.r, .pmain--tight .pct th.r { width: 45px; }
   /* 4 card columns (5 total) — even narrower cards, so shrink further. */
-  .pmain--xtight .pct { font-size: 9px; }
+  .pmain--xtight .pct { font-size: 9.5px; }
   .pmain--xtight .pct td.r, .pmain--xtight .pct th.r { width: 37px; }
   .pmain--xtight .pcard-name { font-size: 9.5px; }
   .pmain--xtight .pct td, .pmain--xtight .pct th { padding-left: 3px; padding-right: 3px; }
@@ -515,7 +527,7 @@ const STYLE = `
   /* Roomier project rows when there are only two card columns (mainstream page). */
   .pmain:not(.pmain--tight) .pct td { padding-top: 5px; padding-bottom: 5px; }
   .pmain:not(.pmain--tight) .pct th { padding-top: 4px; padding-bottom: 4px; }
-  .pmain-chart { flex: 1; display: flex; flex-direction: column; justify-content: flex-start; border: 1px solid #e2e8f0; border-radius: 7px; padding: 10px 12px; }
+  .pmain-chart { flex: 0.7; display: flex; flex-direction: column; justify-content: flex-start; border: 1px solid #e2e8f0; border-radius: 7px; padding: 10px 12px; }
   .pmain-chart .pchart--tall { margin-top: 0; width: 100%; }
   /* height:auto → the chart renders at its natural height (sized by rowHpx to fill
      the column), so there's no meet-letterbox whitespace above/below it. */

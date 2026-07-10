@@ -1302,7 +1302,7 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
 
         <div className="crp-card">
           <div className="crp-card-h">Net cash from operations <span>· top project movers{forecastActive ? ' · actual + forecast' : ''}</span></div>
-          <Svg html={moverBarsSvg(kept.map(r => ({ label: r.code, value: r.netOps, forecast: forecastActive ? (r.fcNetOps ?? 0) : undefined })), undefined, { maxRows: 16, width: 470, rowHpx: 20, fontPx: 11, labW: 92, valW: 54 })} />
+          <Svg html={moverBarsSvg(kept.map(r => ({ label: r.code, value: r.netOps, forecast: forecastActive ? (r.fcNetOps ?? 0) : undefined })), undefined, { maxRows: 16, width: 560, rowHpx: 18, fontPx: 9, labW: 100, valW: 60 })} />
           <div className="crp-note">Green = cash generated, crimson = consumed (USD{forecastActive ? <>). <b>Solid</b> = actual (Jan–{asOfLabel}); <b>faded</b> = forecast (to {horizonLabel}</> : ', Jan–' + asOfLabel}). Top 16 projects by size; the rest rolled into “Other”.</div>
         </div>
       </div>
