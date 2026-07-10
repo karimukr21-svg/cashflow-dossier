@@ -63,7 +63,7 @@ export async function fetchLines(): Promise<CfLine[]> {
   return data as CfLine[]
 }
 
-/** Payables balance (Midas group 212 — suppliers/subcontractors/taxes) for a
+/** Liabilities balance (Midas groups 212 trade payables + 218 provisions) for a
  *  canonical area (or the whole group when omitted) at a period, from
  *  public.bs_positions. Returns BOTH native (valid only if every contributing
  *  area shares one currency) and USD. A point-in-time balance (one snapshot). */
@@ -73,7 +73,7 @@ export async function fetchPayables(opts: {
   let q = supabase
     .from('bs_positions')
     .select('local_balance, usd_balance, book_currency')
-    .eq('period', opts.period).eq('grp', '212')
+    .eq('period', opts.period).in('grp', ['212', '218'])
   if (opts.canonicalAreaId) q = q.eq('canonical_area_id', opts.canonicalAreaId)
   else q = q.not('canonical_area_id', 'is', null)
   const { data, error } = await q
@@ -91,9 +91,9 @@ export async function fetchPayables(opts: {
 
 /* ── Payables trajectory (monthly, from the canonical TB) ──────────────────
  * Replaces the single point-in-time bs_positions snapshot: the full monthly
- * trade-payables line from public.tb_balances (USD, pre-converted), summed over
- * the LIVE, editable trade_payables account-group (public.coa_group_accounts —
- * defined in the Chart of Accounts module, NOT hardcoded to 212). Served by the
+ * liabilities line from public.tb_balances (USD, pre-converted), summed over the
+ * LIVE trade_payables (212) + provisions (218) account-groups (public.
+ * coa_group_accounts — defined in the Chart of Accounts module). Served by the
  * v_cf_payables_trajectory view, one row per (period, org_chart subgroup).
  * Group mode sums all rows per period; area mode filters subgroups by name
  * (subgroupMatchesArea) pending the canonical main-tree crosswalk. n_books is
