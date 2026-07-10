@@ -377,10 +377,18 @@ function moversSheet(o: MoversOpts): string {
       bins[mi].push(c); bh[mi] += est(c)
     })
     const colDivs = bins.map(col => `<div class="pmain-col">${col.map(cardHtml).join('')}</div>`).join('')
-    // Chart fills the column: thick bars sized to run top-to-bottom, short label +
-    // value gutters so the bars themselves are long.
+    // Size the chart to fill its full-height column: estimate the tallest card
+    // column's pixel height, then pick a bar height so nBars bars span it
+    // top-to-bottom (chart renders at natural height, height:auto, no letterbox).
+    const nBars = Math.max(1, Math.min(40, o.chartRows.filter(r => Math.abs(r.value) >= 50000).length))
+    const rowPx = tight ? 20 : 22
+    const tallestColPx = Math.max(...bh) * rowPx + Math.max(...bins.map(b => b.length)) * 18
+    const targetPx = Math.max(tallestColPx, 610)               // never shorter than the min column height
+    const chartVBW = 340, colWpx = 1024 / (cardCols + 1) - 26  // approx chart-column content width
+    const targetVBH = targetPx * chartVBW / colWpx
+    const rowHpx = Math.max(26, Math.min(74, (targetVBH - 14) / nBars))
     const chart = o.chartRows.length
-      ? `<div class="pchart pchart--tall">${areaBarsSvg(o.chartRows, chartDisp, { maxRows: 40, width: 340, rowHpx: 34, fontPx: 14, labW: 74, valW: 58, barFrac: 0.72 })}</div>` : ''
+      ? `<div class="pchart pchart--tall">${areaBarsSvg(o.chartRows, chartDisp, { maxRows: 40, width: chartVBW, rowHpx, fontPx: Math.min(16, Math.max(11, rowHpx * 0.42)), labW: 88, valW: 54, barFrac: 0.66 })}</div>` : ''
     return sheet(head(o.title, sub, o.bmk)
       + `<div class="pmain${tight ? ' pmain--tight' : ''}" style="--cardcols:${cardCols}"><div class="pmain-cardcols">${colDivs}</div><div class="pmain-chart">${chart}</div></div>`)
   }
@@ -502,8 +510,10 @@ const STYLE = `
   .pmain:not(.pmain--tight) .pct td { padding-top: 5px; padding-bottom: 5px; }
   .pmain:not(.pmain--tight) .pct th { padding-top: 4px; padding-bottom: 4px; }
   .pmain-chart { flex: 1; display: flex; flex-direction: column; justify-content: flex-start; border: 1px solid #e2e8f0; border-radius: 7px; padding: 10px 12px; }
-  .pmain-chart .pchart--tall { margin-top: 0; width: 100%; flex: 1; display: flex; align-items: stretch; }
-  .pmain-chart .pchart--tall svg { width: 100%; height: 100%; }
+  .pmain-chart .pchart--tall { margin-top: 0; width: 100%; }
+  /* height:auto → the chart renders at its natural height (sized by rowHpx to fill
+     the column), so there's no meet-letterbox whitespace above/below it. */
+  .pmain-chart .pchart--tall svg { width: 100%; height: auto; display: block; }
   .pcard { break-inside: avoid; border: 1px solid #e2e8f0; border-radius: 7px; overflow: hidden; margin: 0 0 11px; }
   .pcard-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; background: #f1f4f8; border-bottom: 1px solid #e2e8f0; padding: 5px 9px; }
   .pcard-name { font-weight: 800; text-transform: uppercase; font-size: 11.5px; letter-spacing: .3px; }
