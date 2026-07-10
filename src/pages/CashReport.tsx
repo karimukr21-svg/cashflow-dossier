@@ -282,7 +282,7 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
           const s = shapeMoverGroupsFolded(moverRows, forecastActive, areaLabelOf)
           sheets.push({ kind: 'movers', opts: {
             title: 'Cash Flow Report — Movers', areaLabel: 'All areas', asOfLabel, startLabel,
-            forecastActive, horizonLabel, headNote: `${s.gMain} mainstream · ${s.gN} projects`, layout: 'chartCol', cardCols: 4, ...s, disp: PKG_DISP,
+            forecastActive, horizonLabel, headNote: `${s.gMain} mainstream · ${s.gN} projects`, layout: 'chartCol', cardCols: 4, chartBottom: true, ...s, disp: PKG_DISP,
             bmk: { title: 'Movers — all projects', depth: 0 },
           } })
         }

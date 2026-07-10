@@ -188,6 +188,57 @@ export function moverBarsSvg(rows: { label: string; value: number; forecast?: nu
   return s
 }
 
+/* Vertical "top movers" columns — one project per column across a horizontal axis,
+ * bar UP for generators (green) / DOWN for consumers (red) from a zero line
+ * positioned by the max-consumer/max-generator ratio (so neither half is wasted).
+ * A wide, short chart for a full-width strip at the bottom of a page. Rotated code
+ * labels under the axis; value above/below each bar. */
+export function moverColsSvg(rows: { label: string; value: number; forecast?: number }[], disp: ChartDisp = DEF, opts: { maxRows?: number; width?: number; height?: number; fontPx?: number } = {}): string {
+  const lab = (v: number) => labf(v, disp)
+  const tot = (r: { value: number; forecast?: number }) => r.value + (r.forecast ?? 0)
+  let data = rows.filter(r => Math.abs(r.value) >= 50000 || Math.abs(r.forecast ?? 0) >= 50000)
+  if (data.length === 0) return `<svg viewBox="0 0 1000 60" width="100%"><text x="500" y="34" text-anchor="middle" font-size="14" fill="#94a3b8" font-family="sans-serif">No data</text></svg>`
+  if (opts.maxRows && data.length > opts.maxRows) {
+    const keep = [...data].sort((a, b) => Math.abs(tot(b)) - Math.abs(tot(a))).slice(0, opts.maxRows)
+    const rest = data.filter(d => !keep.includes(d))
+    const ov = rest.reduce((t, r) => t + r.value, 0), of = rest.reduce((t, r) => t + (r.forecast ?? 0), 0)
+    data = [...keep, ...(Math.abs(ov) + Math.abs(of) >= 50000 ? [{ label: `Other (${rest.length})`, value: ov, forecast: of }] : [])]
+  }
+  data = data.sort((a, b) => b.value - a.value)   // generators left → consumers right
+  const W = opts.width ?? 1000, H = opts.height ?? 170, fs = opts.fontPx ?? 11
+  const padL = 6, padR = 6, padT = 14, padB = 48
+  const plotW = W - padL - padR, plotH = H - padT - padB
+  const n = data.length, slot = plotW / n, bw = Math.min(40, slot * 0.62)
+  const maxPos = Math.max(0, ...data.map(r => Math.max(r.value, tot(r))))
+  const maxNeg = Math.max(0, ...data.map(r => Math.max(-r.value, -tot(r))))
+  const span = maxPos + maxNeg || 1
+  // Reserve room above the tallest bar and below the deepest bar for the value
+  // labels, so a deep consumer's value never collides with the rotated axis label.
+  const valueRoom = fs + 3
+  const scaleY = Math.max(1, plotH - 2 * valueRoom) / span
+  const zeroY = padT + valueRoom + maxPos * scaleY
+  const cx = (i: number) => padL + (i + 0.5) * slot
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">`
+  s += `<line x1="${padL}" y1="${zeroY.toFixed(1)}" x2="${(W - padR).toFixed(1)}" y2="${zeroY.toFixed(1)}" stroke="${INK}" stroke-width="1"/>`
+  data.forEach((r, i) => {
+    const a = r.value, fc = r.forecast ?? 0, x = cx(i)
+    const ha = Math.abs(a) * scaleY, yTop = a >= 0 ? zeroY - ha : zeroY
+    s += `<rect x="${(x - bw / 2).toFixed(1)}" y="${yTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1.5, ha).toFixed(1)}" fill="${a >= 0 ? GOOD : CRIM}" opacity="0.9" rx="2"/>`
+    if (Math.abs(fc) >= 1) {
+      const hf = Math.abs(fc) * scaleY, outer = a >= 0 ? zeroY - ha : zeroY + ha
+      const yf = fc >= 0 ? outer - hf : outer
+      s += `<rect x="${(x - bw / 2).toFixed(1)}" y="${yf.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1.5, hf).toFixed(1)}" fill="${fc >= 0 ? GOOD : CRIM}" opacity="0.3" rx="2"/>`
+    }
+    const vy = a >= 0 ? yTop - 4 : yTop + ha + fs + 1
+    s += `<text x="${x.toFixed(1)}" y="${vy.toFixed(1)}" text-anchor="middle" font-size="${(fs * 0.92).toFixed(1)}" font-weight="700" fill="${a >= 0 ? GOOD : CRIM}">${lab(a)}</text>`
+    // Code label under the axis, rotated for density.
+    const label = r.label.length > 12 ? r.label.slice(0, 11) + '…' : r.label
+    s += `<text x="${x.toFixed(1)}" y="${(H - padB + 12).toFixed(1)}" text-anchor="end" font-size="${fs.toFixed(1)}" fill="${INK}" transform="rotate(-40 ${x.toFixed(1)} ${(H - padB + 12).toFixed(1)})">${label}</text>`
+  })
+  s += `</svg>`
+  return s
+}
+
 /* Monthly trade-payables level — magnitude bars across the elapsed months with a
  * trajectory line over the tops. Payables are credit balances (negative); bars
  * show the magnitude, labels show the signed value. A falling line = paying down. */

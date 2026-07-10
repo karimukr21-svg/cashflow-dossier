@@ -1,5 +1,5 @@
 import { arrangeByColumns, STMT_COLUMNS, type StmtSection, type DualSection, type MatrixSection } from './reportModel'
-import { waterfallSvg, areaBarsSvg, moverBarsSvg, netTrendSvg, payablesTrendSvg } from './reportCharts'
+import { waterfallSvg, areaBarsSvg, moverBarsSvg, moverColsSvg, netTrendSvg, payablesTrendSvg } from './reportCharts'
 
 /* Print mirror of the Cash Flow Report (CashReport.tsx), A4 LANDSCAPE, one sheet
  * per report. Each sheet is scaled to fit a single page (fit-to-page script), so
@@ -260,10 +260,10 @@ function projectSheet(p: ProjectPrint, disp: PrintDisp): string {
   // the trade-payables balance at the as-of month (last non-null entry).
   const last = pv ? ([...pv.monthly].reverse().find(v => v != null) ?? null) : null
   const kpiBand = `<div class="kpis kpis--proj">
-    <div class="kpi kpi--blue"><div class="kpi-l">Cash From Operations</div><div class="kpi-v ${cl(secNet('Operations'))}">${f.fM(secNet('Operations'))}</div></div>
-    <div class="kpi kpi--orange"><div class="kpi-l">Liabilities Start</div><div class="kpi-v">${f.fM(pv?.start ?? null)}</div></div>
-    <div class="kpi kpi--orange"><div class="kpi-l">Liabilities End</div><div class="kpi-v">${f.fM(last)}</div></div>
-    <div class="kpi kpi--blue"><div class="kpi-l">Delta Liabilities</div><div class="kpi-v ${cl(pv?.change ?? null)}">${f.fM(pv?.change ?? null)}</div></div>
+    <div class="kpi kpi--cash"><div class="kpi-l">Cash From Operations</div><div class="kpi-v ${cl(secNet('Operations'))}">${f.fM(secNet('Operations'))}</div></div>
+    <div class="kpi kpi--liab"><div class="kpi-l">Liabilities Start</div><div class="kpi-v">${f.fM(pv?.start ?? null)}</div></div>
+    <div class="kpi kpi--liab"><div class="kpi-l">Liabilities End</div><div class="kpi-v">${f.fM(last)}</div></div>
+    <div class="kpi kpi--cash"><div class="kpi-l">Delta Liabilities</div><div class="kpi-v ${cl(pv?.change ?? null)}">${f.fM(pv?.change ?? null)}</div></div>
   </div>`
   // Right column: the two charts, no KPI band above them (the top band carries the figures).
   const netChartCard = `<div class="chartcard"><div class="ch-h">Net cash movement <span>· by month${fc ? ' · incl. forecast' : ''}</span></div>${netTrendSvg(p.months.map(m => MONTHS[m - 1]), p.matrix.netMovement, chartDisp, fc ? p.actualCount : undefined)}</div>`
@@ -328,6 +328,7 @@ export type MoversOpts = {
    * full-height final column (bigger fonts). */
   layout?: 'masonry' | 'chartCol'
   cardCols?: number   // card columns when layout='chartCol' (default 2); chart is the +1
+  chartBottom?: boolean   // chartCol only: cards span full width, chart is a horizontal strip below
   bmk?: Bmk | Bmk[] | null
 }
 function moversSheet(o: MoversOpts): string {
@@ -374,6 +375,14 @@ function moversSheet(o: MoversOpts): string {
       bins[mi].push(c); bh[mi] += est(c)
     })
     const colDivs = bins.map(col => `<div class="pmain-col">${col.map(cardHtml).join('')}</div>`).join('')
+    // Chart at the BOTTOM: cards span the full page width (tight, not xtight, since
+    // they're now wider), the chart is a horizontal vertical-bar strip below.
+    if (o.chartBottom) {
+      const chartB = o.chartRows.length
+        ? `<div class="pchart-b">${moverColsSvg(o.chartRows, chartDisp, { maxRows: 40, width: 1000, height: 172, fontPx: 11 })}</div>` : ''
+      return sheet(head(o.title, sub, o.bmk)
+        + `<div class="pmain-b pmain--tight"><div class="pmain-cardcols pmain-cardcols--full">${colDivs}</div>${chartB}</div>`)
+    }
     // Size the chart to fill its full-height column: estimate the tallest card
     // column's pixel height, then pick a bar height so nBars bars span it
     // top-to-bottom (chart renders at natural height, height:auto, no letterbox).
@@ -426,10 +435,15 @@ const STYLE = `
   .kpi-s { font-size: 9px; color: #64748b; margin-top: 1px; }
   /* Project-page top band — coloured fill communicates grouping, so the crimson
      left rule is dropped in favour of a border matching each card's own colour. */
-  .kpis--proj .kpi { border-left-width: 1px; }
-  .kpi--blue { background: #d3e7f4; border-color: #a9cee6; border-left-color: #a9cee6; }
-  .kpi--orange { background: #f6d6b8; border-color: #eab98c; border-left-color: #eab98c; }
-  .kpis--proj .kpi-l { color: #15233b; }
+  /* Project cards — on-palette with the rest of the report: light card, hairline
+     border, a coloured left accent. Cash flow = crimson (the brand accent);
+     liability balances = slate. Muted uppercase label, ink value (sign-coloured
+     via .neg/.pos where set). */
+  .kpis--proj .kpi { background: #f8fafc; border: 1px solid #e2e8f0; border-left: 3px solid #cbd5e1; }
+  .kpi--cash { border-left-color: #E10020; }
+  .kpi--liab { border-left-color: #64748b; }
+  .kpis--proj .kpi-l { color: #64748b; }
+  .kpis--proj .kpi-v { color: #15233b; }
   /* Compact KPI band — sits directly above the chart it describes (project page). */
   .kpis--compact { gap: 8px; margin-bottom: 7px; }
   .kpis--compact .kpi { padding: 6px 10px; }
@@ -506,6 +520,11 @@ const STYLE = `
      columns (left), the chart alone in a full-height final column (right). */
   .pmain { display: flex; gap: 16px; align-items: stretch; min-height: 640px; }
   .pmain-cardcols { flex: var(--cardcols, 2); display: flex; gap: 12px; align-items: flex-start; }
+  /* Chart-at-bottom variant: cards span the full width, chart is a wide strip below. */
+  .pmain-b { display: flex; flex-direction: column; gap: 14px; }
+  .pmain-cardcols--full { flex: 0 0 auto; width: 100%; }
+  .pchart-b { width: 100%; }
+  .pchart-b svg { width: 100%; height: auto; display: block; }
   .pmain-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 9px; }
   /* Cards in a flex column already get the column gap; kill the .pcard margin so
      they are not double-spaced (which inflated the page height, forcing a
