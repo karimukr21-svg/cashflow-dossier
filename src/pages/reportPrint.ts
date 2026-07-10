@@ -1,5 +1,5 @@
 import { arrangeByColumns, STMT_COLUMNS, type StmtSection, type DualSection, type MatrixSection } from './reportModel'
-import { waterfallSvg, areaBarsSvg, moverBarsSvg, moverColsSvg, netTrendSvg, payablesTrendSvg } from './reportCharts'
+import { waterfallSvg, areaBarsSvg, moverBarsSvg, netTrendSvg, payablesTrendSvg } from './reportCharts'
 
 /* Print mirror of the Cash Flow Report (CashReport.tsx), A4 LANDSCAPE, one sheet
  * per report. Each sheet is scaled to fit a single page (fit-to-page script), so
@@ -377,13 +377,10 @@ function moversSheet(o: MoversOpts): string {
       bins[mi].push(c); bh[mi] += est(c)
     })
     const colDivs = bins.map(col => `<div class="pmain-col">${col.map(cardHtml).join('')}</div>`).join('')
-    // Chart at the BOTTOM: cards span the full page width (tight, not xtight, since
-    // they're now wider), the chart is a horizontal vertical-bar strip below.
+    // All-projects page: no chart — the cards span the full page width.
     if (o.chartBottom) {
-      const chartB = o.chartRows.length
-        ? `<div class="pchart-b">${moverColsSvg(o.chartRows, chartDisp, { maxRows: 40, width: 1000, height: 108, fontPx: 11 })}</div>` : ''
       return sheet(head(o.title, sub, o.bmk)
-        + `<div class="pmain-b pmain--tight"><div class="pmain-cardcols pmain-cardcols--full">${colDivs}</div>${chartB}</div>`)
+        + `<div class="pmain-b pmain--tight"><div class="pmain-cardcols pmain-cardcols--full">${colDivs}</div></div>`)
     }
     // Size the chart to fill its full-height column: estimate the tallest card
     // column's pixel height, then pick a bar height so nBars bars span it
@@ -441,10 +438,10 @@ const STYLE = `
      border, a coloured left accent. Cash flow = crimson (the brand accent);
      liability balances = slate. Muted uppercase label, ink value (sign-coloured
      via .neg/.pos where set). */
-  .kpis--proj .kpi { background: #f8fafc; border: 1px solid #e2e8f0; border-left: 3px solid #cbd5e1; }
-  .kpi--acc-pos { border-left-color: #057a55; }   /* cash-flow card, positive */
-  .kpi--acc-neg { border-left-color: #E10020; }   /* cash-flow card, negative */
-  .kpi--bal { border-left-color: #2f6fb0; }        /* liability balance card — blue */
+  .kpis--proj .kpi { background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #cbd5e1; }
+  .kpis--proj .kpi--acc-pos { border-left-color: #057a55; }   /* cash-flow card, positive */
+  .kpis--proj .kpi--acc-neg { border-left-color: #E10020; }   /* cash-flow card, negative */
+  .kpis--proj .kpi--bal { border-left-color: #2f6fb0; }        /* liability balance card — blue */
   .kpis--proj .kpi-l { color: #64748b; }
   .kpis--proj .kpi-v { color: #15233b; }
   /* Compact KPI band — sits directly above the chart it describes (project page). */
@@ -525,10 +522,7 @@ const STYLE = `
   .pmain-cardcols { flex: var(--cardcols, 2); display: flex; gap: 12px; align-items: flex-start; }
   /* Chart-at-bottom variant: cards span the full width, chart is a wide strip below. */
   .pmain-b { display: flex; flex-direction: column; gap: 8px; }
-  /* Bottom-chart page runs tall, so tighten the card spacing to keep it on one
-     page at full scale (fills the page width instead of down-scaling). */
-  .pmain-b .pmain-col { gap: 5px; }
-  .pmain-b .pcard-h { padding: 3px 8px; }
+  .pmain-b .pmain-col { gap: 8px; }
   .pmain-cardcols--full { flex: 0 0 auto; width: 100%; }
   .pchart-b { width: 100%; }
   .pchart-b svg { width: 100%; height: auto; display: block; }
