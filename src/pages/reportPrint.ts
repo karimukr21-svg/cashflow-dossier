@@ -255,15 +255,17 @@ function projectSheet(p: ProjectPrint, disp: PrintDisp): string {
     <tbody>${p.matrix.sections.map(s => matrixRows(s, p.months, f, asOfM)).join('')}
       <tr class="total"><td>Net cash movement</td>${p.months.map((m, i) => `<td class="r ${fc && m > asOfM ? 'fc' : ''} ${fc && m === asOfM + 1 ? 'fcseam' : ''} ${cl(p.matrix.netMovement[i])}">${f.fM(p.matrix.netMovement[i])}</td>`).join('')}<td class="r sepl ${cl(p.matrix.netTotal)}">${f.fM(p.matrix.netTotal)}</td></tr>
     </tbody></table>`
-  // Top-of-page band — one row of four cards: Cash From Operations (blue),
-  // Liabilities Start / End (orange), Delta Liabilities (blue). Liabilities End =
-  // the trade-payables balance at the as-of month (last non-null entry).
+  // Top-of-page band — one row of four cards. The two cash-flow cards (Cash From
+  // Operations, Delta Liabilities) get a sign-coloured accent + green/red value;
+  // the two balance cards (Liabilities Start / End) get a blue accent. Liabilities
+  // End = the trade-payables balance at the as-of month (last non-null entry).
   const last = pv ? ([...pv.monthly].reverse().find(v => v != null) ?? null) : null
+  const accCls = (v: number | null | undefined) => cl(v) === 'pos' ? 'kpi--acc-pos' : cl(v) === 'neg' ? 'kpi--acc-neg' : ''
   const kpiBand = `<div class="kpis kpis--proj">
-    <div class="kpi kpi--cash"><div class="kpi-l">Cash From Operations</div><div class="kpi-v ${cl(secNet('Operations'))}">${f.fM(secNet('Operations'))}</div></div>
-    <div class="kpi kpi--liab"><div class="kpi-l">Liabilities Start</div><div class="kpi-v">${f.fM(pv?.start ?? null)}</div></div>
-    <div class="kpi kpi--liab"><div class="kpi-l">Liabilities End</div><div class="kpi-v">${f.fM(last)}</div></div>
-    <div class="kpi kpi--cash"><div class="kpi-l">Delta Liabilities</div><div class="kpi-v ${cl(pv?.change ?? null)}">${f.fM(pv?.change ?? null)}</div></div>
+    <div class="kpi ${accCls(secNet('Operations'))}"><div class="kpi-l">Cash From Operations</div><div class="kpi-v ${cl(secNet('Operations'))}">${f.fM(secNet('Operations'))}</div></div>
+    <div class="kpi kpi--bal"><div class="kpi-l">Liabilities Start</div><div class="kpi-v">${f.fM(pv?.start ?? null)}</div></div>
+    <div class="kpi kpi--bal"><div class="kpi-l">Liabilities End</div><div class="kpi-v">${f.fM(last)}</div></div>
+    <div class="kpi ${accCls(pv?.change ?? null)}"><div class="kpi-l">Delta Liabilities</div><div class="kpi-v ${cl(pv?.change ?? null)}">${f.fM(pv?.change ?? null)}</div></div>
   </div>`
   // Right column: the two charts, no KPI band above them (the top band carries the figures).
   const netChartCard = `<div class="chartcard"><div class="ch-h">Net cash movement <span>· by month${fc ? ' · incl. forecast' : ''}</span></div>${netTrendSvg(p.months.map(m => MONTHS[m - 1]), p.matrix.netMovement, chartDisp, fc ? p.actualCount : undefined)}</div>`
@@ -379,7 +381,7 @@ function moversSheet(o: MoversOpts): string {
     // they're now wider), the chart is a horizontal vertical-bar strip below.
     if (o.chartBottom) {
       const chartB = o.chartRows.length
-        ? `<div class="pchart-b">${moverColsSvg(o.chartRows, chartDisp, { maxRows: 40, width: 1000, height: 172, fontPx: 11 })}</div>` : ''
+        ? `<div class="pchart-b">${moverColsSvg(o.chartRows, chartDisp, { maxRows: 40, width: 1000, height: 108, fontPx: 11 })}</div>` : ''
       return sheet(head(o.title, sub, o.bmk)
         + `<div class="pmain-b pmain--tight"><div class="pmain-cardcols pmain-cardcols--full">${colDivs}</div>${chartB}</div>`)
     }
@@ -440,8 +442,9 @@ const STYLE = `
      liability balances = slate. Muted uppercase label, ink value (sign-coloured
      via .neg/.pos where set). */
   .kpis--proj .kpi { background: #f8fafc; border: 1px solid #e2e8f0; border-left: 3px solid #cbd5e1; }
-  .kpi--cash { border-left-color: #E10020; }
-  .kpi--liab { border-left-color: #64748b; }
+  .kpi--acc-pos { border-left-color: #057a55; }   /* cash-flow card, positive */
+  .kpi--acc-neg { border-left-color: #E10020; }   /* cash-flow card, negative */
+  .kpi--bal { border-left-color: #2f6fb0; }        /* liability balance card — blue */
   .kpis--proj .kpi-l { color: #64748b; }
   .kpis--proj .kpi-v { color: #15233b; }
   /* Compact KPI band — sits directly above the chart it describes (project page). */
@@ -521,7 +524,11 @@ const STYLE = `
   .pmain { display: flex; gap: 16px; align-items: stretch; min-height: 640px; }
   .pmain-cardcols { flex: var(--cardcols, 2); display: flex; gap: 12px; align-items: flex-start; }
   /* Chart-at-bottom variant: cards span the full width, chart is a wide strip below. */
-  .pmain-b { display: flex; flex-direction: column; gap: 14px; }
+  .pmain-b { display: flex; flex-direction: column; gap: 8px; }
+  /* Bottom-chart page runs tall, so tighten the card spacing to keep it on one
+     page at full scale (fills the page width instead of down-scaling). */
+  .pmain-b .pmain-col { gap: 5px; }
+  .pmain-b .pcard-h { padding: 3px 8px; }
   .pmain-cardcols--full { flex: 0 0 auto; width: 100%; }
   .pchart-b { width: 100%; }
   .pchart-b svg { width: 100%; height: auto; display: block; }
