@@ -263,8 +263,8 @@ function projectSheet(p: ProjectPrint, disp: PrintDisp): string {
   const accCls = (v: number | null | undefined) => cl(v) === 'pos' ? 'kpi--acc-pos' : cl(v) === 'neg' ? 'kpi--acc-neg' : ''
   const kpiBand = `<div class="kpis kpis--proj">
     <div class="kpi ${accCls(secNet('Operations'))}"><div class="kpi-l">Cash From Operations</div><div class="kpi-v ${cl(secNet('Operations'))}">${f.fM(secNet('Operations'))}</div></div>
-    <div class="kpi kpi--bal"><div class="kpi-l">Liabilities Start</div><div class="kpi-v">${f.fM(pv?.start ?? null)}</div></div>
-    <div class="kpi kpi--bal"><div class="kpi-l">Liabilities End</div><div class="kpi-v">${f.fM(last)}</div></div>
+    <div class="kpi kpi--bal"><div class="kpi-l">Liabilities Start</div><div class="kpi-v ${cl(pv?.start ?? null)}">${f.fM(pv?.start ?? null)}</div></div>
+    <div class="kpi kpi--bal"><div class="kpi-l">Liabilities End</div><div class="kpi-v ${cl(last)}">${f.fM(last)}</div></div>
     <div class="kpi ${accCls(pv?.change ?? null)}"><div class="kpi-l">Delta Liabilities</div><div class="kpi-v ${cl(pv?.change ?? null)}">${f.fM(pv?.change ?? null)}</div></div>
   </div>`
   // Right column: the two charts, no KPI band above them (the top band carries the figures).
@@ -444,6 +444,8 @@ const STYLE = `
   .kpis--proj .kpi--bal { border-left-color: #2f6fb0; }        /* liability balance card — blue */
   .kpis--proj .kpi-l { color: #64748b; }
   .kpis--proj .kpi-v { color: #15233b; }
+  .kpis--proj .kpi-v.pos { color: #057a55; }   /* all card values coloured by sign */
+  .kpis--proj .kpi-v.neg { color: #E10020; }
   /* Compact KPI band — sits directly above the chart it describes (project page). */
   .kpis--compact { gap: 8px; margin-bottom: 7px; }
   .kpis--compact .kpi { padding: 6px 10px; }
