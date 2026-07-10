@@ -9,8 +9,8 @@ import {
 } from '@/lib/queries'
 import AreaFilterPopover from '@/components/AreaFilterPopover'
 import { fmt, fmtDelta } from '@/lib/format'
-import { buildModel, buildStatement, buildStatementMatrix, buildForecastLineUsd, buildDualStatement, payablesSeries, arrangeSectionColumns, arrangeByColumns, STMT_COLUMNS, type AreaAgg, type StmtSection, type DualSection, type MatrixSection, type PaySeriesPt } from './reportModel'
-import { buildReportHtml, buildProjectsPrintHtml } from './reportPrint'
+import { buildModel, buildStatement, buildStatementMatrix, buildForecastLineUsd, buildDualStatement, buildMoverRows, payablesSeries, arrangeSectionColumns, arrangeByColumns, STMT_COLUMNS, type AreaAgg, type StmtSection, type DualSection, type MatrixSection, type PaySeriesPt, type MoverRow } from './reportModel'
+import { buildReportHtml, buildProjectsPrintHtml, buildPackageHtml, type PackageSheet, type MoversCard, type ProjectPrint, type PrintDisp, type GroupForecast } from './reportPrint'
 import { waterfallSvg, areaBarsSvg, netTrendSvg, payablesTrendSvg } from './reportCharts'
 import type { Scope } from './Dossier'
 
@@ -61,6 +61,8 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
   useEffect(() => { try { localStorage.setItem('crp-level', level) } catch { /* best-effort */ } }, [level])
   const [excluded, setExcluded] = useState<Set<string>>(new Set())   // areas unticked in the top-bar filter
   const [projArea, setProjArea] = useState<string>('')     // selected area for the Project grain
+  const [pkgOpen, setPkgOpen] = useState(false)            // print-package modal
+  const [pkgBusy, setPkgBusy] = useState(false)            // package build in flight
 
   const [cells, setCells] = useState<(CfCell & { currency?: string })[]>([])
   // Forecast tail (as-of+1 … Dec of the cycle year), fetched once per version and
@@ -213,6 +215,134 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
     w.document.write(html); w.document.close()
   }
 
+  // ── Print package ──────────────────────────────────────────────────────────
+  // One document assembling any subset of report pages (Group / Area / Sections /
+  // Movers all / Movers mainstream / a page per mainstream project), each on its
+  // own page with an invisible bookmark anchor so /pdf-bookmarker builds a matching
+  // outline. Group/Area/Sections come from the parent's in-scope model; Movers +
+  // project pages need project-grain cells + payables, fetched here on demand.
+  const buildPackage = async (sel: PkgSelection) => {
+    const w = window.open('', '_blank'); if (!w) return
+    w.document.write('<p style="font:14px -apple-system,sans-serif;padding:24px;color:#475569">Preparing report package…</p>')
+    setPkgBusy(true)
+    try {
+      const sheets: PackageSheet[] = []
+
+      // Group / Area / Sections — from the in-scope aggregate (mirror print()).
+      if (sel.group) {
+        const { scopeLabel, lineUsd, payStart, payEnd, hasPay, startCash, loanStart, loanEnd, odStart, odEnd } = aggregateScope(cfAreas)
+        const stmt = buildStatement(lineUsd, scope.lines)
+        let forecast: GroupForecast | undefined
+        if (forecastActive) {
+          const fcLineUsd = new Map<string, number>()
+          for (const a of cfAreas) { const m = fcByArea.get(a.areaId); if (m) for (const [lc, v] of m) fcLineUsd.set(lc, (fcLineUsd.get(lc) ?? 0) + v) }
+          forecast = { dual: buildDualStatement(lineUsd, fcLineUsd, scope.lines), horizonLabel }
+        }
+        sheets.push({ kind: 'group', opts: {
+          scopeLabel, asOfLabel, startLabel, cashStartLabel, matchedCount: cfAreas.length,
+          statement: stmt, payStart, payEnd, hasPay, startCash, endCash: startCash + stmt.netMovement,
+          loanStart, loanEnd, odStart, odEnd,
+          paySeries: paySeries.map(p => ({ label: MONTHS[(p.period % 100) - 1] ?? '', value: p.usd })),
+          forecast, disp: PKG_DISP, bmk: { title: 'Group', depth: 0 },
+        } })
+      }
+      if (sel.area) {
+        const areaRows = cfAreas.map(a => ({ label: a.label, netOps: a.netOps, fcNetOps: forecastActive ? (fcNetOpsByArea.get(a.areaId) ?? 0) : undefined, payStart: a.payStart, payEnd: a.payEnd }))
+        const areaTotals = cfAreas.reduce((t, a) => ({ netOps: t.netOps + a.netOps, fcNetOps: t.fcNetOps + (forecastActive ? (fcNetOpsByArea.get(a.areaId) ?? 0) : 0), payStart: t.payStart + (a.payStart ?? 0), payEnd: t.payEnd + (a.payEnd ?? 0) }), { netOps: 0, fcNetOps: 0, payStart: 0, payEnd: 0 })
+        sheets.push({ kind: 'area', opts: { asOfLabel, startLabel, areaRows, areaTotals, forecastActive, horizonLabel, disp: PKG_DISP, bmk: { title: 'Area', depth: 0 } } })
+      }
+      if (sel.sections) {
+        sheets.push({ kind: 'sections', opts: {
+          asOfLabel, matchedCount: cfAreas.length,
+          sections: sectionCards(cfAreas, scope.lines, forecastActive ? fcByArea : undefined),
+          forecastActive, horizonLabel, disp: PKG_DISP, bmk: { title: 'Sections', depth: 0 },
+        } })
+      }
+
+      // Movers + mainstream projects — project-grain cells (all areas) + payables.
+      if (sel.moversAll || sel.moversMain || sel.projects) {
+        const decP = (year - 1) * 100 + 12, asOfP = year * 100 + asOfMonth
+        const [act, fcT, pm, bb] = await Promise.all([
+          fetchProjectCells({ version: scope.primaryVersion, fromYear: year, fromMonth: 1, toYear: year, toMonth: asOfMonth }),
+          forecastActive && asOfMonth < 12
+            ? fetchProjectCells({ version: scope.primaryVersion, fromYear: year, fromMonth: asOfMonth + 1, toYear: year, toMonth: horizonMonth })
+            : Promise.resolve([] as (CfCell & { project_code: string | null; currency?: string })[]),
+          fetchPayablesMaps().catch(() => null),
+          fetchPayablesBookBalances([decP, asOfP]).catch(() => new Map<string, Map<number, number>>()),
+        ])
+        const opCodes = new Set(scope.lines.filter(l => l.category === 'Operation' || l.category === 'Claims').map(l => l.line_code))
+        const moverRows = buildMoverRows({ cells: act, fcCells: fcT, opCodes, fxMap, payMaps: pm, bookBal: bb, decP, asOfP, forecastActive })
+        const areaLabelOf = (a: string) => projAreaOptions.find(o => o.areaId === a)?.label || a
+
+        if (sel.moversAll) {
+          const s = shapeMoverGroups(moverRows, forecastActive, areaLabelOf)
+          sheets.push({ kind: 'movers', opts: {
+            title: 'Cash Flow Report — Movers', areaLabel: 'All areas', asOfLabel, startLabel,
+            forecastActive, horizonLabel, headNote: `${s.gN} projects`, ...s, disp: PKG_DISP,
+            bmk: { title: 'Movers — all projects', depth: 0 },
+          } })
+        }
+        if (sel.moversMain) {
+          const s = shapeMoverGroups(moverRows.filter(r => r.isPrimary), forecastActive, areaLabelOf)
+          sheets.push({ kind: 'movers', opts: {
+            title: 'Cash Flow Report — Mainstream movers', areaLabel: 'All areas', asOfLabel, startLabel,
+            forecastActive, horizonLabel, headNote: 'Mainstream projects', ...s, disp: PKG_DISP,
+            bmk: { title: 'Movers — mainstream', depth: 0 },
+          } })
+        }
+        if (sel.projects) {
+          const mainRows = moverRows.filter(r => r.isPrimary)
+          const dispMonths = Array.from({ length: forecastActive ? horizonMonth : asOfMonth }, (_, i) => i + 1)
+          const rateOf = (cur?: string) => (cur || 'USD') === 'USD' ? 1 : (fxMap.get(cur || '') ?? null)
+          const src = forecastActive ? [...act, ...fcT] : act
+          const fromP = decP, toP = asOfP
+          let first = true
+          for (const mr of mainRows) {
+            // Per-project line-items × months matrix (USD), mirroring ProjectView.
+            const perCode = new Map<string, Map<number, number>>()
+            let cur = 'USD', ok = true
+            for (const c of src) {
+              if (c.area !== mr.area || c.project_code !== mr.code) continue
+              if (c.currency && c.currency !== 'USD') cur = c.currency
+              const r = rateOf(c.currency); if (r == null) { ok = false; continue }
+              let m = perCode.get(c.line_code); if (!m) { m = new Map(); perCode.set(c.line_code, m) }
+              m.set(c.month, (m.get(c.month) ?? 0) + c.value * r)
+            }
+            if (!ok) continue
+            const matrix = buildStatementMatrix(perCode, scope.lines, dispMonths)
+            if (matrix.sections.length === 0) continue
+            // Trade-payables balance movement (Dec → as-of) for the project's books.
+            let payables: ProjectPrint['payables']
+            const cid = pm?.cfCodeToCanon.get(mr.code.toUpperCase())
+            const books = cid ? (pm?.canonToBooks.get(cid) ?? []) : []
+            if (books.length) {
+              const sPay = await fetchPayablesForBooks(books, fromP, toP)
+              const byP = new Map(sPay.map(p => [p.period, p.usd]))
+              const monthly = dispMonths.map(m => byP.has(year * 100 + m) ? byP.get(year * 100 + m)! : null)
+              const start = byP.has(fromP) ? byP.get(fromP)! : null
+              const last = [...monthly].reverse().find(v => v != null) ?? null
+              payables = { monthly, start, change: last != null && start != null ? last - start : null }
+            }
+            // First project page also carries the depth-0 "Mainstream projects"
+            // section header so the outline nests the projects beneath it.
+            const projBmk = { title: mr.code, depth: 1 }
+            sheets.push({ kind: 'project', opts: {
+              areaLabel: areaLabelOf(mr.area), project: mr.code, currency: cur, asOfLabel, months: dispMonths, matrix, payables,
+              actualCount: forecastActive ? asOfMonth : undefined, horizonLabel: forecastActive ? horizonLabel : undefined,
+              bmk: first ? [{ title: 'Mainstream projects', depth: 0 }, projBmk] : projBmk,
+            }, disp: PKG_DISP })
+            first = false
+          }
+        }
+      }
+
+      if (sheets.length === 0) { w.document.open(); w.document.write('<p style="font:14px -apple-system,sans-serif;padding:24px;color:#475569">Nothing selected to print.</p>'); w.document.close(); return }
+      w.document.open(); w.document.write(buildPackageHtml(sheets)); w.document.close()
+    } finally {
+      setPkgBusy(false); setPkgOpen(false)
+    }
+  }
+
   // Report controls (view tabs + area include/exclude filter + Print) — rendered
   // up in the Dossier top bar (Row 2) via the slot; inline fallback if absent.
   const showAreaFilter = level === 'group' || level === 'area' || level === 'sections'
@@ -247,8 +377,10 @@ export default function CashReport({ scope, onSelectArea }: { scope: Scope; onSe
         : level === 'area' ? <AreaView matched={cfAreas} year={year} asOfLabel={asOfLabel} startLabel={startLabel} fcNetOpsByArea={fcNetOpsByArea} forecastActive={forecastActive} horizonLabel={horizonLabel} onOpenProjects={(id) => { setProjArea(id); setLevel('project') }} />
         : level === 'sections' ? <SectionsView scope={scope} matched={cfAreas} asOfLabel={asOfLabel} fcByArea={fcByArea} forecastActive={forecastActive} horizonLabel={horizonLabel} />
         : level === 'project' ? <ProjectView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} projArea={projArea} setProjArea={setProjArea} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} forecastActive={forecastActive} horizonMonth={horizonMonth} horizonLabel={horizonLabel} />
-        : level === 'movers' ? <MoversView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} startLabel={startLabel} forecastActive={forecastActive} horizonMonth={horizonMonth} horizonLabel={horizonLabel} registerPrint={fn => { moversPrint.current = fn }} />
+        : level === 'movers' ? <MoversView scope={scope} fxMap={fxMap} areaOptions={projAreaOptions} year={year} asOfMonth={asOfMonth} asOfLabel={asOfLabel} startLabel={startLabel} forecastActive={forecastActive} horizonMonth={horizonMonth} horizonLabel={horizonLabel} registerPrint={fn => { moversPrint.current = fn }} onOpenPackage={() => setPkgOpen(true)} />
         : null}
+
+      <PrintPackageModal open={pkgOpen} busy={pkgBusy} onClose={() => { if (!pkgBusy) setPkgOpen(false) }} onGenerate={buildPackage} />
     </div>
   )
 }
@@ -321,6 +453,95 @@ function sectionCards(matched: AreaAgg[], lines: CfLine[], fcByArea?: Map<string
     rows: byArea.map(a => ({ label: a.label, value: a.nets.get(s.label) ?? 0, forecast: a.fcNets ? (a.fcNets.get(s.label) ?? 0) : undefined }))
       .filter(r => Math.abs(r.value) >= 50000 || Math.abs(r.forecast ?? 0) >= 50000),
   })).filter(c => c.rows.length > 0)
+}
+
+/* USD-millions display for the print package (the report is USD-only). */
+const PKG_DISP: PrintDisp = { div: 1e6, dec: 1, lineUnit: 'USD millions', payUnit: 'USD millions' }
+
+/* Shape mover rows (already filtered to the wanted tier) into the print-package
+ * Movers sheet: one card per area (project rows + subtotal), a diverging net-CFO
+ * chart, and the grand totals. Mirrors the on-screen Movers grouping so the two
+ * reconcile. */
+function shapeMoverGroups(rows: MoverRow[], forecastActive: boolean, areaLabelOf: (a: string) => string): {
+  cards: MoversCard[]; chartRows: { label: string; value: number; forecast?: number }[]
+  grand: { netOps: number; fcNetOps?: number; payStart: number | null; payEnd: number | null }; gN: number; gMain: number
+} {
+  const byArea = new Map<string, MoverRow[]>()
+  for (const r of rows) { const a = byArea.get(r.area) ?? []; a.push(r); byArea.set(r.area, a) }
+  const groups = [...byArea.entries()].map(([area, items]) => {
+    let ps = 0, pe = 0, hasPay = false
+    for (const r of items) if (r.payStart != null || r.payEnd != null) { ps += r.payStart ?? 0; pe += r.payEnd ?? 0; hasPay = true }
+    return {
+      area, label: areaLabelOf(area),
+      netOps: items.reduce((t, r) => t + r.netOps, 0),
+      fcNetOps: items.reduce((t, r) => t + (r.fcNetOps ?? 0), 0),
+      payStart: hasPay ? ps : null, payEnd: hasPay ? pe : null,
+      items: [...items].sort((a, b) => b.netOps - a.netOps),
+    }
+  }).sort((a, b) => Math.abs(b.netOps) - Math.abs(a.netOps))
+  const cards: MoversCard[] = groups.map(g => ({
+    label: g.label, count: `${g.items.length}`,
+    rows: g.items.map(r => ({ code: r.code, star: r.isPrimary, netOps: r.netOps, fcNetOps: r.fcNetOps, payStart: r.payStart, payEnd: r.payEnd })),
+    subNet: g.netOps, subFc: forecastActive ? g.fcNetOps : undefined, subPayStart: g.payStart, subPayEnd: g.payEnd,
+  }))
+  let netOps = 0, fcNetOps = 0, ps = 0, pe = 0, hasPay = false, gMain = 0
+  for (const r of rows) {
+    netOps += r.netOps; fcNetOps += (r.fcNetOps ?? 0); if (r.isPrimary) gMain++
+    if (r.payStart != null || r.payEnd != null) { ps += r.payStart ?? 0; pe += r.payEnd ?? 0; hasPay = true }
+  }
+  const chartRows = rows.map(r => ({ label: r.code, value: r.netOps, forecast: forecastActive ? (r.fcNetOps ?? 0) : undefined }))
+  return { cards, chartRows, grand: { netOps, fcNetOps: forecastActive ? fcNetOps : undefined, payStart: hasPay ? ps : null, payEnd: hasPay ? pe : null }, gN: rows.length, gMain }
+}
+
+/* Which report pages to include in the printed package. */
+type PkgSelection = { group: boolean; area: boolean; sections: boolean; moversAll: boolean; moversMain: boolean; projects: boolean }
+const PKG_ITEMS: { key: keyof PkgSelection; label: string; hint: string }[] = [
+  { key: 'group', label: 'Group page', hint: 'The consolidated cash-flow statement + payables' },
+  { key: 'area', label: 'Area page', hint: 'One row per area — net cash from ops + payables' },
+  { key: 'sections', label: 'Sections page', hint: "Each section's net, broken down by area" },
+  { key: 'moversAll', label: 'Movers page — all projects', hint: 'Every project, grouped by area' },
+  { key: 'moversMain', label: 'Movers page — mainstream only', hint: 'Mainstream projects only (secondary dropped)' },
+  { key: 'projects', label: 'Project page for every mainstream project', hint: 'One full page per mainstream project' },
+]
+
+/* Print-package modal — tick the pages to include; Generate builds one bookmarked
+ * PDF (open the print dialog → Save as PDF → run through /pdf-bookmarker). */
+function PrintPackageModal({ open, busy, onClose, onGenerate }: {
+  open: boolean; busy: boolean; onClose: () => void; onGenerate: (sel: PkgSelection) => void
+}) {
+  const [sel, setSel] = useState<PkgSelection>({ group: true, area: true, sections: true, moversAll: true, moversMain: true, projects: true })
+  if (!open) return null
+  const toggle = (k: keyof PkgSelection) => setSel(s => ({ ...s, [k]: !s[k] }))
+  const nSel = PKG_ITEMS.filter(i => sel[i.key]).length
+  return createPortal(
+    <div className="crp-pkg-overlay" onClick={busy ? undefined : onClose}>
+      <div className="crp-pkg-modal" onClick={e => e.stopPropagation()}>
+        <div className="crp-pkg-head">
+          <div>
+            <h2>Print report package</h2>
+            <p>Pick the pages — they print as one PDF, each on its own page, with bookmarks the <b>/pdf-bookmarker</b> tool reads.</p>
+          </div>
+          <button className="crp-pkg-x" onClick={onClose} disabled={busy} aria-label="Close">×</button>
+        </div>
+        <div className="crp-pkg-list">
+          {PKG_ITEMS.map(it => (
+            <label key={it.key} className={`crp-pkg-row ${sel[it.key] ? 'on' : ''}`}>
+              <input type="checkbox" checked={sel[it.key]} onChange={() => toggle(it.key)} disabled={busy} />
+              <span className="crp-pkg-rowt"><b>{it.label}</b><span>{it.hint}</span></span>
+            </label>
+          ))}
+        </div>
+        <div className="crp-pkg-foot">
+          <span className="crp-pkg-count">{nSel} of {PKG_ITEMS.length} selected</span>
+          <div>
+            <button className="crp-pickbtn" onClick={onClose} disabled={busy}>Cancel</button>
+            <button className="crp-pkg-go" onClick={() => onGenerate(sel)} disabled={busy || nSel === 0}>{busy ? 'Building…' : 'Generate PDF'}</button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
 }
 
 /* KPI tile band — the headline numbers, shared across the three pages. */
@@ -699,14 +920,14 @@ function AreaView({ matched, year, asOfLabel, startLabel, fcNetOpsByArea, foreca
  * / Negative), which surfaces the biggest movers in each direction. Payables are
  * the CCC-share trade payables of each project's mapped TB books (blank where a
  * project is not yet mapped — same as the Area page). */
-type MoverRow = { key: string; area: string; code: string; netOps: number; fcNetOps?: number; payStart: number | null; payEnd: number | null; isPrimary: boolean }
-function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, startLabel, forecastActive, horizonMonth, horizonLabel, registerPrint }: {
+function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, startLabel, forecastActive, horizonMonth, horizonLabel, registerPrint, onOpenPackage }: {
   scope: Scope; fxMap: Map<string, number | null>; areaOptions: { areaId: string; label: string }[]
   year: number; asOfMonth: number; asOfLabel: string; startLabel: string
   forecastActive: boolean; horizonMonth: number; horizonLabel: string
   registerPrint: (fn: (() => void) | null) => void
+  onOpenPackage: () => void
 }) {
-  const ALL = '__ALL__', SEP = '', MINIMAL = 100_000   // "minimal mover" = |CFO| under 0.1m
+  const ALL = '__ALL__', MINIMAL = 100_000   // "minimal mover" = |CFO| under 0.1m
   const [areaId, setAreaId] = useState<string>(ALL)
   const [moverFilter, setMoverFilter] = useState<'both' | 'pos' | 'neg'>('both')
   const [tierFilter, setTierFilter] = useState<'all' | 'main' | 'secondary'>('all')  // mainstream vs secondary (is_primary from Nexus)
@@ -747,35 +968,13 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
   }, [areaId, scope.primaryVersion, year, asOfMonth, forecastActive, horizonMonth])
 
   const opCodes = useMemo(() => new Set(scope.lines.filter(l => l.category === 'Operation' || l.category === 'Claims').map(l => l.line_code)), [scope.lines])
-  const rateOf = (cur?: string) => (cur || 'USD') === 'USD' ? 1 : (fxMap.get(cur || '') ?? null)
   const areaLabelOf = (a: string) => areaOptions.find(o => o.areaId === a)?.label || a
 
-  // Per-project net cash from operations (USD) — actual, then the forecast tail.
-  const projOpsOf = (src: typeof cells) => {
-    const agg = new Map<string, { area: string; code: string; netOps: number }>()
-    for (const c of src) {
-      const code = c.project_code; if (!code) continue
-      if (!opCodes.has(c.line_code)) continue
-      const r = rateOf(c.currency); if (r == null) continue
-      const key = c.area + SEP + code
-      let a = agg.get(key); if (!a) { a = { area: c.area, code, netOps: 0 }; agg.set(key, a) }
-      a.netOps += c.value * r
-    }
-    return agg
-  }
-  const projOps = useMemo(() => projOpsOf(cells), [cells, opCodes, fxMap])
-  const fcProjOps = useMemo(() => forecastActive ? projOpsOf(fcCells) : new Map(), [forecastActive, fcCells, opCodes, fxMap])
-
-  // Attach each project's forecast net ops + trade-payables at the two periods.
-  const rows = useMemo<MoverRow[]>(() => {
-    return [...projOps.entries()].map(([key, x]) => {
-      const cid = payMaps?.cfCodeToCanon.get(x.code.toUpperCase())
-      const books = cid ? (payMaps?.canonToBooks.get(cid) ?? []) : []
-      let ps = 0, pe = 0, has = false
-      for (const b of books) { const bm = bookBal.get(b); if (bm) { ps += bm.get(decP) ?? 0; pe += bm.get(asOfP) ?? 0; has = true } }
-      return { key, area: x.area, code: x.code, netOps: x.netOps, fcNetOps: forecastActive ? (fcProjOps.get(key)?.netOps ?? 0) : undefined, payStart: has ? ps : null, payEnd: has ? pe : null, isPrimary: cid ? !!payMaps?.primaryCanon.has(cid) : false }
-    }).sort((a, b) => Math.abs(b.netOps) - Math.abs(a.netOps))
-  }, [projOps, fcProjOps, forecastActive, payMaps, bookBal, decP, asOfP])
+  // Per-project net cash from operations (USD) + payables + mainstream flag —
+  // built by the shared helper so the screen and the print package agree.
+  const rows = useMemo<MoverRow[]>(() =>
+    buildMoverRows({ cells, fcCells, opCodes, fxMap, payMaps, bookBal, decP, asOfP, forecastActive }),
+    [cells, fcCells, opCodes, fxMap, payMaps, bookBal, decP, asOfP, forecastActive])
 
   const nPrimary = useMemo(() => rows.filter(r => r.isPrimary).length, [rows])
   const shown = useMemo(() => {
@@ -1005,7 +1204,7 @@ function MoversView({ scope, fxMap, areaOptions, year, asOfMonth, asOfLabel, sta
         )}
         {nPrimary > 0 && (
           <div className="crp-pick">
-            <button className="crp-pickbtn crp-pickbtn--main" onClick={() => printMovers(true)} title="Print mainstream projects in full; fold every other project into one Secondary line per area (totals reconcile)">Print main</button>
+            <button className="crp-pickbtn crp-pickbtn--main" onClick={onOpenPackage} title="Build a print-ready report package (Group, Area, Sections, Movers, and a page per mainstream project) with PDF bookmarks">Print main…</button>
           </div>
         )}
       </div>

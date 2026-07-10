@@ -38,15 +38,36 @@ function fmtFor(d: PrintDisp): Fmt {
   return { fM, fD }
 }
 const cl = (v: number | null | undefined): string => (v == null || Math.abs(v) < 50000) ? '' : (v < 0 ? 'neg' : 'pos')
+const esc = (s: string): string => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string))
 
 function kpis(cards: { label: string; value: string; cls?: string; sub?: string }[]): string {
   return `<div class="kpis">${cards.map(c =>
     `<div class="kpi"><div class="kpi-l">${c.label}</div><div class="kpi-v ${c.cls || ''}">${c.value}</div>${c.sub ? `<div class="kpi-s">${c.sub}</div>` : ''}</div>`).join('')}</div>`
 }
 const LOGO = (typeof window !== 'undefined' ? window.location.origin : '') + '/ccc-logo.png'
-function head(title: string, sub: string): string {
+
+/* Invisible bookmark anchor — BMK<<base64({d,t})>>BMK, matching the gacc-workbench
+ * BookmarkAnchor + the work-dashboard /pdf-bookmarker regex. Rendered in ~1pt
+ * transparent text INSIDE the h1 (shares its line box → no layout strut). `<<`/`>>`
+ * as entities so the HTML parser doesn't choke; they render as the literal glyphs
+ * the extractor reads. base64 via the browser form (also valid in the node render
+ * harness). Depth 0 = top-level; depth 1 = nested under the preceding top-level. */
+export type Bmk = { title: string; depth: number }
+// A sheet may carry more than one anchor (e.g. a depth-0 section header + the
+// depth-1 item on the same page), so the outline can nest.
+function bmkAnchor(bmk?: Bmk | Bmk[] | null): string {
+  if (!bmk) return ''
+  const arr = Array.isArray(bmk) ? bmk : [bmk]
+  return arr.map(b => {
+    if (!b || !b.title) return ''
+    const json = JSON.stringify({ d: b.depth || 0, t: String(b.title) })
+    const b64 = btoa(unescape(encodeURIComponent(json)))
+    return `<span class="bmk" aria-hidden="true">BMK&lt;&lt;${b64}&gt;&gt;BMK</span>`
+  }).join('')
+}
+function head(title: string, sub: string, bmk?: Bmk | Bmk[] | null): string {
   return `<div class="head"><img class="logo" src="${LOGO}" alt="CCC"/>
-    <div class="ht"><h1>${title}</h1><div class="sub">${sub}</div></div>
+    <div class="ht"><h1>${title}${bmkAnchor(bmk)}</h1><div class="sub">${sub}</div></div>
     <div class="brand">Treasury</div></div>`
 }
 
@@ -71,7 +92,7 @@ export type GroupForecast = {
   dual: { sections: DualSection[]; netA: number; netF: number }
   horizonLabel: string
 }
-type GroupOpts = {
+export type GroupOpts = {
   scopeLabel: string; asOfLabel: string; startLabel: string; cashStartLabel?: string; matchedCount?: number
   statement: { sections: StmtSection[]; netMovement: number }
   payStart?: number; payEnd?: number; hasPay?: boolean
@@ -80,6 +101,7 @@ type GroupOpts = {
   paySeries?: { label: string; value: number }[]
   forecast?: GroupForecast
   disp: PrintDisp
+  bmk?: Bmk | Bmk[] | null
 }
 // short section labels for the timeline driver chips (mirror the screen)
 const SHORT_SEC: Record<string, string> = { 'Bank Financing': 'Financing', 'Within Group': 'Within group', 'Non Operational': 'Non-op', 'New Sales': 'New sales' }
@@ -175,16 +197,17 @@ function groupSheet(o: GroupOpts): string {
   const sub = fc
     ? `Actual Jan–${o.asOfLabel} · forecast to ${fc.horizonLabel} · ${o.disp.lineUnit}${o.matchedCount != null ? ` · ${o.matchedCount} areas` : ''}`
     : `Actual to date · Jan–${o.asOfLabel} · ${o.disp.lineUnit}${o.matchedCount != null ? ` · ${o.matchedCount} areas` : ''}`
-  return sheet(head(`Cash Flow Report — ${o.scopeLabel}`, sub)
+  return sheet(head(`Cash Flow Report — ${o.scopeLabel}`, sub, o.bmk)
     + timeline + `<div class="groupcols">${stmtCols}${charts}</div>`, true)
 }
 
-type AreaOpts = {
+export type AreaOpts = {
   asOfLabel: string; startLabel: string
   areaRows: { label: string; netOps: number; fcNetOps?: number; payStart: number | null; payEnd: number | null }[]
   areaTotals: { netOps: number; fcNetOps?: number; payStart: number; payEnd: number }
   forecastActive?: boolean; horizonLabel?: string
   disp: PrintDisp
+  bmk?: Bmk | Bmk[] | null
 }
 function areaSheet(o: AreaOpts): string {
   const f = fmtFor(o.disp)
@@ -205,7 +228,7 @@ function areaSheet(o: AreaOpts): string {
   const sub = fc ? `Actual Jan–${o.asOfLabel} · forecast to ${o.horizonLabel} · ${o.disp.lineUnit} · ${o.areaRows.length} areas`
     : `Actual to date · Jan–${o.asOfLabel} · ${o.disp.lineUnit} · ${o.areaRows.length} areas`
   // No KPI band — chart is the headline, given the full sheet height.
-  return sheet(head('Cash Flow Report — Areas', sub)
+  return sheet(head('Cash Flow Report — Areas', sub, o.bmk)
     + `<div class="cols"><div>${left}</div><div>${right}</div></div>`)
 }
 
@@ -218,6 +241,7 @@ export type ProjectPrint = {
   /* When set, months after index `actualCount` are the forecast tail (faded /
    * tinted); `horizonLabel` names the horizon. */
   actualCount?: number; horizonLabel?: string
+  bmk?: Bmk | Bmk[] | null
 }
 function projectSheet(p: ProjectPrint, disp: PrintDisp): string {
   const f = fmtFor(disp)
@@ -242,15 +266,16 @@ function projectSheet(p: ProjectPrint, disp: PrintDisp): string {
     : ''
   const sub = fc ? `${p.areaLabel} · monthly · actual Jan–${p.asOfLabel} · forecast to ${p.horizonLabel} · ${disp.lineUnit}`
     : `${p.areaLabel} · monthly actuals Jan–${p.asOfLabel} · ${disp.lineUnit}`
-  return sheet(head(`Cash Flow Report — ${p.project}`, sub)
+  return sheet(head(`Cash Flow Report — ${p.project}`, sub, p.bmk)
     + band + `<div class="cols"><div>${table}</div><div>${chart}${payChart}</div></div>`)
 }
 
-type SectionsOpts = {
+export type SectionsOpts = {
   asOfLabel: string; matchedCount: number
   sections: { label: string; net: number; fcNet?: number; rows: { label: string; value: number; forecast?: number }[] }[]
   forecastActive?: boolean; horizonLabel?: string
   disp: PrintDisp
+  bmk?: Bmk | Bmk[] | null
 }
 function sectionsSheet(o: SectionsOpts): string {
   const f = fmtFor(o.disp)
@@ -262,8 +287,60 @@ function sectionsSheet(o: SectionsOpts): string {
   const sub = o.forecastActive
     ? `Actual Jan–${o.asOfLabel} · forecast to ${o.horizonLabel} · ${o.disp.lineUnit} · ${o.matchedCount} areas · each section's net, by area`
     : `Actual to date · Jan–${o.asOfLabel} · ${o.disp.lineUnit} · ${o.matchedCount} areas · each section's net, by area`
-  return sheet(head('Cash Flow Report — Sections', sub)
+  return sheet(head('Cash Flow Report — Sections', sub, o.bmk)
     + `<div class="seccols">${cols}</div>`)
+}
+
+/* ── Movers sheet — projects grouped by area (package only) ───────────────────
+ * The Movers screen renders its own standalone print (printMovers in CashReport);
+ * this is the same content laid on the shared .sheet system so it composes into a
+ * bookmarkable package. Cards are pre-shaped by the caller (one per area, project
+ * rows + subtotal); a diverging net-CFO chart trails the cards. */
+export type MoversCardRow = { code: string; star: boolean; netOps: number; fcNetOps?: number; payStart: number | null; payEnd: number | null; sec?: boolean }
+export type MoversCard = { label: string; count: string; rows: MoversCardRow[]; subNet: number; subFc?: number; subPayStart: number | null; subPayEnd: number | null }
+export type MoversOpts = {
+  title: string; areaLabel: string; asOfLabel: string; startLabel: string
+  forecastActive?: boolean; horizonLabel?: string; headNote: string
+  cards: MoversCard[]
+  chartRows: { label: string; value: number; forecast?: number }[]
+  grand: { netOps: number; fcNetOps?: number; payStart: number | null; payEnd: number | null }
+  gN: number; gMain: number
+  disp: PrintDisp
+  bmk?: Bmk | Bmk[] | null
+}
+function moversSheet(o: MoversOpts): string {
+  const f = fmtFor(o.disp)
+  const fc = !!o.forecastActive
+  const payD = (s: number | null, e: number | null) => (s != null && e != null) ? e - s : null
+  const cell = (v: number | null | undefined) => `<td class="r ${cl(v)}">${f.fM(v)}</td>`
+  const fcell = (v: number | null | undefined) => fc ? `<td class="r fc ${cl(v)}">${f.fM(v)}</td>` : ''
+  const dcell = (v: number | null) => `<td class="r ${cl(v)}">${f.fD(v)}</td>`
+  const shortPd = (l: string) => l.replace(/\s*20(\d\d)\b/, " '$1")
+  const thead = `<thead><tr><th>Project</th><th class="r">Net</th>${fc ? '<th class="r fc">Fcst</th>' : ''}<th class="r">${shortPd(o.startLabel)}</th><th class="r">${shortPd(o.asOfLabel)}</th><th class="r">Δ</th></tr></thead>`
+  const cardHtml = (c: MoversCard) => {
+    if (c.rows.length === 1) {
+      const r = c.rows[0]
+      return `<div class="pcard pcard--one">
+        <div class="pcard-h"><span class="pcard-name">${esc(c.label)}</span>${r.star ? '<span class="star">★</span>' : r.sec ? `<span class="k">${esc(c.count)}</span>` : ''}</div>
+        <table class="pct">${thead}<tbody>
+          <tr class="one ${r.sec ? 'sec' : ''}"><td class="p">${esc(r.code)}</td>${cell(r.netOps)}${fcell(r.fcNetOps)}${cell(r.payStart)}${cell(r.payEnd)}${dcell(payD(r.payStart, r.payEnd))}</tr>
+        </tbody></table></div>`
+    }
+    return `<div class="pcard">
+      <div class="pcard-h"><span class="pcard-name">${esc(c.label)}</span><span class="k">${esc(c.count)}</span></div>
+      <table class="pct">${thead}<tbody>
+        ${c.rows.map(r => `<tr class="${r.sec ? 'sec' : ''}"><td class="p">${esc(r.code)}${r.star ? ' <span class="star">★</span>' : ''}</td>${cell(r.netOps)}${fcell(r.fcNetOps)}${cell(r.payStart)}${cell(r.payEnd)}${dcell(payD(r.payStart, r.payEnd))}</tr>`).join('')}
+        <tr class="sub"><td>Subtotal</td>${cell(c.subNet)}${fcell(c.subFc)}${cell(c.subPayStart)}${cell(c.subPayEnd)}${dcell(payD(c.subPayStart, c.subPayEnd))}</tr>
+      </tbody></table></div>`
+  }
+  const g = o.grand
+  const totStr = `${o.gMain} main · ${o.gN} project${o.gN === 1 ? '' : 's'}`
+  const ptotal = `<div class="ptotal"><span><span class="lbl">${esc(o.areaLabel)} total</span><span class="k" style="color:#9aa4b2">${totStr}</span></span><span><span class="lbl">Net cash from ops</span><b class="${cl(g.netOps)}">${f.fM(g.netOps)}</b>${fc ? ` <span class="lbl">fcst</span><b>${f.fM(g.fcNetOps)}</b>` : ''}</span><span><span class="lbl">Payables ${o.startLabel} → ${o.asOfLabel}</span><b>${f.fM(g.payStart)} → ${f.fM(g.payEnd)}</b> <b class="${cl(payD(g.payStart, g.payEnd))}">${f.fD(payD(g.payStart, g.payEnd))}</b></span></div>`
+  const sub = fc
+    ? `${o.areaLabel} · net cash from operations · actual Jan–${o.asOfLabel} · forecast to ${o.horizonLabel} · ${o.disp.lineUnit} · ${o.headNote}`
+    : `${o.areaLabel} · net cash from operations · Jan–${o.asOfLabel} · ${o.disp.lineUnit} · ${o.headNote}`
+  const chart = o.chartRows.length ? `<div class="pchart">${areaBarsSvg(o.chartRows, { div: o.disp.div, dec: o.disp.dec }, { zoom: 1.05, maxRows: 26 })}</div>` : ''
+  return sheet(head(o.title, sub, o.bmk) + ptotal + `<div class="pflow">${o.cards.map(cardHtml).join('')}${chart}</div>`)
 }
 
 /* wide=true lays the sheet out on a wider design canvas (1240px). The page stays
@@ -347,7 +424,30 @@ const STYLE = `
   .stmtcard .t td { padding-top: 4px; padding-bottom: 4px; }
   .paysum { display: flex; gap: 16px; margin-top: 6px; font-size: 10px; color: #64748b; }
   .paysum b { font-variant-numeric: tabular-nums; }
-  .note { font-size: 10.5px; color: #64748b; line-height: 1.5; margin-top: 8px; } .note b { color: #15233b; }`
+  .note { font-size: 10.5px; color: #64748b; line-height: 1.5; margin-top: 8px; } .note b { color: #15233b; }
+  /* Invisible bookmark anchor — present in the PDF text layer, invisible on paper.
+     text-transform/letter-spacing reset so the base64 payload isn't corrupted. */
+  .bmk { font-size: 1pt; color: transparent; background: #fff; white-space: nowrap; text-transform: none; letter-spacing: normal; font-variant-caps: normal; }
+  /* Movers page (package) — projects grouped by area as full-width masonry cards
+     + a diverging net-CFO chart trailing at the end. Mirrors the standalone
+     printMovers layout, laid on the shared .sheet so it composes into the package. */
+  .ptotal { display: flex; align-items: baseline; gap: 16px; background: #141414; color: #fff; border-radius: 7px; padding: 7px 13px; margin-bottom: 10px; font-size: 10.5px; }
+  .ptotal b { font-size: 12px; font-variant-numeric: tabular-nums; } .ptotal .neg { color: #ff7a8a; } .ptotal .pos { color: #6ee7a8; }
+  .ptotal .lbl { color: #9aa4b2; text-transform: uppercase; letter-spacing: .4px; font-size: 8px; font-weight: 700; margin-right: 5px; }
+  .pflow { columns: 300px; column-gap: 12px; }
+  .pchart { break-inside: avoid; margin-top: 2px; } .pchart svg { width: 100%; height: auto; display: block; }
+  .pcard { break-inside: avoid; border: 1px solid #e2e8f0; border-radius: 7px; overflow: hidden; margin: 0 0 11px; }
+  .pcard-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; background: #f1f4f8; border-bottom: 1px solid #e2e8f0; padding: 5px 9px; }
+  .pcard-name { font-weight: 800; text-transform: uppercase; font-size: 11.5px; letter-spacing: .3px; }
+  .pct { width: 100%; border-collapse: collapse; font-size: 11.5px; table-layout: fixed; }
+  .pct th { text-align: left; font-size: 8.5px; text-transform: uppercase; letter-spacing: .3px; color: #94a3b8; font-weight: 700; border-bottom: 1px solid #e2e8f0; padding: 2.5px 6px; }
+  .pct th.r, .pct td.r { text-align: right; font-variant-numeric: tabular-nums; width: 50px; } .pct th.r { white-space: nowrap; }
+  .pct td { padding: 2.5px 6px; } .pct td.p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pct td.fc, .pct th.fc { color: #9a7b3c; } .pct td.fc.neg { color: #E10020; opacity: .8; } .pct td.fc.pos { color: #057a55; opacity: .8; }
+  .pct tr.sec td { color: #64748b; font-style: italic; }
+  .pct tr.sub td { font-weight: 800; border-top: 1.4px solid #141414; }
+  .pcard--one .pct tr.one td { font-weight: 700; } .pcard--one .pct tr.one.sec td { font-weight: 600; font-style: italic; color: #64748b; }
+  .star { color: #E10020; font-style: normal; } .k { color: #94a3b8; font-weight: 600; font-size: 8.5px; }`
 
 // Scale each sheet down so it fits exactly one landscape page (never spills).
 const FIT_SCRIPT = `window.onload = function () {
@@ -398,4 +498,29 @@ export function buildReportHtml(o: Opts): string {
 export function buildProjectsPrintHtml(projects: ProjectPrint[], disp: PrintDisp = DEF): string {
   const title = projects.length === 1 ? `Cash Flow Report — ${projects[0].project}` : `Cash Flow Report — ${projects.length} projects`
   return skeleton(title, projects.map(p => projectSheet(p, disp)).join(''))
+}
+
+/* ── Print package ────────────────────────────────────────────────────────────
+ * A single document composed of any subset of report sheets, each on its own
+ * page and carrying an invisible bookmark anchor (via opts.bmk), so running the
+ * PDF through /pdf-bookmarker yields a matching outline. The caller builds each
+ * sheet with its opts (incl. bmk) and hands the ordered list here. Each builder
+ * already returns a `.page` block; skeleton adds the shared style + fit script. */
+export type PackageSheet =
+  | { kind: 'group'; opts: GroupOpts }
+  | { kind: 'area'; opts: AreaOpts }
+  | { kind: 'sections'; opts: SectionsOpts }
+  | { kind: 'movers'; opts: MoversOpts }
+  | { kind: 'project'; opts: ProjectPrint; disp?: PrintDisp }
+export function buildPackageHtml(sheets: PackageSheet[], title = 'Cash Flow Report — package'): string {
+  const bodies = sheets.map(s => {
+    switch (s.kind) {
+      case 'group': return groupSheet(s.opts)
+      case 'area': return areaSheet(s.opts)
+      case 'sections': return sectionsSheet(s.opts)
+      case 'movers': return moversSheet(s.opts)
+      case 'project': return projectSheet(s.opts, s.disp ?? DEF)
+    }
+  })
+  return skeleton(title, bodies.join(''))
 }

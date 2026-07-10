@@ -1,4 +1,4 @@
-import { subgroupMatchesArea, type CfCell, type CanonicalArea, type CfLine, type PayablesTrajRow } from '@/lib/queries'
+import { subgroupMatchesArea, type CfCell, type CanonicalArea, type CfLine, type PayablesTrajRow, type PayablesMaps } from '@/lib/queries'
 import { flowSections } from '@/lib/cfTaxonomy'
 
 /* Shared model for the Cash Flow Report — used by both the screen (CashReport)
@@ -295,6 +295,57 @@ export function buildDualStatement(
     out.push({ label: sec.label, receipts, payments, recA, recF, payA, payF, netA: secNetA, netF: secNetF })
   }
   return { sections: out, netA, netF }
+}
+
+/* ── Movers rows (per-project) ────────────────────────────────────────────────
+ * One row per cf project: net cash from operations (Operation + Claims, USD) +
+ * the project's CCC-share trade payables at the two periods, and its `isPrimary`
+ * (mainstream) flag from Nexus. Shared by the Movers screen and the print package
+ * so the numbers are computed in exactly one place. */
+export type MoverRow = {
+  key: string; area: string; code: string
+  netOps: number; fcNetOps?: number
+  payStart: number | null; payEnd: number | null
+  isPrimary: boolean
+}
+export function buildMoverRows(params: {
+  cells: (CfCell & { project_code: string | null; currency?: string })[]
+  fcCells: (CfCell & { project_code: string | null; currency?: string })[]
+  opCodes: Set<string>
+  fxMap: Map<string, number | null>
+  payMaps: PayablesMaps | null
+  bookBal: Map<string, Map<number, number>>
+  decP: number; asOfP: number; forecastActive: boolean
+}): MoverRow[] {
+  const { cells, fcCells, opCodes, fxMap, payMaps, bookBal, decP, asOfP, forecastActive } = params
+  const rateOf = (cur?: string) => (cur || 'USD') === 'USD' ? 1 : (fxMap.get(cur || '') ?? null)
+  // Per-project net cash from operations (USD) for a cell source (actual or forecast).
+  const projOpsOf = (src: typeof cells) => {
+    const agg = new Map<string, { area: string; code: string; netOps: number }>()
+    for (const c of src) {
+      const code = c.project_code; if (!code) continue
+      if (!opCodes.has(c.line_code)) continue
+      const r = rateOf(c.currency); if (r == null) continue
+      const key = c.area + code
+      let a = agg.get(key); if (!a) { a = { area: c.area, code, netOps: 0 }; agg.set(key, a) }
+      a.netOps += c.value * r
+    }
+    return agg
+  }
+  const projOps = projOpsOf(cells)
+  const fcProjOps = forecastActive ? projOpsOf(fcCells) : new Map<string, { netOps: number }>()
+  return [...projOps.entries()].map(([key, x]) => {
+    const cid = payMaps?.cfCodeToCanon.get(x.code.toUpperCase())
+    const books = cid ? (payMaps?.canonToBooks.get(cid) ?? []) : []
+    let ps = 0, pe = 0, has = false
+    for (const b of books) { const bm = bookBal.get(b); if (bm) { ps += bm.get(decP) ?? 0; pe += bm.get(asOfP) ?? 0; has = true } }
+    return {
+      key, area: x.area, code: x.code, netOps: x.netOps,
+      fcNetOps: forecastActive ? (fcProjOps.get(key)?.netOps ?? 0) : undefined,
+      payStart: has ? ps : null, payEnd: has ? pe : null,
+      isPrimary: cid ? !!payMaps?.primaryCanon.has(cid) : false,
+    }
+  }).sort((a, b) => Math.abs(b.netOps) - Math.abs(a.netOps))
 }
 
 export type PaySeriesPt = { period: number; usd: number }
