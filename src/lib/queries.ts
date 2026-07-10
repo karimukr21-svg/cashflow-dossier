@@ -397,24 +397,35 @@ export type PayablesMaps = {
 }
 
 export async function fetchPayablesMaps(): Promise<PayablesMaps> {
-  const [tc, oc, pr] = await Promise.all([
+  const [tc, oc, pr, pj] = await Promise.all([
     supabase.from('entity_alias').select('local_key, canonical_id').eq('source_system', 'treasury_cashflow'),
     supabase.from('entity_alias').select('local_key, canonical_id').eq('source_system', 'org_chart'),
     supabase.from('canonical_entity').select('id').eq('entity_type', 'project').eq('is_primary', true),
+    supabase.from('canonical_entity').select('id').eq('entity_type', 'project'),
   ])
   if (tc.error) throw tc.error
   if (oc.error) throw oc.error
   if (pr.error) throw pr.error
+  if (pj.error) throw pj.error
   const primaryCanon = new Set<string>(((pr.data ?? []) as { id: string }[]).map((r) => r.id))
+  // Per-project payables must come from a PROJECT node's own books. A cf project
+  // that isn't precisely mapped falls back to its AREA (or virtual) canonical, and
+  // that node owns the whole area's book set — so attributing its books would show
+  // the entire area's payables on every unmapped project (Karim, 2026-07-10). Gate
+  // book attribution to project-type canonicals; area/virtual-mapped cf projects
+  // then show blank payables (honestly = not yet mapped to a project's books).
+  const projectCanon = new Set<string>(((pj.data ?? []) as { id: string }[]).map((r) => r.id))
   const cfCodeToCanon = new Map<string, string>()
   for (const r of (tc.data ?? []) as { local_key: string; canonical_id: string }[]) {
     const code = r.local_key.replace(/^proj:/, '').trim().toUpperCase()
     if (code) cfCodeToCanon.set(code, r.canonical_id)
   }
   // org_chart local_key = '<CONSOLIDATION>::<BOOKCODE>' → bare BOOKCODE, deduped
-  // per canonical (same book under multiple consolidations must count once).
+  // per canonical (same book under multiple consolidations must count once). Only
+  // project-node books are kept (see the gate above).
   const canonToBookSet = new Map<string, Set<string>>()
   for (const r of (oc.data ?? []) as { local_key: string; canonical_id: string }[]) {
+    if (!projectCanon.has(r.canonical_id)) continue
     const book = (r.local_key.split('::')[1] ?? '').trim()
     if (!book) continue
     let s = canonToBookSet.get(r.canonical_id)
