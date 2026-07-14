@@ -29,6 +29,12 @@ export default function PayablesDefinition({ canManage }: { canManage: boolean }
   const [q, setQ] = useState('')
   const [results, setResults] = useState<Acct[]>([])
   const [searching, setSearching] = useState(false)
+  // Sort for the "Accounts presented" table. Default: USD magnitude, largest first
+  // (the order this table has always shown). Click a header to sort by that column.
+  const [sort, setSort] = useState<{ col: 'account' | 'name' | 'usd'; dir: 'asc' | 'desc' }>({ col: 'usd', dir: 'desc' })
+  const toggleSort = (col: 'account' | 'name' | 'usd') =>
+    setSort(s => s.col === col ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: col === 'usd' ? 'desc' : 'asc' })
+  const sortArrow = (col: 'account' | 'name' | 'usd') => sort.col === col ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''
 
   const loadDef = useCallback(async (gid: number) => {
     const [rl, mm, ra] = await Promise.all([
@@ -43,8 +49,7 @@ export default function PayablesDefinition({ canManage }: { canManage: boolean }
     if (keys.length) {
       const bal = await supabase.from('v_tb_account').select('account, name, usd_bal').in('account', keys)
       const byK = new Map((((bal.data ?? []) as Acct[])).map(a => [a.account, a]))
-      setResolved(keys.map(k => byK.get(k) ?? { account: k, name: null, usd_bal: 0 })
-        .sort((a, b) => Math.abs(b.usd_bal) - Math.abs(a.usd_bal)))
+      setResolved(keys.map(k => byK.get(k) ?? { account: k, name: null, usd_bal: 0 }))
     } else setResolved([])
   }, [])
 
@@ -80,6 +85,14 @@ export default function PayablesDefinition({ canManage }: { canManage: boolean }
   const included = useMemo(() => new Set(members.filter(m => m.action === 'include').map(m => m.account_key)), [members])
   const resolvedSet = useMemo(() => new Set(resolved.map(a => a.account)), [resolved])
   const total = useMemo(() => resolved.reduce((s, a) => s + a.usd_bal, 0), [resolved])
+  const sortedResolved = useMemo(() => {
+    const sign = sort.dir === 'asc' ? 1 : -1
+    return [...resolved].sort((a, b) => {
+      if (sort.col === 'account') return sign * a.account.localeCompare(b.account, undefined, { numeric: true })
+      if (sort.col === 'name') return sign * (a.name ?? '').localeCompare(b.name ?? '')
+      return sign * (Math.abs(a.usd_bal) - Math.abs(b.usd_bal))
+    })
+  }, [resolved, sort])
   const [exBal, setExBal] = useState<Map<string, Acct>>(new Map())
   useEffect(() => {
     if (!excluded.length) { setExBal(new Map()); return }
@@ -146,9 +159,14 @@ export default function PayablesDefinition({ canManage }: { canManage: boolean }
         <div className="def-h">Accounts presented <span>· {resolved.length} · {fmtM(total)}m</span></div>
         <div className="def-tablewrap">
           <table className="def-table">
-            <thead><tr><th>Account</th><th>Name</th><th className="r">USD m</th><th></th></tr></thead>
+            <thead><tr>
+              <th className="def-sortable" role="button" aria-sort={sort.col === 'account' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'} onClick={() => toggleSort('account')}>Account{sortArrow('account')}</th>
+              <th className="def-sortable" role="button" aria-sort={sort.col === 'name' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'} onClick={() => toggleSort('name')}>Name{sortArrow('name')}</th>
+              <th className="r def-sortable" role="button" aria-sort={sort.col === 'usd' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'} onClick={() => toggleSort('usd')}>USD m{sortArrow('usd')}</th>
+              <th></th>
+            </tr></thead>
             <tbody>
-              {resolved.map(a => (
+              {sortedResolved.map(a => (
                 <tr key={a.account}>
                   <td className="def-acct">{a.account}{included.has(a.account) && <span className="def-tag">added</span>}</td>
                   <td className="def-name">{a.name}</td>

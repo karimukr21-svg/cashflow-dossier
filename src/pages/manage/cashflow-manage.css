@@ -710,6 +710,8 @@
 .def-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .def-table th { text-align: left; color: #64748b; font-size: 8.5px; letter-spacing: .4px; text-transform: uppercase; font-weight: 700; padding: 7px 14px; background: #fafbfc; border-bottom: 1px solid var(--border, #e5e7eb); }
 .def-table th.r, .def-table td.r { text-align: right; }
+.def-table th.def-sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.def-table th.def-sortable:hover { color: #334155; background: #f1f5f9; }
 .def-table td { padding: 6px 14px; border-bottom: 1px solid #f2f4f6; }
 .def-table tbody tr:last-child td { border-bottom: 0; }
 .def-acct { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
