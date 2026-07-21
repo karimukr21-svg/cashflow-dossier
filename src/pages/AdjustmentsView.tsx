@@ -35,6 +35,10 @@ type Leg = {
   role: 'single' | 'from' | 'to'
 }
 
+/* Balance (STOCK) lines. These carry a level forward month to month, so their legs must
+ * never be summed along the month axis — see the isStock/stockLevel notes below. */
+const STOCK_LINES = new Set(['opening_balance', 'ending_balance', 'accum_loans', 'accum_od'])
+
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const monLabel = (m: number, y: number) => `${MON[m - 1] || '?'} ’${String(y).slice(2)}`
 
@@ -134,9 +138,26 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
     return [...m.entries()]
   }, [actions])
 
-  const areaNet = (area: string) =>
-    legs.filter(l => l.area === area).reduce((s, l) => s + Number(l.delta_usd || 0), 0)
-  const groupNet = legs.reduce((s, l) => s + Number(l.delta_usd || 0), 0)
+  // STOCK vs FLOW.
+  // opening/ending balance and accumulated loans/overdrafts are STOCKS. A balance
+  // adjustment is a LEVEL shift that is carried forward across every month, so summing it
+  // down the month axis double-counts: the CC(UE) +783k opening anchor booked Jan..Dec on
+  // both opening and ending reads 18,792k if you add the legs up, when the actual effect
+  // is a single +783k re-levelling.
+  // So: stocks never contribute to a cash net (they are not cash flows), and a stock row
+  // reports its level at the latest period instead of a sum.
+  const isStock = (lc: string) => STOCK_LINES.has(lc)
+  const flowNet = (ls: Leg[]) =>
+    ls.filter(l => !isStock(l.line_code)).reduce((s, l) => s + Number(l.delta_usd || 0), 0)
+  const stockLevel = (ls: Leg[]) => {
+    if (!ls.length) return 0
+    const latest = Math.max(...ls.map(l => l.year * 12 + l.month))
+    return ls.filter(l => l.year * 12 + l.month === latest)
+      .reduce((s, l) => s + Number(l.delta_usd || 0), 0)
+  }
+
+  const areaNet = (area: string) => flowNet(legs.filter(l => l.area === area))
+  const groupNet = flowNet(legs)
 
   // Negatives in parentheses; positives keep a + to read as a delta.
   const signParts = (v: number) => {
@@ -207,7 +228,7 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
             <div className="adjv-cards">
               {acts.map(a => {
                 const al = legsByAction.get(a.id) ?? []
-                const net = al.reduce((s, l) => s + Number(l.delta_usd || 0), 0)
+                const net = flowNet(al)   // stocks excluded — a re-levelling is not a cash flow
                 const neutral = Math.abs(net) < 0.5
                 const isMove = a.action_type === 'reclass' || a.action_type === 'reschedule'
                 const np = signParts(net)
@@ -216,15 +237,25 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
                 for (const l of al) monthMap.set(`${l.year}-${l.month}`, { y: l.year, m: l.month })
                 const months = [...monthMap.values()].sort((x, y) => (x.y - y.y) || (x.m - y.m))
 
-                type Row = { line: string; role: Leg['role']; byMonth: Map<string, number>; net: number }
+                type Row = { line: string; role: Leg['role']; byMonth: Map<string, number>; net: number; stock: boolean }
                 const rowMap = new Map<string, Row>()
+                const rowLegs = new Map<string, Leg[]>()
                 for (const l of al) {
                   const key = `${l.line_code}|${l.role}`
-                  const r = rowMap.get(key) ?? { line: lineDesc(l.line_code), role: l.role, byMonth: new Map(), net: 0 }
+                  const r = rowMap.get(key) ?? {
+                    line: lineDesc(l.line_code), role: l.role, byMonth: new Map(), net: 0,
+                    stock: isStock(l.line_code),
+                  }
                   const mk = `${l.year}-${l.month}`
                   r.byMonth.set(mk, (r.byMonth.get(mk) ?? 0) + Number(l.delta_usd || 0))
-                  r.net += Number(l.delta_usd || 0)
                   rowMap.set(key, r)
+                  const rl = rowLegs.get(key) ?? []; rl.push(l); rowLegs.set(key, rl)
+                }
+                // A stock row's "net" is its LEVEL at the latest period, not a sum of months.
+                for (const [key, r] of rowMap) {
+                  const ls = rowLegs.get(key) ?? []
+                  r.net = r.stock ? stockLevel(ls)
+                                  : ls.reduce((s, l) => s + Number(l.delta_usd || 0), 0)
                 }
                 const roleRank = { from: 0, to: 1, single: 2 } as const
                 const rows = [...rowMap.values()].sort((x, y) => roleRank[x.role] - roleRank[y.role])
@@ -270,7 +301,15 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
                                   const sp = signParts(v)
                                   return <td key={ci} className={`adjv-num ${sp.cls}`}>{sp.txt}</td>
                                 })}
-                                <td className={`adjv-num adjv-td-net ${rn.cls}`}>{rn.txt}</td>
+                                <td className={`adjv-num adjv-td-net ${rn.cls}`}>
+                                  {rn.txt}
+                                  {r.stock && (
+                                    <span
+                                      className="adjv-leveltag"
+                                      title="Balance level carried forward — a stock, not a sum across months"
+                                    >level</span>
+                                  )}
+                                </td>
                               </tr>
                             )
                           })}

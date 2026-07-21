@@ -1906,6 +1906,13 @@ body, html, #root {
 .adjv-table tbody tr:last-child td { border-bottom: 0; }
 .adjv-td-line { font-weight: 600; }
 .adjv-td-net { font-weight: 800; }
+/* Marks a balance (stock) row: the figure is a level carried forward, not a month sum. */
+.adjv-leveltag {
+  display: inline-block; margin-left: 6px; padding: 1px 5px; border-radius: 3px;
+  font-size: 9px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--muted); background: var(--chip-bg, rgba(127,127,127,.14));
+  border: 1px solid var(--border); vertical-align: middle;
+}
 .adjv-num.up { color: var(--good); } .adjv-num.down { color: var(--crimson); } .adjv-num.zero { color: var(--mute); }
 .adjv-blank { color: #cbd0d6; text-align: center; }
 .adjv-roletag { display: inline-block; font-size: 8px; letter-spacing: .3px; text-transform: uppercase; font-weight: 800; padding: 1px 6px; border-radius: 10px; margin-right: 7px; vertical-align: 1px; }
