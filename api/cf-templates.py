@@ -88,6 +88,23 @@ class handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self._send(200, {})
 
+    def do_GET(self):
+        """Health check — proves the _cfengine bundle and env are actually wired.
+
+        The POST path imports the engine only AFTER the auth gate, so a 401 tells you
+        nothing about whether build_template.py shipped. This does: it imports the
+        engine and confirms the service-role key is present. No data, no secrets."""
+        try:
+            import build_template as bt
+            self._send(200, {
+                "ok": True,
+                "engine": "build_template",
+                "template_version": bt.TEMPLATE_VERSION,
+                "service_key": bool(os.environ.get("SUPABASE_SERVICE_ROLE_KEY")),
+            })
+        except Exception as e:
+            self._send(500, {"ok": False, "error": f"{type(e).__name__}: {e}"})
+
     def do_POST(self):
         try:
             auth = self.headers.get("Authorization", "")
