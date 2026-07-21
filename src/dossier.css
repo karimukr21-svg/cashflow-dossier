@@ -1852,6 +1852,8 @@ body, html, #root {
 .adjv-head { display: flex; align-items: flex-end; gap: 18px; border-bottom: 2.5px solid var(--crimson); padding-bottom: 10px; }
 .adjv-head-t { min-width: 0; }
 .adjv-head h1 { font-size: 20px; font-weight: 800; color: var(--ink); }
+.adjv-head-sub { font-size: 11.5px; color: var(--mute); margin-top: 2px; }
+.adjv-head-sub b { color: var(--ink); font-weight: 700; }
 .adjv-print { align-self: flex-end; border: 1px solid var(--border); background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 600; padding: 6px 16px; border-radius: 7px; cursor: pointer; }
 .adjv-print:hover { border-color: var(--crimson); color: var(--crimson); }
 .adjv-grouptotal { margin-left: auto; text-align: right; white-space: nowrap; display: flex; flex-direction: column; align-items: flex-end; }
@@ -1868,10 +1870,64 @@ body, html, #root {
 .adjv-none p { font-size: 12.5px; color: var(--mute); margin-top: 3px; line-height: 1.5; max-width: 640px; }
 .adjv-none b { color: var(--ink); font-weight: 700; }
 
+/* ── Summary layer ─────────────────────────────────────────────────────────── */
+
+/* Bridge: before → adjustments → after. Mirrors the cash-walk on the report. */
+.adjv-bridge { display: grid; grid-template-columns: 1fr auto 1fr; border: 1px solid var(--border); border-radius: 11px; background: var(--surface); overflow: hidden; }
+.adjv-br-pt { padding: 12px 18px; display: flex; flex-direction: column; }
+.adjv-br-l { font-size: 8.5px; letter-spacing: .4px; text-transform: uppercase; color: var(--mute); font-weight: 700; }
+.adjv-br-v { font-size: 25px; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: 2px; color: var(--ink); }
+.adjv-br-v.up { color: var(--good); } .adjv-br-v.down { color: var(--crimson); } .adjv-br-v.zero { color: var(--mute); }
+.adjv-br-s { font-size: 10px; color: var(--mute); margin-top: 2px; }
+.adjv-br-arrow { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 22px; background: #f6f7f9; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+.adjv-br-arrow > span { font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.adjv-br-arrow > span.up { color: var(--good); } .adjv-br-arrow > span.down { color: var(--crimson); } .adjv-br-arrow > span.zero { color: var(--mute); }
+.adjv-br-arrow i { font-size: 8px; letter-spacing: .4px; text-transform: uppercase; color: var(--mute); font-weight: 700; font-style: normal; margin-top: 2px; }
+.adjv-br-cap { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-top: 1px solid var(--border); background: #fbfbfc; padding: 6px 18px; font-size: 10.5px; color: var(--mute); font-weight: 600; }
+.adjv-br-cap span { font-variant-numeric: tabular-nums; }
+
+.adjv-sum2 { display: grid; grid-template-columns: 1.35fr 1fr; gap: 14px; align-items: start; }
+@media (max-width: 1020px) { .adjv-sum2 { grid-template-columns: 1fr; } }
+.adjv-sumcard { border: 1px solid var(--border); border-radius: 11px; background: var(--surface); padding: 13px 15px; }
+.adjv-sumcard h3 { font-size: 9px; letter-spacing: .5px; text-transform: uppercase; color: var(--mute); font-weight: 800; margin-bottom: 8px; }
+
+.adjv-sumtable { width: 100%; border-collapse: collapse; font-size: 12px; }
+.adjv-sumtable thead th { font-size: 8.5px; letter-spacing: .4px; text-transform: uppercase; color: var(--mute); font-weight: 700; padding: 0 10px 6px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.adjv-sumtable th.adjv-num, .adjv-sumtable td.adjv-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.adjv-sumtable tbody td { padding: 7px 10px; border-bottom: 1px solid #f0f1f3; }
+.adjv-sum-l { font-weight: 600; color: var(--ink); }
+.adjv-sumtable tfoot td { padding: 8px 10px; border-top: 1.5px solid var(--charcoal); font-weight: 800; color: var(--ink); }
+.adjv-sum-foot { font-size: 10.5px; color: var(--mute); line-height: 1.5; margin-top: 8px; }
+.adjv-sum-foot b { font-variant-numeric: tabular-nums; }
+
+.adjv-arealist { display: flex; flex-direction: column; }
+.adjv-arearow { display: grid; grid-template-columns: 96px 1fr auto; align-items: center; gap: 10px; width: 100%; background: none; border: 0; border-bottom: 1px solid #f0f1f3; padding: 3.5px 2px; cursor: pointer; text-align: left; font: inherit; }
+.adjv-arearow:last-child { border-bottom: 0; }
+.adjv-arearow:hover { background: #fafbfc; }
+.adjv-ar-name { font-size: 11.5px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adjv-ar-bar { height: 9px; background: #f0f1f3; border-radius: 5px; overflow: hidden; }
+.adjv-ar-bar i { display: block; height: 100%; border-radius: 5px; background: var(--mute); }
+.adjv-ar-bar i.up { background: var(--good); } .adjv-ar-bar i.down { background: var(--crimson); }
+.adjv-ar-v { font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+.adjv-ar-v.up { color: var(--good); } .adjv-ar-v.down { color: var(--crimson); }
+.adjv-ar-v.zero { color: var(--mute); font-style: italic; font-weight: 600; font-size: 10.5px; }
+
+.adjv-detail-head { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--border); padding-bottom: 7px; margin-top: 4px; }
+.adjv-detail-head h3 { font-size: 13px; font-weight: 800; color: var(--ink); }
+.adjv-detail-hint { font-size: 10.5px; color: var(--mute); }
+.adjv-expand { margin-left: auto; border: 1px solid var(--border); background: var(--surface); color: var(--ink); font-size: 11.5px; font-weight: 600; padding: 4px 12px; border-radius: 7px; cursor: pointer; }
+.adjv-expand:hover { border-color: var(--crimson); color: var(--crimson); }
+
+/* ── Detail ────────────────────────────────────────────────────────────────── */
+
 .adjv-area { display: flex; flex-direction: column; gap: 10px; }
-.adjv-area-head { display: flex; align-items: baseline; gap: 12px; }
-.adjv-area-head h2 { font-size: 15px; font-weight: 800; color: var(--ink); letter-spacing: .2px; }
-.adjv-area-net { font-size: 12px; color: var(--mute); font-weight: 600; }
+.adjv-area-head { display: flex; align-items: baseline; gap: 10px; width: 100%; background: none; border: 0; border-bottom: 1px solid #f0f1f3; padding: 7px 2px; cursor: pointer; text-align: left; font: inherit; }
+.adjv-area-head:hover { background: #fafbfc; }
+.adjv-area.is-open > .adjv-area-head { border-bottom-color: transparent; }
+.adjv-chev { font-size: 10px; color: var(--mute); width: 10px; flex: 0 0 auto; }
+.adjv-area-name { font-size: 15px; font-weight: 800; color: var(--ink); letter-spacing: .2px; }
+.adjv-area-count { font-size: 11px; color: var(--mute); }
+.adjv-area-net { font-size: 12px; color: var(--mute); font-weight: 600; margin-left: auto; }
 .adjv-area-net b { font-variant-numeric: tabular-nums; margin-left: 3px; }
 
 .adjv-cards { display: flex; flex-direction: column; gap: 12px; }
@@ -1938,6 +1994,9 @@ body, html, #root {
    * the whole chain (html → workspace-root → workspace-body → shell → content)
    * so the adjustments paginate instead of clipping to one page. */
   html, body, #root { height: auto !important; overflow: visible !important; }
+  /* --bg is set on html AND body — resetting only body leaves the app's grey
+   * painting the unused tail of a short last page. Reset the whole chain. */
+  html, body, #root, .workspace-root, .workspace-body, .shell, .content { background: #fff !important; }
   .workspace-root { display: block !important; height: auto !important; overflow: visible !important; }
   .workspace-body { position: static !important; min-height: 0 !important; overflow: visible !important; }
   .workspace-body .shell { height: auto !important; }
@@ -1947,15 +2006,31 @@ body, html, #root {
   .content { overflow: visible !important; padding: 0 !important; }
 
   .adjv { gap: 12px; }
-  .adjv-printhead { display: block; font-size: 15px; font-weight: 800; color: var(--ink); border-bottom: 2.5px solid var(--crimson); padding-bottom: 6px; margin-bottom: 4px; }
-  .adjv-head { display: none; }
+  .adjv-printhead { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; font-size: 15px; font-weight: 800; color: var(--ink); border-bottom: 2.5px solid var(--crimson); padding-bottom: 6px; margin-bottom: 4px; }
+  .adjv-ph-s { font-size: 10.5px; font-weight: 600; color: var(--mute); margin-left: auto; }
+  .adjv-head, .adjv-detail-hint, .adjv-expand { display: none !important; }
+
+  /* Summary — the whole picture must survive as one block on page 1. */
+  .adjv-bridge, .adjv-sumcard { break-inside: avoid; }
+  .adjv-sum2 { grid-template-columns: 1.35fr 1fr !important; gap: 12px; }
+  .adjv-arearow { cursor: default; }
+  .adjv-detail-head { break-after: avoid; margin-top: 2px; }
 
   /* Each area starts fresh; keep a card whole, but let areas span pages. */
   .adjv-area { break-inside: auto; }
-  .adjv-area-head { break-after: avoid; }
+  .adjv-area-head { break-after: avoid; cursor: default; border-bottom: 1px solid #d1d5db; }
+  .adjv-chev { display: none; }
   .adjv-card { display: block; break-inside: avoid; border-color: #d1d5db; }
   .adjv-noteedit { display: none; }         /* the editor is screen-only */
-  .adjv-tablewrap { border-color: #d1d5db; }
+  /* On screen the leg table scrolls inside its box; on paper `overflow:auto`
+   * CLIPS instead — a wide card (long line labels + 6 months + Net) silently
+   * loses its Net column off the right edge. Release the box and tighten the
+   * cells so the whole table fits the page width. */
+  .adjv-tablewrap { border-color: #d1d5db; overflow: visible !important; }
+  .adjv-table { font-size: 10px; table-layout: auto; }
+  .adjv-table thead th { padding: 5px 7px; }
+  .adjv-table tbody td { padding: 5px 7px; }
+  .adjv-th-line, .adjv-td-line { max-width: 128px; }
   .adjv-note-print { display: block; font-size: 11px; line-height: 1.5; color: #334155; margin-top: 8px; }
   .adjv-note-print:empty { display: none; } /* blank notes drop out entirely */
 
