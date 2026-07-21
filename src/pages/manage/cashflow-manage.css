@@ -831,3 +831,30 @@
                font-size: 12px; font-weight: 600; color: #374151; cursor: pointer; white-space: nowrap; }
 .adje-newver:hover { border-color: #0f766e; color: #0f766e; }
 .adje-copyadj { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: #374151; cursor: pointer; }
+
+/* ── Templates tab — generate the locked, pre-filled submission workbooks ───── */
+.tmpl-gen { margin-left: auto; }
+.tmpl-note {
+  margin: 10px 0 14px; font-size: 12.5px; line-height: 1.55;
+  color: var(--muted, #8a8f98); max-width: 78ch;
+}
+.tmpl-err { color: #ff6b6b; border-color: #ff6b6b44; }
+.tmpl-ok  { color: #4caf7d; border-color: #4caf7d44; }
+.tmpl-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.tmpl-count { font-size: 12px; color: var(--muted, #8a8f98); margin-right: 4px; }
+.tmpl-grid {
+  display: grid; gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+}
+.tmpl-area {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border, #2a2f3a);
+  background: var(--panel, #171b23);
+  font-size: 13px; user-select: none;
+  transition: border-color .12s ease, background .12s ease;
+}
+.tmpl-area:hover { border-color: #3a4150; }
+.tmpl-area.is-on { border-color: #e10020; background: #e100200f; }
+.tmpl-area input { accent-color: #e10020; cursor: pointer; }
+.tmpl-area span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

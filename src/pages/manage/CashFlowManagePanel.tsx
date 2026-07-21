@@ -5,17 +5,23 @@ import CycleVersionManager from './CycleVersionManager'
 import LabelsManager from './LabelsManager'
 import AdjustmentsPanel from './AdjustmentsPanel'
 import PayablesDefinition from './PayablesDefinition'
+import TemplatesManager from './TemplatesManager'
 import './cashflow-manage.css'
 
 // Manage & Adjust (Treasury) — the data-management module.
+//   Templates         — generate the locked, pre-filled workbooks areas fill in
 //   Import runs       — upload an area file -> stage + reconcile -> push as a version
 //   Cycles & versions — manage versions in each cycle, set current/final, publish
 //   Adjustments       — edit the adjusted forecast (Adjust / Reclass / Reschedule)
 //   Labels & mappings — the canonical chart / local-label crosswalk
 //
+// Templates leads because it is the start of the loop: we send the file out, it comes
+// back through Import runs. Generating is read-only, so it is not role-gated.
+//
 // Mutations (upload / push / publish / adjust) are also enforced by RLS (cf_ tables
 // are super-admin write); the role gate just hides the controls for non-Treasury users.
 const TABS = [
+  { key: 'templates', label: 'Templates' },
   { key: 'runs', label: 'Import runs' },
   { key: 'versions', label: 'Cycles & versions' },
   { key: 'adjust', label: 'Adjustments' },
@@ -26,7 +32,7 @@ const TABS = [
 export default function CashFlowManagePanel() {
   const role = useRole()
   const canManage = canManageCashFlow(role)
-  const [tab, setTab] = useState('runs')
+  const [tab, setTab] = useState('templates')
 
   return (
     <div className="cfm-panel">
@@ -52,6 +58,7 @@ export default function CashFlowManagePanel() {
         ))}
       </div>
 
+      {tab === 'templates' && <TemplatesManager canManage={canManage} />}
       {tab === 'runs' && <ImportRunsManager canManage={canManage} />}
       {tab === 'versions' && <CycleVersionManager canManage={canManage} />}
       {tab === 'adjust' && <AdjustmentsPanel canManage={canManage} />}
