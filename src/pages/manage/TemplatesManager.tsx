@@ -98,7 +98,10 @@ export default function TemplatesManager({ canManage }: { canManage: boolean }) 
         if (!alive) return
         const list: string[] = json.areas ?? []
         setAreas(list)
-        setPicked(new Set(list))
+        // Deliberately start with NOTHING selected: pick the area, then generate.
+        // Defaulting to all 26 would make the first click the one request that risks
+        // the function timeout (Qatar ~8s, Egypt ~6s — the whole estate is ~30-40s).
+        setPicked(new Set())
       } catch (e) {
         if (alive) { setAreas([]); setPicked(new Set()); setErr((e as Error).message) }
       } finally {
@@ -181,8 +184,9 @@ export default function TemplatesManager({ canManage }: { canManage: boolean }) 
           disabled={busy || areasLoading || !picked.size}
           onClick={generate}
         >
-          {busy ? 'Generating…' : picked.size === 1
-            ? 'Generate workbook'
+          {busy ? 'Generating…'
+            : !picked.size ? 'Select an area'
+            : picked.size === 1 ? 'Generate workbook'
             : `Generate ${picked.size} workbooks (.zip)`}
         </button>
       </div>
