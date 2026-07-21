@@ -1897,6 +1897,17 @@ body, html, #root {
 .adjv-sumtable tbody td { padding: 7px 10px; border-bottom: 1px solid #f0f1f3; }
 .adjv-sum-l { font-weight: 600; color: var(--ink); }
 .adjv-sumtable tfoot td { padding: 8px 10px; border-top: 1.5px solid var(--charcoal); font-weight: 800; color: var(--ink); }
+/* Category drill — a category row opens to the areas its movement came from. */
+.adjv-cat-drill { cursor: pointer; }
+.adjv-cat-drill:hover { background: #fafbfc; }
+.adjv-cat-drill.is-open > td { border-bottom-color: transparent; }
+.adjv-catchev { display: inline-block; width: 11px; font-size: 9px; color: var(--mute); }
+.adjv-catsub > td { background: #fbfcfd; font-size: 11px; padding-top: 5px; padding-bottom: 5px; }
+.adjv-catsub .adjv-sum-l { font-weight: 500; color: var(--mute); padding-left: 25px; position: relative; }
+.adjv-catsub .adjv-sum-l::before { content: '└'; position: absolute; left: 13px; color: #cbd0d6; }
+
+.adjv-prov { flex: 0 0 auto; font-size: 9.5px; color: var(--mute); white-space: nowrap; }
+
 .adjv-sum-foot { font-size: 10.5px; color: var(--mute); line-height: 1.5; margin-top: 8px; }
 .adjv-sum-foot b { font-variant-numeric: tabular-nums; }
 

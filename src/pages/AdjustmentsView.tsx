@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom'
 import { supabase } from '@/lib/supabase'
 import { useRole, canManageCashFlow } from '@/lib/role'
 import { makeDisp, DENOM, type Denom, useTopbarExtras } from '@/lib/displayFmt'
+import AreaFilterPopover from '@/components/AreaFilterPopover'
+import type { CanonicalArea, AreaGroup } from '@/lib/queries'
 import type { Scope } from './Dossier'
 
 /* Adjustments — a Cash Flow lens showing WHAT was changed on the selected
@@ -64,6 +66,36 @@ const TYPE_LABEL: Record<Action['action_type'], string> = {
   adjust: 'Adjust', reclass: 'Reclass', reschedule: 'Reschedule', import: 'Import',
 }
 
+/* Area scope control — the same grouped include/exclude popover the Cash Flow
+ * Report uses, so the two pages behave identically. */
+const ADJ_AREA_GROUP_LABEL: Record<AreaGroup, string> = {
+  Operations: 'OPERATIONS', Subsidiaries: 'SUBSIDIARIES', Corporate: 'CORPORATE', Contingency: 'CONTINGENCY',
+}
+function AreaFilter({ areas, excluded, setExcluded }: {
+  areas: CanonicalArea[]; excluded: Set<string>; setExcluded: (s: Set<string>) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const included = areas.length - areas.filter(a => excluded.has(a.area_id)).length
+  return (
+    <div className="crp-areafilter">
+      <button className={`areas-dd ${excluded.size > 0 ? 'filtered' : ''}`} onClick={() => setOpen(true)}
+              aria-haspopup="menu" aria-expanded={open}
+              title="Select which areas are included">
+        Areas · {included} of {areas.length} <span className="areas-dd-caret">▾</span>
+      </button>
+      {open && (
+        <AreaFilterPopover
+          areas={areas}
+          excluded={excluded}
+          onChange={setExcluded}
+          onClose={() => setOpen(false)}
+          groupLabels={ADJ_AREA_GROUP_LABEL}
+        />
+      )}
+    </div>
+  )
+}
+
 export default function AdjustmentsView({ scope }: { scope: Scope }) {
   const role = useRole()
   const canManage = canManageCashFlow(role)
@@ -81,6 +113,15 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
 
   // Detail is collapsed by area — the page opens on the summary.
   const [open, setOpen] = useState<Record<string, boolean>>({})
+  // Category rows drill to the areas the movement came from (the audit path:
+  // "Claims moved +107,000 — from where?" → KSA +103,000, Qatar +4,000).
+  const [openCat, setOpenCat] = useState<Record<string, boolean>>({})
+  // Area scope — the same include/exclude popover the Cash Flow Report uses.
+  // Keyed on CanonicalArea.area_id, which on this dossier IS the cf country
+  // label, so it matches cf_adjustment_legs.area directly (all 18 ledger areas
+  // resolve). An area outside the popover's list can never be excluded, so an
+  // unmapped label stays visible rather than silently vanishing from the bridge.
+  const [excluded, setExcluded] = useState<Set<string>>(new Set())
 
   const version = scope.primaryVersion
   const meta = useMemo(
@@ -174,23 +215,36 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
     return (code: string) => m.get(code) ?? 'Other'
   }, [scope.lines])
 
+  /* Area scope applied once, at the source — every figure on the page derives
+   * from these three, so the bridge, the summaries and the detail cannot
+   * disagree about what is in scope. */
+  const fCells = useMemo(() => cells.filter(c => !excluded.has(c.area)), [cells, excluded])
+  const fLegs = useMemo(() => legs.filter(l => !excluded.has(l.area)), [legs, excluded])
+  const fActions = useMemo(() => actions.filter(a => !excluded.has(a.area)), [actions, excluded])
+
+  // Areas offered in the popover: those this version actually carries.
+  const areaOptions = useMemo<CanonicalArea[]>(() => {
+    const present = new Set<string>([...cells.map(c => c.area), ...legs.map(l => l.area)])
+    return scope.areas.filter(a => present.has(a.area_id))
+  }, [scope.areas, cells, legs])
+
   const legsByAction = useMemo(() => {
     const m = new Map<string, Leg[]>()
-    for (const l of legs) {
+    for (const l of fLegs) {
       const arr = m.get(l.action_id) ?? []
       arr.push(l); m.set(l.action_id, arr)
     }
     return m
-  }, [legs])
+  }, [fLegs])
 
   const byArea = useMemo(() => {
     const m = new Map<string, Action[]>()
-    for (const a of actions) {
+    for (const a of fActions) {
       const arr = m.get(a.area) ?? []
       arr.push(a); m.set(a.area, arr)
     }
     return [...m.entries()]
-  }, [actions])
+  }, [fActions])
 
   // STOCK vs FLOW.
   // opening/ending balance and accumulated loans/overdrafts are STOCKS. A balance
@@ -210,52 +264,71 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
       .reduce((s, l) => s + Number(l.delta_usd || 0), 0)
   }
 
-  const areaNet = (area: string) => flowNet(legs.filter(l => l.area === area))
-  const groupNet = flowNet(legs)
+  const areaNet = (area: string) => flowNet(fLegs.filter(l => l.area === area))
+  const groupNet = flowNet(fLegs)
 
   /* ── Summary ─────────────────────────────────────────────────────────────── */
 
   // Bridge: the version's flow cells, before vs after the ledger.
   const bridge = useMemo(() => {
     let base = 0, delta = 0
-    for (const c of cells) {
+    for (const c of fCells) {
       if (isStock(c.line_code)) continue
       base += Number(c.base_usd || 0); delta += Number(c.delta_usd || 0)
     }
     return { base, delta, adj: base + delta }
-  }, [cells])
+  }, [fCells])
 
   // By category — base and adjusted from the cells, the movement split
   // elapsed vs forecast from the ledger (the same legs the detail renders).
+  // Each category also carries the per-AREA breakdown of its movement, so a
+  // questioned figure drills straight to the areas that produced it.
+  type CatArea = { area: string; base: number; elapsed: number; forecast: number; move: number; adj: number }
   const byCat = useMemo(() => {
-    const m = new Map<string, { base: number; elapsed: number; forecast: number }>()
+    const m = new Map<string, { base: number; elapsed: number; forecast: number; areas: Map<string, { base: number; elapsed: number; forecast: number }> }>()
     const get = (k: string) => {
-      let r = m.get(k); if (!r) { r = { base: 0, elapsed: 0, forecast: 0 }; m.set(k, r) }
+      let r = m.get(k); if (!r) { r = { base: 0, elapsed: 0, forecast: 0, areas: new Map() }; m.set(k, r) }
       return r
     }
-    for (const c of cells) {
-      if (isStock(c.line_code)) continue
-      get(lineCat(c.line_code)).base += Number(c.base_usd || 0)
+    const getArea = (k: string, area: string) => {
+      const c = get(k)
+      let r = c.areas.get(area); if (!r) { r = { base: 0, elapsed: 0, forecast: 0 }; c.areas.set(area, r) }
+      return r
     }
-    for (const l of legs) {
+    for (const c of fCells) {
+      if (isStock(c.line_code)) continue
+      const k = lineCat(c.line_code); const v = Number(c.base_usd || 0)
+      get(k).base += v; getArea(k, c.area).base += v
+    }
+    for (const l of fLegs) {
       if (isStock(l.line_code)) continue
-      const r = get(lineCat(l.line_code))
-      if (l.month <= asOfMonth) r.elapsed += Number(l.delta_usd || 0)
-      else r.forecast += Number(l.delta_usd || 0)
+      const k = lineCat(l.line_code); const v = Number(l.delta_usd || 0)
+      const r = get(k), ra = getArea(k, l.area)
+      if (l.month <= asOfMonth) { r.elapsed += v; ra.elapsed += v }
+      else { r.forecast += v; ra.forecast += v }
     }
     const rank = (k: string) => { const i = CAT_ORDER.indexOf(k); return i < 0 ? 99 : i }
     return [...m.entries()]
-      .map(([name, v]) => ({ name, ...v, move: v.elapsed + v.forecast, adj: v.base + v.elapsed + v.forecast }))
+      .map(([name, v]) => ({
+        name, base: v.base, elapsed: v.elapsed, forecast: v.forecast,
+        move: v.elapsed + v.forecast, adj: v.base + v.elapsed + v.forecast,
+        // only areas that actually MOVED this category — the drill is about the
+        // adjustment, not a full area×category matrix
+        areas: [...v.areas.entries()]
+          .map(([area, a]): CatArea => ({ area, ...a, move: a.elapsed + a.forecast, adj: a.base + a.elapsed + a.forecast }))
+          .filter(a => Math.abs(a.move) >= 0.5)
+          .sort((a, b) => Math.abs(b.move) - Math.abs(a.move) || a.area.localeCompare(b.area)),
+      }))
       .filter(r => Math.abs(r.base) > 0.5 || Math.abs(r.move) > 0.5)
       .sort((a, b) => rank(a.name) - rank(b.name) || a.name.localeCompare(b.name))
-  }, [cells, legs, lineCat, asOfMonth])
+  }, [fCells, fLegs, lineCat, asOfMonth])
 
   // By area — movement only, ranked by size. Areas with no cash movement
   // (pure presentation reclasses) still list, at the bottom, marked neutral.
   const byAreaSum = useMemo(() => {
     const m = new Map<string, { elapsed: number; forecast: number; actions: number }>()
     for (const [area, acts] of byArea) m.set(area, { elapsed: 0, forecast: 0, actions: acts.length })
-    for (const l of legs) {
+    for (const l of fLegs) {
       if (isStock(l.line_code)) continue
       const r = m.get(l.area); if (!r) continue
       if (l.month <= asOfMonth) r.elapsed += Number(l.delta_usd || 0)
@@ -264,31 +337,31 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
     return [...m.entries()]
       .map(([area, v]) => ({ area, ...v, net: v.elapsed + v.forecast }))
       .sort((a, b) => Math.abs(b.net) - Math.abs(a.net) || a.area.localeCompare(b.area))
-  }, [byArea, legs, asOfMonth])
+  }, [byArea, fLegs, asOfMonth])
 
   const maxAreaNet = useMemo(
     () => Math.max(1, ...byAreaSum.map(a => Math.abs(a.net))), [byAreaSum])
 
   const neutralCount = useMemo(
-    () => actions.filter(a => Math.abs(flowNet(legsByAction.get(a.id) ?? [])) < 0.5).length,
-    [actions, legsByAction])
+    () => fActions.filter(a => Math.abs(flowNet(legsByAction.get(a.id) ?? [])) < 0.5).length,
+    [fActions, legsByAction])
 
   // Balance re-levellings are excluded from every net above — surface them so
   // they are not silently invisible.
   const stockNote = useMemo(() => {
-    const st = legs.filter(l => isStock(l.line_code))
+    const st = fLegs.filter(l => isStock(l.line_code))
     if (!st.length) return null
     const areas = [...new Set(st.map(l => l.area))]
     const byAreaLevel = areas.map(a => stockLevel(st.filter(l => l.area === a && l.line_code === 'opening_balance')))
     const total = byAreaLevel.reduce((s, v) => s + v, 0)
     return { areas, total }
-  }, [legs])
+  }, [fLegs])
 
   const totals = useMemo(() => {
-    const elapsed = legs.filter(l => !isStock(l.line_code) && l.month <= asOfMonth)
+    const elapsed = fLegs.filter(l => !isStock(l.line_code) && l.month <= asOfMonth)
       .reduce((s, l) => s + Number(l.delta_usd || 0), 0)
     return { elapsed, forecast: groupNet - elapsed }
-  }, [legs, asOfMonth, groupNet])
+  }, [fLegs, asOfMonth, groupNet])
 
   /* ── formatting ──────────────────────────────────────────────────────────── */
 
@@ -314,6 +387,9 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
 
   const controls = (
     <>
+      {areaOptions.length > 0 && (
+        <AreaFilter areas={areaOptions} excluded={excluded} setExcluded={setExcluded} />
+      )}
       <div className="ctrl" style={{ marginLeft: 8 }}><label>Units</label></div>
       <div className="pill-row">
         {(['m', 'k', 'u'] as Denom[]).map(d => (
@@ -347,7 +423,7 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
             <span className="adjv-gt-l">Group net adjustment</span>
             <span className={`adjv-gt-v ${gp.cls}`}>{gp.txt}</span>
             <span className="adjv-gt-s">
-              {actions.length} adjustment{actions.length === 1 ? '' : 's'} · {byArea.length} area{byArea.length === 1 ? '' : 's'}
+              {fActions.length} adjustment{fActions.length === 1 ? '' : 's'} · {byArea.length} area{byArea.length === 1 ? '' : 's'}
               {neutralCount > 0 && <> · {neutralCount} cash-neutral</>}
             </span>
           </div>
@@ -416,15 +492,35 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
                 <tbody>
                   {byCat.map(r => {
                     const e = signParts(r.elapsed), f = signParts(r.forecast)
-                    return (
-                      <tr key={r.name}>
-                        <td className="adjv-sum-l">{r.name}</td>
+                    const canDrill = r.areas.length > 0
+                    const isOpen = !!openCat[r.name]
+                    return [
+                      <tr key={r.name}
+                          className={`${canDrill ? 'adjv-cat-drill' : ''} ${isOpen ? 'is-open' : ''}`}
+                          onClick={canDrill ? () => setOpenCat(o => ({ ...o, [r.name]: !isOpen })) : undefined}
+                          title={canDrill ? 'Show the areas this movement came from' : undefined}>
+                        <td className="adjv-sum-l">
+                          {canDrill && <span className="adjv-catchev" aria-hidden>{isOpen ? '▾' : '▸'}</span>}
+                          {r.name}
+                        </td>
                         <td className={`adjv-num ${absParts(r.base).cls}`}>{absParts(r.base).txt}</td>
                         <td className={`adjv-num ${e.cls}`}>{e.txt}</td>
                         <td className={`adjv-num ${f.cls}`}>{f.txt}</td>
                         <td className={`adjv-num adjv-td-net ${absParts(r.adj).cls}`}>{absParts(r.adj).txt}</td>
-                      </tr>
-                    )
+                      </tr>,
+                      ...(isOpen ? r.areas.map(a => {
+                        const ae = signParts(a.elapsed), af = signParts(a.forecast)
+                        return (
+                          <tr key={`${r.name}|${a.area}`} className="adjv-catsub">
+                            <td className="adjv-sum-l">{a.area}</td>
+                            <td className={`adjv-num ${absParts(a.base).cls}`}>{absParts(a.base).txt}</td>
+                            <td className={`adjv-num ${ae.cls}`}>{ae.txt}</td>
+                            <td className={`adjv-num ${af.cls}`}>{af.txt}</td>
+                            <td className={`adjv-num adjv-td-net ${absParts(a.adj).cls}`}>{absParts(a.adj).txt}</td>
+                          </tr>
+                        )
+                      }) : []),
+                    ]
                   })}
                 </tbody>
                 <tfoot>
@@ -555,6 +651,11 @@ export default function AdjustmentsView({ scope }: { scope: Scope }) {
                       )}
                       <span className={`adjv-cash ${neutral ? 'neutral' : np.cls}`}>
                         {neutral ? 'Cash-neutral' : `Cash ${np.txt}`}
+                      </span>
+                      {/* Provenance — who booked it and when. The audit question
+                        * is never only "what changed" but "on whose call". */}
+                      <span className="adjv-prov">
+                        {a.actor || 'unknown'} · {a.created_at ? a.created_at.slice(0, 10) : '—'}
                       </span>
                     </div>
 
