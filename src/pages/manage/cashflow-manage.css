@@ -834,14 +834,18 @@
 
 /* ── Templates tab — generate the locked, pre-filled submission workbooks ───── */
 .tmpl-gen { margin-left: auto; }
+/* This app is a LIGHT theme (--surface #fff, --ink #1a1a2e). Use its real tokens —
+ * there is no --panel or --muted here, and falling back to dark values renders
+ * near-black text on a near-black fill. */
 .tmpl-note {
   margin: 10px 0 14px; font-size: 12.5px; line-height: 1.55;
-  color: var(--muted, #8a8f98); max-width: 78ch;
+  color: var(--mute); max-width: 78ch;
 }
-.tmpl-err { color: #ff6b6b; border-color: #ff6b6b44; }
-.tmpl-ok  { color: #4caf7d; border-color: #4caf7d44; }
+.tmpl-note strong { color: var(--ink); font-weight: 600; }
+.tmpl-err { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+.tmpl-ok  { color: var(--good); border-color: color-mix(in srgb, var(--good) 35%, transparent); }
 .tmpl-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-.tmpl-count { font-size: 12px; color: var(--muted, #8a8f98); margin-right: 4px; }
+.tmpl-count { font-size: 12px; color: var(--mute); margin-right: 4px; }
 .tmpl-grid {
   display: grid; gap: 8px;
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
@@ -849,12 +853,18 @@
 .tmpl-area {
   display: flex; align-items: center; gap: 9px;
   padding: 9px 12px; border-radius: 6px; cursor: pointer;
-  border: 1px solid var(--border, #2a2f3a);
-  background: var(--panel, #171b23);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
   font-size: 13px; user-select: none;
   transition: border-color .12s ease, background .12s ease;
 }
-.tmpl-area:hover { border-color: #3a4150; }
-.tmpl-area.is-on { border-color: #e10020; background: #e100200f; }
-.tmpl-area input { accent-color: #e10020; cursor: pointer; }
+.tmpl-area:hover { border-color: var(--mute); background: var(--surface-alt); }
+.tmpl-area.is-on {
+  border-color: var(--crimson);
+  background: color-mix(in srgb, var(--crimson) 6%, var(--surface));
+  color: var(--ink);
+  font-weight: 500;
+}
+.tmpl-area input { accent-color: var(--crimson); cursor: pointer; }
 .tmpl-area span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
