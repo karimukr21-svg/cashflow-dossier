@@ -191,8 +191,8 @@ def _style_header(ws, ncols, area, project, ccy, cycle_label, as_of_label, is_su
         note = ("This sheet is calculated from the project sheets — it is locked and has "
                 "no input cells. Area-level entries belong on the AREA sheet.")
     else:
-        note = ("Grey cells are actuals already reported — locked. "
-                "Enter your forecast in the YELLOW cells only; totals and balances calculate.")
+        note = ("Grey cells are reported actuals, yellow cells are your forecast. "
+                "Totals and balances are locked — they calculate automatically.")
     c = ws.cell(row=4, column=1, value=note)
     c.font = Font(name=FONT, size=9, italic=True, color="7F7F7F")
 
@@ -276,7 +276,9 @@ def _write_sheet(ws, *, lines, plan, cols, as_of_ym, area, project, ccy,
             cell.value = float(v) if v is not None else None
             cell.fill = PatternFill("solid", fgColor=GREY_BAND)
             cell.font = Font(name=FONT, size=10, color="595959")
-            cell.protection = Protection(locked=True)
+            # Editable for now (Karim's call) — actuals stay unlocked alongside forecast.
+            # Only the computed rows/columns (totals, opening/ending, nets) stay locked.
+            cell.protection = Protection(locked=False)
         else:
             v = forecast.get((project, line_code, y, m))
             cell.value = float(v) if v is not None else None
@@ -431,21 +433,18 @@ def _write_sheet(ws, *, lines, plan, cols, as_of_ym, area, project, ccy,
     ws.freeze_panes = ws.cell(row=hdr + 1, column=2)
     ws.sheet_view.showGridLines = False
 
-    # Protection.
-    #   SUMMARY  — locked (all formulas) but fully SELECTABLE, so a reviewer can click any
-    #              cell and read its formula. They just can't change it.
-    #   Projects — NO protection for now: every cell editable, actuals included (Karim's
-    #              call while the template is being reviewed; tighten later).
+    # Protection — every sheet protected, every cell SELECTABLE (read the formula), and:
+    #   SUMMARY  — nothing unlocked -> fully read-only.
+    #   Projects — the VALUE cells are unlocked (actuals + forecast, editable for now);
+    #              the computed rows/columns stay locked: year totals, opening & ending
+    #              balance, and the Net rows are all formulas that were never unlocked.
     # OOXML gotcha that caused "I can't even select a cell": selectLockedCells="1" /
     # selectUnlockedCells="1" DISABLE selection. To allow selecting, they must be False
     # (the default). Do NOT set them True.
-    if is_summary:
-        ws.protection.sheet = True
-        ws.protection.selectLockedCells = False    # allow selecting locked cells
-        ws.protection.selectUnlockedCells = False  # allow selecting the (none) unlocked cells
-        ws.protection.formatCells = False
-    else:
-        ws.protection.sheet = False                # project sheets fully editable
+    ws.protection.sheet = True
+    ws.protection.selectLockedCells = False    # allow selecting locked cells
+    ws.protection.selectUnlockedCells = False  # allow selecting unlocked cells
+    ws.protection.formatCells = False
 
     ws.page_setup.orientation = "landscape"
     ws.page_setup.fitToWidth = 1
