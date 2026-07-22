@@ -171,8 +171,12 @@ export default function TemplatesManager({ canManage }: { canManage: boolean }) 
         </label>
         <label className="adje-ctl">
           <span>Pre-fill from</span>
+          {/* ORIG only. A submission template pre-fills each area's own RAW numbers.
+              ADJ carries our internal adjustments (Tony's reclasses/eliminations) in a
+              ledger, is forecast-tail only, and must never go back to a coordinator —
+              they'd resubmit our adjustments as theirs. So ADJ/scenarios aren't offered. */}
           <select value={version} onChange={e => setVersion(e.target.value)}>
-            {cycleVersions.map(v => (
+            {cycleVersions.filter(isOrig).map(v => (
               <option key={v.version_code} value={v.version_code}>
                 {(v.label ? `${v.label} — ` : '') + v.version_code}
               </option>

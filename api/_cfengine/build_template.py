@@ -89,15 +89,21 @@ def load_cells(area, version, cycle_year, as_of_ym):
     actuals  = published truth for elapsed periods -> locked in the sheet
     forecast = the selected cycle version for future periods -> their input
     """
+    # A STABLE order is required: db.select paginates in 1000-row pages by offset, and a
+    # large area (KSA/Qatar/Egypt run to thousands of rows) will silently drop or duplicate
+    # rows across pages without a deterministic sort. Order by the full row key.
+    _ORDER = "project_code,line_code,year,month,value"
     fc = db.select("cf_forecasts", {
         "select": "project_code,line_code,year,month,value,currency",
         "version": f"eq.{version}",
         "area": f"eq.{area}",
+        "order": _ORDER,
     })
     ac = db.select("cf_actuals", {
         "select": "project_code,line_code,year,month,value,currency",
         "area": f"eq.{area}",
         "year": f"gte.{cycle_year}",
+        "order": _ORDER,
     })
 
     actual, forecast, ccy = {}, {}, None
@@ -202,13 +208,18 @@ def _style_header(ws, ncols, area, project, ccy, cycle_label, as_of_label, is_su
 
 
 def _write_sheet(ws, *, lines, plan, cols, as_of_ym, area, project, ccy,
-                 cycle_label, as_of_label, actual, forecast, summary_over=None):
+                 cycle_label, as_of_label, actual, forecast, summary_over=None,
+                 area_balances=None):
     """Render one statement sheet.
 
     summary_over: list of sheet names -> every value cell becomes =SUM('A'!ref,'B'!ref…)
                   and the sheet carries no input cells at all.
+    area_balances: (line_code, year, month) -> value for the area's opening/ending/loans/OD,
+                  seeded from a dropped '_AREA' carrier so the SUMMARY shows real balances
+                  instead of a zero SUM over projects that hold none. Summary only.
     """
     is_summary = summary_over is not None
+    area_bal = area_balances or {}
     ncols = 1 + len(cols)
     _style_header(ws, ncols, area, project, ccy, cycle_label, as_of_label, is_summary)
 
@@ -266,8 +277,12 @@ def _write_sheet(ws, *, lines, plan, cols, as_of_ym, area, project, ccy,
             return
 
         if is_summary:
-            parts = ",".join(f"'{s}'!{ref(col, row)}" for s in summary_over)
-            cell.value = f"=SUM({parts})"
+            bv = area_bal.get((line_code, y, m))     # real area stock (loans/OD) from _AREA
+            if bv is not None:
+                cell.value = float(bv)
+            else:
+                parts = ",".join(f"'{s}'!{ref(col, row)}" for s in summary_over)
+                cell.value = f"=SUM({parts})"
             cell.fill = PatternFill("solid", fgColor=GREY_BAND)
             return
 
@@ -311,8 +326,12 @@ def _write_sheet(ws, *, lines, plan, cols, as_of_ym, area, project, ccy,
             cell.alignment = Alignment(horizontal="center")
             cell.font = Font(name=FONT, size=10, color="BFBFBF")
         elif is_summary:
-            parts = ",".join(f"'{s}'!{ref(col, r)}" for s in summary_over)
-            cell.value = f"=SUM({parts})"
+            bv = area_bal.get((OPENING, y, m))
+            if bv is not None:                       # real area opening (from dropped _AREA)
+                cell.value = float(bv)
+            else:
+                parts = ",".join(f"'{s}'!{ref(col, r)}" for s in summary_over)
+                cell.value = f"=SUM({parts})"
         elif is_actual(y, m):
             v = actual.get((project, OPENING, y, m))
             cell.value = float(v) if v is not None else None
@@ -396,8 +415,12 @@ def _write_sheet(ws, *, lines, plan, cols, as_of_ym, area, project, ccy,
             cell.alignment = Alignment(horizontal="center")
             cell.font = Font(name=FONT, size=10, color="BFBFBF")
         elif is_summary:
-            parts = ",".join(f"'{s}'!{ref(col, r)}" for s in summary_over)
-            cell.value = f"=SUM({parts})"
+            bv = area_bal.get((ENDING, y, m))
+            if bv is not None:                       # real area ending (from dropped _AREA)
+                cell.value = float(bv)
+            else:
+                parts = ",".join(f"'{s}'!{ref(col, r)}" for s in summary_over)
+                cell.value = f"=SUM({parts})"
         elif is_actual(y, m):
             v = actual.get((project, ENDING, y, m))
             cell.value = float(v) if v is not None else None
@@ -509,8 +532,20 @@ def build_area_template(area, version, as_of_ym, cycle_label=None):
     # coordinator's file, so drop it — UNLESS it's the only sheet (single-'project' areas
     # whose whole submission IS that rollup), where we keep it but display it as 'AREA'.
     non_synth = [p for p in projects if str(p).strip() != "_AREA"]
+    dropped_carrier = "_AREA" if (non_synth and len(non_synth) < len(projects)) else None
     if non_synth:
         projects = non_synth
+
+    # When we drop '_AREA', it may have been the ONLY carrier of the area's opening/ending/
+    # loans/OD (the BALANCE_FROM_TARGET model keeps balances at area level, not per project).
+    # Capture those so the SUMMARY can still show the real area balances — otherwise the
+    # whole file reads opening = 0. The projects genuinely carry no balance in this model.
+    area_balances = {}   # (line_code, year, month) -> value
+    if dropped_carrier:
+        for src in (actual, forecast):
+            for (pc, lc, y, m), v in src.items():
+                if pc == dropped_carrier and lc in (OPENING, ENDING, "accum_loans", "accum_od"):
+                    area_balances[(lc, y, m)] = v
 
     # The AREA sheet (the area-level rollup) leads the project sheets, right after SUMMARY;
     # everything else follows alphabetically.
@@ -540,7 +575,7 @@ def build_area_template(area, version, as_of_ym, cycle_label=None):
         _write_sheet(ws, lines=lines, plan=plan, cols=cols, as_of_ym=as_of_ym,
                      area=area, project="SUMMARY", ccy=ccy, cycle_label=cycle_label,
                      as_of_label=as_of_label, actual=actual, forecast=forecast,
-                     summary_over=list(sheet_map.keys()))
+                     summary_over=list(sheet_map.keys()), area_balances=area_balances)
         wb.move_sheet("SUMMARY", offset=-len(wb.sheetnames) + 1)
         sheet_map["SUMMARY"] = "_SUMMARY"
 
