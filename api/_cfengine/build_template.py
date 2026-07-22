@@ -430,11 +430,23 @@ def _write_sheet(ws, *, lines, plan, cols, as_of_ym, area, project, ccy,
 
     ws.freeze_panes = ws.cell(row=hdr + 1, column=2)
     ws.sheet_view.showGridLines = False
-    ws.protection.sheet = True
-    ws.protection.enable()
-    ws.protection.formatCells = False
-    ws.protection.selectLockedCells = True
-    ws.protection.selectUnlockedCells = True
+
+    # Protection.
+    #   SUMMARY  — locked (all formulas) but fully SELECTABLE, so a reviewer can click any
+    #              cell and read its formula. They just can't change it.
+    #   Projects — NO protection for now: every cell editable, actuals included (Karim's
+    #              call while the template is being reviewed; tighten later).
+    # OOXML gotcha that caused "I can't even select a cell": selectLockedCells="1" /
+    # selectUnlockedCells="1" DISABLE selection. To allow selecting, they must be False
+    # (the default). Do NOT set them True.
+    if is_summary:
+        ws.protection.sheet = True
+        ws.protection.selectLockedCells = False    # allow selecting locked cells
+        ws.protection.selectUnlockedCells = False  # allow selecting the (none) unlocked cells
+        ws.protection.formatCells = False
+    else:
+        ws.protection.sheet = False                # project sheets fully editable
+
     ws.page_setup.orientation = "landscape"
     ws.page_setup.fitToWidth = 1
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -521,15 +533,11 @@ def build_area_template(area, version, as_of_ym, cycle_label=None):
     _write_meta(wb, area=area, version=version, cycle_label=cycle_label,
                 as_of_ym=as_of_ym, ccy=ccy, sheet_map=sheet_map, years=years)
 
-    # Open on the first PROJECT sheet, not SUMMARY. SUMMARY is fully locked (all formulas),
-    # so landing there reads as "the whole workbook is locked" — the first thing they see
-    # and click has no input cell. Land them on editable content instead.
-    first_proj = next((n for n in wb.sheetnames if n not in ("SUMMARY", "_meta")), None)
-    if first_proj:
-        idx = wb.sheetnames.index(first_proj)
-        wb.active = idx
-        for i, ws in enumerate(wb.worksheets):
-            ws.sheet_view.tabSelected = (i == idx)
+    # Open on SUMMARY (index 0 for a multi-project area; the single sheet otherwise).
+    # SUMMARY is locked but selectable now, so landing here no longer reads as "locked".
+    wb.active = 0
+    for i, ws in enumerate(wb.worksheets):
+        ws.sheet_view.tabSelected = (i == 0)
 
     buf = io.BytesIO()
     wb.save(buf)
