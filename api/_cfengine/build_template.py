@@ -504,8 +504,16 @@ def build_area_template(area, version, as_of_ym, cycle_label=None):
     if not projects:
         raise ValueError(f"No cash-flow data for area '{area}' in version '{version}'")
 
+    # '_AREA' is our SYNTHETIC balance-carrier (a BALANCE_FROM_TARGET artifact holding the
+    # area's opening/ending/loans/OD from the consolidated target). It is not part of the
+    # coordinator's file, so drop it — UNLESS it's the only sheet (single-'project' areas
+    # whose whole submission IS that rollup), where we keep it but display it as 'AREA'.
+    non_synth = [p for p in projects if str(p).strip() != "_AREA"]
+    if non_synth:
+        projects = non_synth
+
     # The AREA sheet (the area-level rollup) leads the project sheets, right after SUMMARY;
-    # everything else follows alphabetically. Codes vary: 'AREA' or '_AREA'.
+    # everything else follows alphabetically.
     def _is_area(code):
         return str(code).strip().upper().lstrip("_").strip() == "AREA"
     projects = sorted(projects, key=lambda c: (0 if _is_area(c) else 1, str(c)))
@@ -518,7 +526,8 @@ def build_area_template(area, version, as_of_ym, cycle_label=None):
 
     sheet_map = {}
     for code in projects:
-        name = _safe(code)
+        # A surviving '_AREA' (single-sheet area) displays as 'AREA'; _meta keeps the real code.
+        name = _safe("AREA" if str(code).strip() == "_AREA" else code)
         ws = wb.create_sheet(name)
         _write_sheet(ws, lines=lines, plan=plan, cols=cols, as_of_ym=as_of_ym,
                      area=area, project=code, ccy=ccy, cycle_label=cycle_label,
