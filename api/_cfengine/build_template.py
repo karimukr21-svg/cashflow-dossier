@@ -51,12 +51,15 @@ CHARCOAL = "141414"
 WHITE = "FFFFFF"
 GREY_BAND = "F4F4F4"      # locked actuals
 GREY_RULE = "D9D9D9"
-INPUT_TINT = "FFFDF5"     # their input cells - faint warm tint, prints clean
+INPUT_TINT = "FFF3C4"     # their input cells — soft yellow, the "fill me" convention
+INPUT_RULE = "E9CE6A"     # a warmer border on input cells so the region reads at a glance
 TOTAL_TINT = "EFEFEF"
 FONT = "Calibri"
 
 THIN = Side(style="thin", color=GREY_RULE)
 BOX = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
+_INPUT_SIDE = Side(style="thin", color=INPUT_RULE)
+INPUT_BOX = Border(left=_INPUT_SIDE, right=_INPUT_SIDE, top=_INPUT_SIDE, bottom=_INPUT_SIDE)
 
 NUM_FMT = "#,##0;[Red](#,##0)"
 
@@ -188,8 +191,8 @@ def _style_header(ws, ncols, area, project, ccy, cycle_label, as_of_label, is_su
         note = ("This sheet is calculated from the project sheets — it is locked and has "
                 "no input cells. Area-level entries belong on the AREA sheet.")
     else:
-        note = ("Grey columns are actuals already reported — locked. "
-                "Enter your forecast in the white columns only.")
+        note = ("Grey cells are actuals already reported — locked. "
+                "Enter your forecast in the YELLOW cells only; totals and balances calculate.")
     c = ws.cell(row=4, column=1, value=note)
     c.font = Font(name=FONT, size=9, italic=True, color="7F7F7F")
 
@@ -278,6 +281,7 @@ def _write_sheet(ws, *, lines, plan, cols, as_of_ym, area, project, ccy,
             v = forecast.get((project, line_code, y, m))
             cell.value = float(v) if v is not None else None
             cell.fill = PatternFill("solid", fgColor=INPUT_TINT)
+            cell.border = INPUT_BOX
             cell.protection = Protection(locked=False)   # <- their input
 
     r = hdr + 1
@@ -516,6 +520,16 @@ def build_area_template(area, version, as_of_ym, cycle_label=None):
 
     _write_meta(wb, area=area, version=version, cycle_label=cycle_label,
                 as_of_ym=as_of_ym, ccy=ccy, sheet_map=sheet_map, years=years)
+
+    # Open on the first PROJECT sheet, not SUMMARY. SUMMARY is fully locked (all formulas),
+    # so landing there reads as "the whole workbook is locked" — the first thing they see
+    # and click has no input cell. Land them on editable content instead.
+    first_proj = next((n for n in wb.sheetnames if n not in ("SUMMARY", "_meta")), None)
+    if first_proj:
+        idx = wb.sheetnames.index(first_proj)
+        wb.active = idx
+        for i, ws in enumerate(wb.worksheets):
+            ws.sheet_view.tabSelected = (i == idx)
 
     buf = io.BytesIO()
     wb.save(buf)
