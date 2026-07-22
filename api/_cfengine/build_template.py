@@ -504,6 +504,12 @@ def build_area_template(area, version, as_of_ym, cycle_label=None):
     if not projects:
         raise ValueError(f"No cash-flow data for area '{area}' in version '{version}'")
 
+    # The AREA sheet (the area-level rollup) leads the project sheets, right after SUMMARY;
+    # everything else follows alphabetically. Codes vary: 'AREA' or '_AREA'.
+    def _is_area(code):
+        return str(code).strip().upper().lstrip("_").strip() == "AREA"
+    projects = sorted(projects, key=lambda c: (0 if _is_area(c) else 1, str(c)))
+
     cols = _col_plan(years)
     plan = _row_plan(lines)
 
