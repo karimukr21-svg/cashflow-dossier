@@ -617,6 +617,12 @@ def sections_from_agg(agg, ref):
 # Area-item sheet tokens (fold to project_code='_AREA', is_area_item=true) -------
 AREA_ITEM_TOKENS = ('PMV', 'CAMP', 'RMPT', 'OVERHEAD', 'RECOVER', 'AREAOH', 'MOEST')
 
+# Per-file exemption: sheet names (by sheet title) that ARE area items by token but should
+# KEEP their own project_code instead of folding into _AREA — i.e. shown as their own sheet.
+# fn -> {sheet_name, ...}. Default empty: every other area is unchanged. Used for KSA, whose
+# coordinator file breaks PMV/CAMP out as their own sheets and we want the same in the DB.
+PROMOTE_TO_PROJECT = {}
+
 # Lines that are STOCKS (not flows) — reported as memo in reconciliation ----------
 BALANCE_LINES = {'opening_balance', 'ending_balance', 'accum_loans', 'accum_od'}
 
@@ -732,8 +738,10 @@ def _reconcile_with_wb(wb, fn, resolver, as_of):
         # 'JV'-named sheet → excluded as equity-accounted, UNLESS this file marks it a
         # proportional-share entity the rollup consolidates (e.g. Morganti 'PM JV 54%').
         jv = is_jv_code(raw_code) and n not in JV_INCLUDE_OVERRIDE.get(fn, set())
-        # area items (non-JV) fold to the _AREA bucket
-        code = '_AREA' if (area_item and not jv) else raw_code
+        # area items (non-JV) fold to the _AREA bucket, UNLESS this file promotes the sheet
+        # to keep its own project_code (see PROMOTE_TO_PROJECT).
+        promoted = n in PROMOTE_TO_PROJECT.get(fn, set())
+        code = '_AREA' if (area_item and not jv and not promoted) else raw_code
         # per-sheet ownership share (see SHEET_SHARE): leaf carries 100%, scale to CCC's
         # share so Σ-projects ties the share-based CONSOLIDATED. Applied before reconcile.
         # A share may be a flat float or a period-stepped list of (year, month, share).
