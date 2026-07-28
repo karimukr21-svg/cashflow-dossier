@@ -37,6 +37,7 @@ from collections import defaultdict
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation
 
 import db
 
@@ -170,6 +171,12 @@ def _row_plan(lines):
             for l in sorted(block, key=lambda x: x["sort_order"]):
                 plan.append(("line", l))
         plan.append(("net", cat))
+        # Rasha's management line: right under Claims, a memo total that ADDS Claims back
+        # into Net Operation (the report excludes Claims from Cash From Operations, but
+        # management wants the combined figure visible). Both nets exist by this point
+        # because Operation (sort 10) renders before Claims (sort 14).
+        if cat == "Claims":
+            plan.append(("opnet_claims", None))
     return plan
 
 
@@ -222,6 +229,29 @@ def _write_sheet(ws, *, lines, plan, cols, as_of_ym, area, project, ccy,
     area_bal = area_balances or {}
     ncols = 1 + len(cols)
     _style_header(ws, ncols, area, project, ccy, cycle_label, as_of_label, is_summary)
+
+    # Sign-locking (Rasha #4): input cells are constrained to the line's nature — Receipt
+    # lines take a positive number, Payment lines a negative one — so coordinators can't
+    # enter the wrong sign and get chased to fix it. Uses cf_lines.sign_convention, the
+    # canonical per-line sign. 'signed' lines (balances/stocks) are left free. Excel
+    # protection strips trivially, so this is guidance, not enforcement — the correct
+    # entry is the frictionless one.
+    sign_by_code = {l["line_code"]: l.get("sign_convention") for l in lines}
+    dv_pos = DataValidation(type="decimal", operator="greaterThanOrEqual",
+                            formula1="0", allow_blank=True, showErrorMessage=True)
+    dv_pos.errorTitle, dv_pos.error = "Receipts are positive", \
+        "This is a Receipt line — enter a positive number (or 0)."
+    dv_neg = DataValidation(type="decimal", operator="lessThanOrEqual",
+                            formula1="0", allow_blank=True, showErrorMessage=True)
+    dv_neg.errorTitle, dv_neg.error = "Payments are negative", \
+        "This is a Payment line — enter a negative number (or 0)."
+
+    def _apply_sign(cell, line_code):
+        sc = sign_by_code.get(line_code)
+        if sc == "positive":
+            dv_pos.add(cell)
+        elif sc == "negative":
+            dv_neg.add(cell)
 
     hdr = 7
     ws.cell(row=hdr, column=1, value="Cash Flow Line").font = Font(
@@ -294,16 +324,19 @@ def _write_sheet(ws, *, lines, plan, cols, as_of_ym, area, project, ccy,
             # Editable for now (Karim's call) — actuals stay unlocked alongside forecast.
             # Only the computed rows/columns (totals, opening/ending, nets) stay locked.
             cell.protection = Protection(locked=False)
+            _apply_sign(cell, line_code)
         else:
             v = forecast.get((project, line_code, y, m))
             cell.value = float(v) if v is not None else None
             cell.fill = PatternFill("solid", fgColor=INPUT_TINT)
             cell.border = INPUT_BOX
             cell.protection = Protection(locked=False)   # <- their input
+            _apply_sign(cell, line_code)
 
     r = hdr + 1
     line_rows = {}          # line_code -> row
-    cat_net_rows = []       # rows holding each category net
+    cat_net_rows = []       # rows holding each category net (feed NET CASH MOVEMENT)
+    net_row_by_cat = {}     # category -> its net row (for cross-category memo totals)
 
     # ---- OPENING BALANCE ---------------------------------------------------------
     # Actual months carry the PUBLISHED balance verbatim (locked) — the pre-fill promise
@@ -382,7 +415,27 @@ def _write_sheet(ws, *, lines, plan, cols, as_of_ym, area, project, ccy,
                 cell.fill = PatternFill("solid", fgColor=TOTAL_TINT)
                 cell.border = BOX
             cat_net_rows.append(r)
+            net_row_by_cat[cat] = r
             r += 2
+
+        elif kind == "opnet_claims":
+            # Memo only — Net Operation + Net Claims. NOT added to cat_net_rows, so it
+            # never double-counts into NET CASH MOVEMENT (Claims already flows in on its own).
+            op_r = net_row_by_cat.get("Operation")
+            cl_r = net_row_by_cat.get("Claims")
+            if op_r and cl_r:
+                c = ws.cell(row=r, column=1, value="Net Operation with Claims")
+                c.font = Font(name=FONT, size=10, bold=True, italic=True, color=CHARCOAL)
+                c.fill = PatternFill("solid", fgColor=TOTAL_TINT)
+                c.border = BOX
+                for col in range(2, ncols + 1):
+                    cell = ws.cell(row=r, column=col)
+                    cell.value = f"={ref(col, op_r)}+{ref(col, cl_r)}"
+                    cell.number_format = NUM_FMT
+                    cell.font = Font(name=FONT, size=10, bold=True, italic=True)
+                    cell.fill = PatternFill("solid", fgColor=TOTAL_TINT)
+                    cell.border = BOX
+                r += 2
 
     # ---- NET MOVEMENT + ENDING (the chain that kills stale balance rows) ---------
     net_row = r
@@ -452,6 +505,11 @@ def _write_sheet(ws, *, lines, plan, cols, as_of_ym, area, project, ccy,
         for i in range(len(cols)):
             put_value(r, 2 + i, code, stock=True)
         r += 1
+
+    # Attach sign validations only if they caught cells (summary sheets have none).
+    for dv in (dv_pos, dv_neg):
+        if dv.sqref:
+            ws.add_data_validation(dv)
 
     ws.freeze_panes = ws.cell(row=hdr + 1, column=2)
     ws.sheet_view.showGridLines = False

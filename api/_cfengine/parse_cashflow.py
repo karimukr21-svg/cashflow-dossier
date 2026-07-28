@@ -540,16 +540,14 @@ def resolve_line(label, section, direction, post_ending, resolver, area, wg_sub=
         elif lt.startswith('PAYMENT'):
             d = 'Payments'
         nat = d or 'Receipts'
-        if 'MOA' in lt:
-            code = 'wg_recpt_moa' if nat == 'Receipts' else 'wg_pay_moa'
-        elif 'OUTSIDE' in lt or 'OTHERAREA' in lt or 'OTHERAREAS' in lt:
-            code = 'wg_recpt_outside_area' if nat == 'Receipts' else 'wg_pay_outside_area'
-        elif 'TREASURY' in lt:
+        # MOA folded into Treasury (2026-07 taxonomy merge — Rasha: MOA == Treasury,
+        # one line named "Managing Office Athens"). Both labels resolve to wg_*_treasury.
+        if 'MOA' in lt or 'TREASURY' in lt:
             code = 'wg_recpt_treasury' if nat == 'Receipts' else 'wg_pay_treasury'
-        elif 'FROMAREAS' in lt:
-            code = 'treasury_recpt_areas'
-        elif 'TOAREAS' in lt:
-            code = 'treasury_pay_areas'
+        # Outside Area == To/From Areas (same merge) — all resolve to wg_*_outside_area.
+        elif ('OUTSIDE' in lt or 'OTHERAREA' in lt or 'OTHERAREAS' in lt
+              or 'FROMAREAS' in lt or 'TOAREAS' in lt):
+            code = 'wg_recpt_outside_area' if nat == 'Receipts' else 'wg_pay_outside_area'
         elif 'WITHIN' in lt or 'AREA' in lt or tight(area) in lt or lt in ('QATAR',):
             code = 'wg_recpt_within_area' if nat == 'Receipts' else 'wg_pay_within_area'
         elif wg_sub:
@@ -557,7 +555,7 @@ def resolve_line(label, section, direction, post_ending, resolver, area, wg_sub=
             sub = {'outside_area': ('wg_recpt_outside_area', 'wg_pay_outside_area'),
                    'within_area':  ('wg_recpt_within_area',  'wg_pay_within_area'),
                    'treasury':     ('wg_recpt_treasury',     'wg_pay_treasury'),
-                   'moa':          ('wg_recpt_moa',          'wg_pay_moa')}[wg_sub]
+                   'moa':          ('wg_recpt_treasury',     'wg_pay_treasury')}[wg_sub]
             code = sub[0] if nat == 'Receipts' else sub[1]
         else:
             return None, d
@@ -651,8 +649,8 @@ def keyword_fallback(lt, direction):
     if ('WITHINAREA' in lt or 'OUTSIDEAREA' in lt) and \
             (lt.startswith('RECEIPT') or lt.startswith('PAYMENT')):
         nat = 'Payments' if lt.startswith('PAYMENT') else 'Receipts'
-        if 'MOA' in lt:
-            return ('wg_recpt_moa' if nat == 'Receipts' else 'wg_pay_moa'), nat
+        if 'MOA' in lt:   # MOA folded into Treasury (2026-07 merge)
+            return ('wg_recpt_treasury' if nat == 'Receipts' else 'wg_pay_treasury'), nat
         if 'OUTSIDEAREA' in lt:
             return ('wg_recpt_outside_area' if nat == 'Receipts' else 'wg_pay_outside_area'), nat
         return ('wg_recpt_within_area' if nat == 'Receipts' else 'wg_pay_within_area'), nat
