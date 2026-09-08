@@ -17,11 +17,31 @@ REST = f"{URL}/rest/v1"
 _H = {"apikey": KEY, "Authorization": f"Bearer {KEY}"}
 
 
+# STABLE PAGINATION. Postgres guarantees NO row order without an ORDER BY, so paging
+# with limit/offset over an unordered result silently DROPS and DUPLICATES rows across
+# page boundaries — a large area (Qatar, KSA, Egypt) reads back a different total on
+# every call. Every paged read must carry a deterministic sort. Callers may pass their
+# own "order"; otherwise we apply the table's full row key.
+_DEFAULT_ORDER = {
+    "cf_actuals":    "area,project_code,line_code,year,month",
+    "cf_forecasts":  "version,scenario_code,area,project_code,line_code,year,month",
+    "cf_lines":      "line_code",
+    "cf_line_aliases": "line_code",
+    "cf_import_runs": "run_id",
+    "cf_actuals_history": "id",
+}
+
+
 def select(table, params, profile="public"):
     h = {**_H, "Accept-Profile": profile}
+    p0 = dict(params)
+    if "order" not in p0:
+        order = _DEFAULT_ORDER.get(table)
+        if order:
+            p0["order"] = order
     out, offset, page = [], 0, 1000
     while True:
-        p = dict(params)
+        p = dict(p0)
         p["limit"] = page
         p["offset"] = offset
         r = requests.get(f"{REST}/{table}", headers=h, params=p, timeout=60)
@@ -30,6 +50,11 @@ def select(table, params, profile="public"):
         out.extend(chunk)
         if len(chunk) < page:
             break
+        if "order" not in p0:
+            raise RuntimeError(
+                f"select({table}) exceeded one page with no ORDER BY — refusing to paginate "
+                f"an unordered result (rows would be dropped/duplicated). Pass params['order'] "
+                f"or add {table} to db._DEFAULT_ORDER.")
         offset += page
     return out
 
