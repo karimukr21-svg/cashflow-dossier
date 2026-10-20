@@ -157,7 +157,7 @@ export default function ImportRunsManager({ canManage }: { canManage: boolean })
     // 2. Area-already-in-version check.
     const { count } = await supabase
       .from('cf_forecasts')
-      .select('id', { count: 'exact', head: true })
+      .select('area', { count: 'exact', head: true })   // cf_forecasts has no id column: 'id' errored and always counted 0
       .eq('version', targetCode)
       .eq('area', run.area)
       .eq('scenario_code', 'Forecast')

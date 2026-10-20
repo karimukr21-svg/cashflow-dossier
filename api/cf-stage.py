@@ -5,7 +5,7 @@ the AREA TOTAL and writes an "open run for review" (cf_import_runs + cf_staged_r
 cf_recon_breaks). NOTHING touches the canonical tables — Push/Publish (RPCs) do that.
 
 Request:  POST application/octet-stream
-  headers: Authorization: Bearer <supabase access token>   (verified before doing work)
+  headers: Authorization: Bearer <supabase access token>   (signed in + Treasury tool admin/treasury access, checked first)
            X-Filename: <url-encoded original filename>       (drives the per-file maps)
            X-As-Of:    <YYYY-MM-DD>  (optional; defaults to the engine's April-2026 cutover)
   body:    raw .xlsx bytes
@@ -29,28 +29,6 @@ import datetime as dt
 from http.server import BaseHTTPRequestHandler
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_cfengine"))
-
-SUPABASE_URL = "https://twinoncujgwlvanpsnle.supabase.co"
-SUPABASE_ANON_KEY = (
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3aW5vbmN1"
-    "amd3bHZhbnBzbmxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYxMjE5NDEsImV4cCI6MjA4MTY5Nzk0MX0."
-    "H4w2c3edFA2JOhqz4oAG3f-qL0hntVXQb9mB4pjqL7I"
-)
-
-
-def _verify_bearer(token):
-    import requests
-    if not token:
-        return False
-    try:
-        r = requests.get(
-            f"{SUPABASE_URL}/auth/v1/user",
-            headers={"Authorization": f"Bearer {token}", "apikey": SUPABASE_ANON_KEY},
-            timeout=15,
-        )
-        return r.ok
-    except Exception:
-        return False
 
 
 def _proposed_cycle(as_of):
@@ -78,11 +56,12 @@ class handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         try:
-            auth = self.headers.get("Authorization", "")
-            if not auth.lower().startswith("bearer "):
-                return self._send(401, {"error": "missing bearer token"})
-            if not _verify_bearer(auth[7:].strip()):
-                return self._send(401, {"error": "invalid token"})
+            # signed in AND Treasury tool manage access (admin | treasury): the work below runs with the
+            # service-role key, which bypasses row-level security (see _cfengine/authz.py)
+            from authz import authorize
+            status, detail = authorize(self.headers.get("Authorization", ""))
+            if status:
+                return self._send(status, {"error": detail})
 
             length = int(self.headers.get("Content-Length", "0") or "0")
             body = self.rfile.read(length) if length else b""

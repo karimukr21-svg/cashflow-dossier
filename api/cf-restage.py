@@ -10,7 +10,7 @@ NOTHING touches the canonical tables (Push/Publish do that). Only the open run i
 rewritten in place; the run_id is unchanged.
 
 Request:  POST application/json  { "run_id": "<uuid>" }
-  headers: Authorization: Bearer <supabase access token>   (verified before doing work)
+  headers: Authorization: Bearer <supabase access token>   (signed in + Treasury tool admin/treasury access, checked first)
 Response: application/json  { run_id, area, recon_status, recon_n_breaks, n_rows,
                              n_projects, n_unmatched_labels }
 
@@ -23,28 +23,6 @@ import sys
 from http.server import BaseHTTPRequestHandler
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_cfengine"))
-
-SUPABASE_URL = "https://twinoncujgwlvanpsnle.supabase.co"
-SUPABASE_ANON_KEY = (
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3aW5vbmN1"
-    "amd3bHZhbnBzbmxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYxMjE5NDEsImV4cCI6MjA4MTY5Nzk0MX0."
-    "H4w2c3edFA2JOhqz4oAG3f-qL0hntVXQb9mB4pjqL7I"
-)
-
-
-def _verify_bearer(token):
-    import requests
-    if not token:
-        return False
-    try:
-        r = requests.get(
-            f"{SUPABASE_URL}/auth/v1/user",
-            headers={"Authorization": f"Bearer {token}", "apikey": SUPABASE_ANON_KEY},
-            timeout=15,
-        )
-        return r.ok
-    except Exception:
-        return False
 
 
 class handler(BaseHTTPRequestHandler):
@@ -64,11 +42,12 @@ class handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         try:
-            auth = self.headers.get("Authorization", "")
-            if not auth.lower().startswith("bearer "):
-                return self._send(401, {"error": "missing bearer token"})
-            if not _verify_bearer(auth[7:].strip()):
-                return self._send(401, {"error": "invalid token"})
+            # signed in AND Treasury tool manage access (admin | treasury): the work below runs with the
+            # service-role key, which bypasses row-level security (see _cfengine/authz.py)
+            from authz import authorize
+            status, detail = authorize(self.headers.get("Authorization", ""))
+            if status:
+                return self._send(status, {"error": detail})
 
             length = int(self.headers.get("Content-Length", "0") or "0")
             raw = self.rfile.read(length) if length else b"{}"

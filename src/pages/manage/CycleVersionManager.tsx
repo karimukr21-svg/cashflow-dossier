@@ -71,8 +71,8 @@ export default function CycleVersionManager({ canManage }: { canManage: boolean 
       : ''
     const ok = window.confirm(
       `Delete cycle "${cyc.name}" (${cyc.cycle_year}-${String(cyc.cycle_month).padStart(2, '0')})?\n\n` +
-      `Removes its ${vCount} version(s), all staged runs, forecasts, and reverses any publish ` +
-      `(restoring the area numbers it replaced).${warn}`
+      `Removes its ${vCount} version(s), all staged runs, their numbers and adjustments. If one of them is ` +
+      `the published version, the actuals series falls back to the previously published version.${warn}`
     )
     if (!ok) return
     setBusy(`cycle:${cyc.cycle_year}-${cyc.cycle_month}`)
@@ -202,7 +202,7 @@ export default function CycleVersionManager({ canManage }: { canManage: boolean 
     if (!canManage) return
     const ok = window.confirm(
       `Delete version "${v.version_code}"${v.label ? ` (${v.label})` : ''}?\n\n` +
-      `Removes its forecasts and history${v.published_at ? ', reverses its publish (restoring the area numbers it replaced),' : ''} ` +
+      `Removes its numbers and its adjustments${v.published_at ? ' (the actuals series falls back to the previously published version)' : ''}, ` +
       `and reopens any import run that pushed into it. The cycle and its other versions stay.`
     )
     if (!ok) return
@@ -224,10 +224,11 @@ export default function CycleVersionManager({ canManage }: { canManage: boolean 
     if (!canManage) return
     const ok = window.confirm(
       `Publish "${v.version_code}" (cycle ${cycleLabel(v)})?\n\n` +
-      `This promotes every period up to ${fmtDate(v.as_of_date)} into the continuous ` +
-      `actuals series, supersedes the legacy area-grain actuals for those cells ` +
-      `(reversible — backed up), sets this as the cycle's current version, and stamps it published.\n\n` +
-      `Actuals are extended. This is the deliberate actualization step.`
+      `This makes its periods up to ${fmtDate(v.as_of_date)} the continuous actuals series. ` +
+      `History it does not hold itself (earlier years, areas without a file this cycle) is carried ` +
+      `from the previously published version. It also sets this as the cycle's current version and ` +
+      `stamps it published. Deleting the version later falls back to the previous one.\n\n` +
+      `This is the deliberate actualization step.`
     )
     if (!ok) return
     setBusy(v.version_code)
